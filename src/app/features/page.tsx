@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { SIGNUP } from '@/lib/links';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { FEATURE_GROUPS, FeatureIcon, type FeatureKey } from '@/components/marketing/FeatureIcons';
+import { FeatureScene } from '@/components/marketing/FeatureScenes';
 import {
   AnalyticsVignette,
   NotebookVignette,
@@ -18,7 +20,8 @@ import {
 /**
  * /features - one section per part of Rune. Each pairs a plain statement of
  * the benefit with an illustration of the actual interface, so the picture
- * does most of the explaining and the copy stays short.
+ * does most of the explaining and the copy stays short - and the Rune
+ * character acting the feature out under the text (FeatureScenes.tsx).
  */
 const SECTIONS: { key: FeatureKey; name: string; headline: string; body: string; points: string[]; Visual: () => React.ReactElement }[] = [
   {
@@ -128,6 +131,7 @@ export default function FeaturesPage() {
                     </li>
                   ))}
                 </ul>
+                <FeatureScene feature={key} size={250} className="mt-8 max-w-full" />
               </div>
               <div className={`reveal ${i % 2 ? 'lg:order-1' : ''}`}>
                 <Visual />
@@ -144,7 +148,7 @@ export default function FeaturesPage() {
                 Or read the <Link href="/docs/user-guide" className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground">user guide</Link> first.
               </p>
             </div>
-            <Link href="/login?mode=signup" className="btn btn-primary shrink-0">Create a free account</Link>
+            <Link href={SIGNUP.href} className="btn btn-primary shrink-0">{SIGNUP.label}</Link>
           </div>
         </section>
       </main>

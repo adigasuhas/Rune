@@ -1,5 +1,6 @@
 'use client';
 
+import { UserAvatar } from '@/components/UserAvatar';
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSession } from '@/context/SessionContext';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -441,14 +442,7 @@ function DeveloperDashboard() {
                       <tr key={u.id} className="hover:bg-surface-raised/10 transition-colors">
                         <td className="px-5 py-4">
                           <div className="flex items-center space-x-3">
-                            {u.avatarUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={u.avatarUrl} alt={u.name} className="w-8 h-8 rounded-lg border border-border-strong object-cover" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-surface-raised border border-border-strong flex items-center justify-center font-bold text-muted-foreground">
-                                {u.name?.[0] || 'U'}
-                              </div>
-                            )}
+                            <UserAvatar person={u} size={32} />
                             <div>
                               <p className="font-bold text-foreground">{u.name || 'N/A'}</p>
                               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{u.email}</p>

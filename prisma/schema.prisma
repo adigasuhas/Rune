@@ -100,7 +100,8 @@ model User {
   settings        Setting?
   calendarEvents  CalendarEvent[]
   notebooks       Notebook[]
-  notebookPagesAuthored NotebookPage[]
+  notebookPagesAuthored NotebookPage[] @relation("NotebookPageAuthor")
+  notebookReviewsRequested NotebookPage[] @relation("NotebookReviewRequestedFrom")
   notebookRevisionsAuthored NotebookRevision[]
   instruments     Instrument[]
   jobs            Job[]
@@ -208,7 +209,7 @@ model NotebookPage {
   // collaborator with edit access. SetNull rather than Cascade so
   // deleting an account never takes someone else's notebook down with it.
   authorId   String?
-  author     User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  author     User?   @relation("NotebookPageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   // Runs (experiments / compute jobs) linked to this document - the
   // write-up and the run that produced it live together instead of in
   // two apps.
@@ -221,6 +222,11 @@ model NotebookPage {
   // REVIEWED. "NONE" for personal notebooks / drafts.
   reviewStatus      String    @default("NONE") // NONE | READY | REVIEWED
   reviewRequestedAt DateTime?
+  // The one person the owner picked to review it (validated server-side
+  // against who can review this notebook). SetNull: a deleted account
+  // leaves the request open for the owner to send to someone else.
+  reviewRequestedFromId String?
+  reviewRequestedFrom   User?   @relation("NotebookReviewRequestedFrom", fields: [reviewRequestedFromId], references: [id], onDelete: SetNull)
   comments          NotebookComment[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

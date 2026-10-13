@@ -111,7 +111,7 @@ export async function sanitizeBackupLinks(data: BackupPayload, userId: string): 
         ...n,
         // A notebook may only belong to one of the restorer's own projects.
         projectId: projectId && projectIds.has(projectId) ? projectId : null,
-        ...(page ? { page: { ...page, authorId: await person(page.authorId) } } : {}),
+        ...(page ? { page: { ...page, authorId: await person(page.authorId), reviewRequestedFromId: await person(page.reviewRequestedFromId) } } : {}),
       };
     })
   );

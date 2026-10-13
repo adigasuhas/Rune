@@ -1,4 +1,4 @@
-import katex from 'katex';
+import { renderMathCached } from './katexCache';
 import { parseLatex } from './parser';
 
 /**
@@ -51,7 +51,7 @@ export function renderEnvironment(
         mathExpr = `\\begin{${nameClean}}${eqContent}\\end{${nameClean}}`;
       }
       
-      const rendered = katex.renderToString(mathExpr, katexOptions);
+      const rendered = renderMathCached(mathExpr, katexOptions);
 
       const borderClass = isPdfExport 
         ? 'border-y border-[#e5e7eb] bg-slate-50/10' 

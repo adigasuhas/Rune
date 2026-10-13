@@ -497,7 +497,30 @@ body {
   35%, 65% { opacity: .7; }
   100% { opacity: 0; transform: translateY(-1.5px); }
 }
-.rune-mark-anim .rm-eyes { transform-box: view-box; transform-origin: 24px 11.4px; animation: rm-blink 5.6s infinite; }
+.rune-mark-anim .rm-eyes { transform-box: fill-box; transform-origin: center; animation: rm-blink 5.6s infinite; }
+/* Avatar hair (src/components/avatars/AvatarArt.tsx): near-black on light
+   pages, a warm grey on dark ones, where light "ink" hair read as white. */
+.av-hair { fill: #2b2924; }
+:root[data-theme="dark"] .av-hair { fill: #5e574d; }
+/* Thoughts out of the open head: scattered and competing, then settled in a
+   row (the resting state, and all a reduced-motion visitor sees). */
+.rune-mark-anim .rm-t { transform-box: fill-box; transform-origin: center; animation: rm-settle 9s cubic-bezier(.3,.7,.2,1) infinite both; }
+.rune-mark-anim .rm-t-1 { --sx: 3px; --sy: 6px; --sr: -22deg; --jx: 5px; --jy: 1px; --jr: 14deg; --kx: -1px; --ky: 2px; --kr: -7deg; }
+.rune-mark-anim .rm-t-2 { --sx: -3px; --sy: 7px; --sr: 28deg; --jx: -6px; --jy: -1px; --jr: -18deg; --kx: 1.5px; --ky: 1.5px; --kr: 9deg; animation-delay: .12s; }
+.rune-mark-anim .rm-t-3 { --sx: -8px; --sy: 6px; --sr: 32deg; --jx: -3px; --jy: 2.5px; --jr: -14deg; --kx: -1px; --ky: -.5px; --kr: 6deg; animation-delay: .24s; }
+.rune-mark-anim .rm-trail { animation: rm-trail 9s ease-out infinite; }
+@keyframes rm-settle {
+  0% { transform: translate(var(--sx), var(--sy)) rotate(var(--sr)) scale(.6); opacity: 0; }
+  7% { opacity: 1; }
+  16% { transform: translate(var(--jx), var(--jy)) rotate(var(--jr)); }
+  27% { transform: translate(var(--kx), var(--ky)) rotate(var(--kr)); }
+  40%, 92% { transform: none; opacity: 1; }
+  100% { transform: none; opacity: 0; }
+}
+@keyframes rm-trail { 0%, 4% { opacity: 0; } 12%, 30% { opacity: .55; } 44%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .rune-mark-anim .rm-t, .rune-mark-anim .rm-trail { animation: none; }
+}
 @keyframes rm-blink { 0%, 94%, 100% { transform: scaleY(1); } 96.5% { transform: scaleY(.1); } }
 
 /* ============================================================
@@ -575,9 +598,11 @@ body {
 @keyframes esp-steam { 0%, 60% { opacity: 0; transform: translateY(1.5px); } 70%, 80% { opacity: .7; } 90%, 100% { opacity: 0; transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .espresso * { animation: none !important; } }
 
-/* Landing "everything you juggle": the balls over his head drift, out of step. */
-@keyframes juggle-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-.juggle-ball { animation: juggle-float 3.6s ease-in-out infinite; }
+
+/* /features scenes: the one moving prop drifts a few units, out of step. */
+@keyframes fs-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
+.feature-scene .fs-float { animation: fs-float 3.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .feature-scene .fs-float { animation: none; } }
 
 /* Pricing: the currency in front of the zero changes, gently. */
 @keyframes cur-in { from { opacity: 0; transform: translateY(45%); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }

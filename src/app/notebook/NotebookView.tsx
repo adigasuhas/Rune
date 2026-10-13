@@ -9,7 +9,10 @@ import katex from 'katex';
 import { PROJECT_COLORS } from '@/lib/colors';
 import { NOTEBOOK_TEMPLATES, NotebookTemplate } from '@/lib/latex/templates';
 import { DEFAULT_PROJECT_SECTIONS } from '@/lib/notebookSections';
-import { parseMarkdownToHtml, stripPageMetadata } from '@/lib/notebookExport';
+import { stripPageMetadata } from '@/lib/notebookExport';
+import { latexExcerpt } from '@/lib/notebookExcerpt';
+import { ReviewerPicker } from '@/components/ReviewerPicker';
+import { useLatexPreview } from '@/lib/latex/useLatexPreview';
 import { extractBibliographyContent, parseBibtex } from '@/lib/latex/bibliography';
 import { buildLabelMap } from '@/lib/latex/crossref';
 import { LatexEditor, LatexEditorHandle, SpecialKey } from '@/components/LatexEditor';
@@ -48,6 +51,7 @@ import {
   Strikethrough,
   Code,
   RefreshCw,
+  AlertTriangle,
   Sigma,
   Palette,
   Highlighter,
@@ -106,6 +110,20 @@ function KatexRender({ latex, block = true }: { latex: string; block?: boolean }
     }
   }, [latex, block]);
   return <span ref={containerRef} />;
+}
+
+/**
+ * Keeps a library entry's cover excerpt in step with a page loaded or saved
+ * in the editor (the list API sends `summary`, the editor works with `page`;
+ * replacing one with the other used to blank the cover to "Empty so far").
+ */
+/** What a finished save stored, so a caller can tell whether the editor still has unsaved text. */
+type SavedSnapshot = { key: string };
+const snapshotKey = (content: string, tags: string) => `${tags}\u0000${stripPageMetadata(content)}`;
+
+function withSummary(nb: Notebook): Notebook {
+  if (!nb.page) return nb;
+  return { ...nb, summary: { updatedAt: nb.page.updatedAt, tags: nb.page.tags || [], excerpt: latexExcerpt(nb.page.content) } };
 }
 
 /** When a notebook was last written in, from the library summary or the loaded page. */
@@ -172,6 +190,14 @@ export default function NotebookPage() {
   const [pageTags, setPageTags] = useState('');
   const [pageContent, setPageContent] = useState('');
   const [savingPage, setSavingPage] = useState(false);
+  // A failed save: shown in the header with a Retry, and holds autosave back
+  // until the text changes again (it used to retry every 3s forever).
+  const [saveError, setSaveError] = useState<{ content: string; message: string } | null>(null);
+  // The document whose text is in the editor right now, and the save that's
+  // currently on the wire - a save that finishes after the writer switched
+  // notebooks must not write its page back into the editor's state.
+  const activePageIdRef = useRef<string | null>(null);
+  const saveInFlightRef = useRef<Promise<SavedSnapshot | null> | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // Entry metadata rail (right panel): open by default on desktop, hidden
@@ -259,6 +285,9 @@ export default function NotebookPage() {
   const [pageCommentCount, setPageCommentCount] = useState(0);
   const [pageReviewStatus, setPageReviewStatus] = useState<string>('NONE');
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewPickerOpen, setReviewPickerOpen] = useState(false);
+  // Who the open request went to, and whether they can still review it.
+  const [reviewRequestedFrom, setReviewRequestedFrom] = useState<{ name: string; eligible: boolean } | null>(null);
 
   // Split-panel resizer states
   const [splitWidth, setSplitWidth] = useState(68);
@@ -266,6 +295,20 @@ export default function NotebookPage() {
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
   const [previewTab, setPreviewTab] = useState<'live' | 'equations' | 'references'>('live');
+
+  // The rendered preview, outline and equation lists follow the text a
+  // moment behind the keyboard: rendering the whole document (KaTeX and
+  // all) on every keystroke is what froze typing in long notebooks. A
+  // different document shows immediately (previewContent falls back to the
+  // live text until the debounced copy catches up), never the previous one's.
+  const [previewSource, setPreviewSource] = useState({ pageId: null as string | null, content: '' });
+  const currentPageId = activePage?.id ?? null;
+  useEffect(() => {
+    if (previewSource.pageId === currentPageId && previewSource.content === pageContent) return;
+    const t = window.setTimeout(() => setPreviewSource({ pageId: currentPageId, content: pageContent }), 250);
+    return () => window.clearTimeout(t);
+  }, [pageContent, currentPageId, previewSource]);
+  const previewContent = previewSource.pageId === currentPageId ? previewSource.content : pageContent;
 
   // Runs (experiments / compute jobs) linked to the open document.
   const [linkedRuns, setLinkedRuns] = useState<Array<{ id: string; name: string; status: string; instrumentName: string | null }>>([]);
@@ -369,7 +412,7 @@ export default function NotebookPage() {
 
     previewEl.addEventListener('click', handleReferenceClick);
     return () => previewEl.removeEventListener('click', handleReferenceClick);
-  }, [viewMode, pageContent, router]);
+  }, [viewMode, previewContent, router]);
 
   // Pull the runs linked to the open document whenever it changes.
   useEffect(() => {
@@ -395,29 +438,49 @@ export default function NotebookPage() {
   }, [activePage?.id, activeNotebook?.id]);
 
   useEffect(() => {
-    setPageReviewStatus((activePage as any)?.reviewStatus || 'NONE');
+    const status = (activePage as any)?.reviewStatus || 'NONE';
+    setPageReviewStatus(status);
     setShowComments(false);
+    setReviewPickerOpen(false);
+    setReviewRequestedFrom(null);
     refreshPageReviewMeta();
+    const pageId = activePage?.id;
+    const nbId = activeNotebook?.id;
+    if (status !== 'READY' || !pageId || !nbId) return;
+    let cancelled = false;
+    fetch(`/api/notebooks/${nbId}/pages/${pageId}/review`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d?.requestedFrom) setReviewRequestedFrom(d.requestedFrom); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload per document, not per save
   }, [activePage?.id, refreshPageReviewMeta]);
 
-  const setReview = async (status: 'READY' | 'NONE') => {
-    if (!activePage || !activeNotebook) return;
+  const setReview = async (status: 'READY' | 'NONE', reviewer?: { id: string; name: string }): Promise<boolean> => {
+    if (!activePage || !activeNotebook) return false;
     setReviewBusy(true);
     try {
       const res = await fetch(`/api/notebooks/${activeNotebook.id}/pages/${activePage.id}/review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, reviewerId: reviewer?.id })
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         toast('Review not updated', d.error || 'Try again.', 'error');
-        return;
+        return false;
       }
       setPageReviewStatus(status);
-      toast(status === 'READY' ? 'Sent for review' : 'Review request withdrawn', status === 'READY' ? 'Reviewers have been notified.' : 'The document is back to a draft.', 'success');
+      setReviewRequestedFrom(status === 'READY' && reviewer ? { name: reviewer.name, eligible: true } : null);
+      toast(
+        status === 'READY' ? 'Sent for review' : 'Review request withdrawn',
+        status === 'READY' ? `${reviewer?.name ?? 'Your reviewer'} has been notified.` : 'The document is back to a draft.',
+        'success'
+      );
+      return true;
     } catch {
       toast('Review not updated', 'Check your connection and try again.', 'error');
+      return false;
     } finally {
       setReviewBusy(false);
     }
@@ -497,17 +560,25 @@ export default function NotebookPage() {
   const handleSelectNotebook = async (notebook: Notebook) => {
     if (activeNotebook?.id === notebook.id) return;
 
-    if (isDirty && activePage) {
+    // Let a save that's already on the wire land first, then judge
+    // dirtiness on the state as it is now (not as it was when clicked).
+    let dirty = isDirtyRef.current;
+    if (saveInFlightRef.current) {
+      const saved = await saveInFlightRef.current;
+      if (saved && saved.key === snapshotKey(pageContentRef.current, pageTagsRef.current)) dirty = false;
+    }
+    if (dirty && activePage) {
       const save = await confirm({ title: 'Save your changes first?', message: 'You have unsaved changes in this notebook. Save them before switching?', confirmLabel: 'Save and continue', cancelLabel: 'Continue without saving' });
       if (save) await handleSavePage(false);
     }
 
+    setSaveError(null);
     setActiveNotebook(notebook);
     try {
       const res = await fetch(`/api/notebooks/${notebook.id}`);
       if (res.ok) {
         const fullNotebook = await res.json();
-        setNotebooks(prev => prev.map(nb => nb.id === notebook.id ? fullNotebook : nb));
+        setNotebooks(prev => prev.map(nb => nb.id === notebook.id ? withSummary({ ...nb, ...fullNotebook }) : nb));
         setActiveNotebook(fullNotebook);
         if (fullNotebook.page) {
           setActivePage(fullNotebook.page);
@@ -610,43 +681,61 @@ export default function NotebookPage() {
   // Save the notebook's single document. `manual` snapshots a version-history
   // entry (Save button / Ctrl+S) - the 3s autosave below does not, so the
   // history stays a meaningful trail of deliberate saves, not every keystroke.
-  const handleSavePage = async (manual: boolean) => {
-    if (!activeNotebook || !activePage) return;
-    setSavingPage(true);
+  const handleSavePage = (manual: boolean): Promise<SavedSnapshot | null> => {
+    if (!activeNotebook || !activePage) return Promise.resolve(null);
+    // One save on the wire at a time: Ctrl+S during an autosave (or a double
+    // click) waits for that one instead of sending a duplicate request.
+    if (saveInFlightRef.current) return saveInFlightRef.current;
 
+    const notebookId = activeNotebook.id;
+    const pageId = activePage.id;
     const tagsArr = pageTags
       .split(',')
       .map(t => t.trim().toLowerCase())
       .filter(t => t.startsWith('#') ? t.slice(1) : t)
       .filter(Boolean);
-
     const cleanContent = stripPageMetadata(pageContent);
 
-    try {
-      const res = await fetch(`/api/notebooks/${activeNotebook.id}/pages/${activePage.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: cleanContent, tags: tagsArr })
-      });
-
-      if (res.ok) {
+    setSavingPage(true);
+    const run = (async () => {
+      try {
+        const res = await fetch(`/api/notebooks/${notebookId}/pages/${pageId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: cleanContent, tags: tagsArr })
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.error || `The server answered ${res.status}.`);
+        }
         const updated = await res.json();
-        setActivePage(updated);
-        setActiveNotebook(prev => prev ? { ...prev, page: updated } : prev);
-        setNotebooks(prev => prev.map(nb => nb.id === activeNotebook.id ? { ...nb, page: updated } : nb));
+        setNotebooks(prev => prev.map(nb => nb.id === notebookId ? withSummary({ ...nb, page: updated }) : nb));
+        // Only touch the editor's state if this document is still the open one.
+        if (activePageIdRef.current === pageId) {
+          setActivePage(updated);
+          setActiveNotebook(prev => prev && prev.id === notebookId ? { ...prev, page: updated } : prev);
+          setSaveError(null);
+        }
         if (manual) {
-          fetch(`/api/notebooks/${activeNotebook.id}/pages/${activePage.id}/revisions`, {
+          fetch(`/api/notebooks/${notebookId}/pages/${pageId}/revisions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: cleanContent })
           }).catch(() => {});
         }
+        return { key: snapshotKey(pageContent, pageTags) };
+      } catch (e) {
+        const message = e instanceof TypeError ? 'Check your connection.' : (e as Error).message;
+        if (activePageIdRef.current === pageId) setSaveError({ content: pageContent, message });
+        if (manual) toast('Not saved', `${message} Your text is still here; try again.`, 'error');
+        return null;
+      } finally {
+        saveInFlightRef.current = null;
+        setSavingPage(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSavingPage(false);
-    }
+    })();
+    saveInFlightRef.current = run;
+    return run;
   };
 
   const isDirty = useMemo(() => {
@@ -662,6 +751,19 @@ export default function NotebookPage() {
     const hasTagsChanged = JSON.stringify([...tagsArr].sort()) !== JSON.stringify([...savedTags].sort());
     return hasContentChanged || hasTagsChanged;
   }, [activePage, pageContent, pageTags]);
+
+  useEffect(() => {
+    activePageIdRef.current = activePage?.id ?? null;
+  }, [activePage?.id]);
+
+  const isDirtyRef = useRef(false);
+  const pageContentRef = useRef(pageContent);
+  const pageTagsRef = useRef(pageTags);
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+    pageContentRef.current = pageContent;
+    pageTagsRef.current = pageTags;
+  }, [isDirty, pageContent, pageTags]);
 
   const handleSavePageRef = useRef(handleSavePage);
   useEffect(() => {
@@ -716,11 +818,13 @@ export default function NotebookPage() {
   // loses work.
   useEffect(() => {
     if (!isDirty || savingPage) return;
+    if (saveError && saveError.content === pageContent) return;
     const timer = window.setTimeout(() => {
       handleSavePageRef.current(false);
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [isDirty, savingPage, pageContent, pageTags]);
+  }, [isDirty, savingPage, pageContent, pageTags, saveError]);
+
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed(prev => {
@@ -771,6 +875,10 @@ export default function NotebookPage() {
     return map;
   }, [linkedRuns]);
 
+  // Rendered in a worker, so a slow or broken equation can never block
+  // typing (see src/lib/latex/useLatexPreview.ts).
+  const { html: previewHtml, problem: previewProblem } = useLatexPreview(previewContent, docAsPagesArray, activePage?.id ?? null, runsMap);
+
   const runItems: LatexAutocompleteItem[] = useMemo(
     () => linkedRuns.map((r) => ({ key: r.id, label: `${r.name} · ${r.status}` })),
     [linkedRuns]
@@ -791,16 +899,21 @@ export default function NotebookPage() {
     const cursor = editorRef.current?.getCursor() ?? autocomplete.cursor;
     let insertion: string;
     let caretOffsetInInsertion: number;
+    // A `}` already right after the caret (typed as `\begin{}` / `\cite{}`
+    // first, then filled in) is part of what's being completed, not left
+    // behind: replace through it. For \begin it used to be left over as a
+    // stray `}` after the inserted \end{...}.
+    const alreadyClosed = pageContent[cursor] === '}';
+    const replaceTo = alreadyClosed ? cursor + 1 : cursor;
     if (autocomplete.kind === 'begin') {
       const body = '\n  ';
       insertion = `${item.key}}${body}\n\\end{${item.key}}`;
       caretOffsetInInsertion = 1 + item.key.length + body.length;
     } else {
-      const alreadyClosed = pageContent[cursor] === '}';
-      insertion = item.key + (alreadyClosed ? '' : '}');
+      insertion = `${item.key}}`;
       caretOffsetInInsertion = insertion.length;
     }
-    editorRef.current?.replaceRange(autocomplete.queryStart, cursor, insertion, caretOffsetInInsertion);
+    editorRef.current?.replaceRange(autocomplete.queryStart, replaceTo, insertion, caretOffsetInInsertion);
     setAutocomplete(null);
   };
 
@@ -929,7 +1042,7 @@ export default function NotebookPage() {
   // not stored separately. Sections are plain text markers in the one
   // document, exactly as the writer types them.
   // ---------------------------------------------------------------------
-  const outline = useMemo<OutlineEntry[]>(() => computeOutline(pageContent), [pageContent]);
+  const outline = useMemo<OutlineEntry[]>(() => computeOutline(previewContent), [previewContent]);
 
   const filteredOutline = useMemo(() => {
     const q = outlineFilter.trim().toLowerCase();
@@ -1075,9 +1188,9 @@ export default function NotebookPage() {
     item.action();
   };
 
-  const equationsList = useMemo(() => computeEquationsList(pageContent), [pageContent]);
+  const equationsList = useMemo(() => computeEquationsList(previewContent), [previewContent]);
 
-  const referencesList = useMemo(() => computeReferencesList(pageContent), [pageContent]);
+  const referencesList = useMemo(() => computeReferencesList(previewContent), [previewContent]);
 
   const activeCol = getNotebookColor(activeNotebook);
 
@@ -1407,6 +1520,13 @@ export default function NotebookPage() {
                     <span className="inline-flex items-center gap-1 text-primary">
                       <RefreshCw className="w-3 h-3 animate-spin" /> Saving…
                     </span>
+                  ) : saveError && isDirty ? (
+                    <span className="inline-flex items-center gap-1.5 text-danger" role="status">
+                      <AlertTriangle className="w-3 h-3" /> Not saved: {saveError.message}
+                      <button type="button" onClick={() => handleSavePage(false)} className="font-semibold underline underline-offset-2 hover:text-foreground">
+                        Retry
+                      </button>
+                    </span>
                   ) : isDirty ? (
                     <span className="inline-flex items-center gap-1 text-warning">
                       <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" /> Unsaved changes
@@ -1491,24 +1611,40 @@ export default function NotebookPage() {
                       <span className="inline-flex h-8 items-center gap-1 px-2.5 text-[13px] font-medium text-primary">
                         <Check className="w-3.5 h-3.5" /> Reviewed
                       </span>
-                    ) : pageReviewStatus === 'READY' ? (
-                      <button
-                        onClick={() => setReview('NONE')}
-                        disabled={reviewBusy}
-                        className="h-8 px-2.5 text-[13px] font-medium rounded-[8px] text-ink-secondary hover:bg-surface-sunken hover:text-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                        title="Withdraw the review request"
-                      >
-                        Awaiting review · withdraw
-                      </button>
                     ) : (
-                      <button
-                        onClick={() => setReview('READY')}
-                        disabled={reviewBusy}
-                        className="h-8 px-2.5 text-[13px] font-medium rounded-[8px] text-ink-secondary hover:bg-surface-sunken hover:text-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                        title="Notify reviewers this document is ready"
-                      >
-                        Request review
-                      </button>
+                      <div className="relative">
+                        {pageReviewStatus === 'READY' && !(reviewRequestedFrom && !reviewRequestedFrom.eligible) ? (
+                          <button
+                            onClick={() => setReview('NONE')}
+                            disabled={reviewBusy}
+                            className="h-8 px-2.5 text-[13px] font-medium rounded-[8px] text-ink-secondary hover:bg-surface-sunken hover:text-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                            title="Withdraw the review request"
+                          >
+                            Awaiting {reviewRequestedFrom ? reviewRequestedFrom.name : 'review'} · withdraw
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setReviewPickerOpen(v => !v)}
+                            disabled={reviewBusy}
+                            aria-expanded={reviewPickerOpen}
+                            aria-haspopup="dialog"
+                            className={`h-8 px-2.5 text-[13px] font-medium rounded-[8px] transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
+                              pageReviewStatus === 'READY' ? 'text-warning hover:bg-warning-soft' : 'text-ink-secondary hover:bg-surface-sunken hover:text-foreground'
+                            }`}
+                            title={pageReviewStatus === 'READY' ? 'Your reviewer lost access - choose someone else' : 'Choose who should review this document'}
+                          >
+                            {pageReviewStatus === 'READY' ? 'Choose a new reviewer' : 'Ask for review'}
+                          </button>
+                        )}
+                        {reviewPickerOpen && activeNotebook && activePage && (
+                          <ReviewerPicker
+                            notebookId={activeNotebook.id}
+                            pageId={activePage.id}
+                            onSend={(r) => setReview('READY', r)}
+                            onClose={() => setReviewPickerOpen(false)}
+                          />
+                        )}
+                      </div>
                     )}
                     <button
                       onClick={() => setShowComments(v => !v)}
@@ -1834,9 +1970,14 @@ export default function NotebookPage() {
                             font-family: var(--font-mono), ui-monospace, monospace !important; font-size: .86em;
                           }
                         `}</style>
+                        {previewProblem && (
+                          <p role="status" className="not-prose mb-4 rounded-[8px] bg-warning-soft px-3 py-2 text-[12.5px] text-foreground">
+                            {previewProblem}
+                          </p>
+                        )}
                         <div
                           className="notebook-preview-styled"
-                          dangerouslySetInnerHTML={{ __html: parseMarkdownToHtml(pageContent, docAsPagesArray, activePage.id, false, runsMap) }}
+                          dangerouslySetInnerHTML={{ __html: previewHtml }}
                         />
                       </>
                     )}

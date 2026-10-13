@@ -6,8 +6,8 @@
  * to genuine Postgres with zero external services to install. Data persists
  * under `prisma/pglite-data/`.
  *
- *   npm run dev:db        # start it (keep running in a terminal)
- *   npm run dev           # in another terminal
+ *   npm run dev           # starts this automatically when it isn't running
+ *   npm run dev:db        # or run it on its own (keep it running in a terminal)
  *
  * The port comes from PGLITE_PORT, else from DATABASE_URL in .env, else 5432 -
  * so the database and the app can't silently disagree about where it is.
@@ -113,7 +113,12 @@ if (process.env.PGLITE_SKIP_MIGRATE !== '1') {
 
 console.log(`[dev-db] ready. Leave this running; start the app with \`npm run dev\`.`);
 
+let closing = false;
 const shutdown = async () => {
+  // Ctrl+C under `npm run dev` reaches this twice (the terminal and the
+  // parent both send SIGINT); closing pglite twice would throw.
+  if (closing) return;
+  closing = true;
   console.log('\n[dev-db] shutting down');
   await server.stop();
   await db.close();

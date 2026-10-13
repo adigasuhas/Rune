@@ -110,7 +110,7 @@ Each notebook is **one continuous LaTeX document**. You don't need to know LaTeX
 * **Commands:** press Ctrl+Shift+K (Cmd+Shift+K) to switch notebooks, jump to a section, or insert content.
 * **Export:** **Export** creates a PDF (see §14).
 
-**Comments and review.** Notebooks that belong to a project have **Comments** and **Request review**. Comments attach to text you select in the preview. For a notebook in a team project, **Request review** notifies the team owner and the team leaders who can edit that project. They can comment and mark the document reviewed. Only the notebook's owner can request a review. Personal notebooks don't have comments or review.
+**Comments and review.** Notebooks that belong to a project have **Comments** and **Ask for review**. Comments attach to text you select in the preview. For a notebook in a team project, **Ask for review** opens a searchable list of the people who can review it: the team owner and the team leaders who can edit that project. Pick one and only they are notified; they can comment and mark the document reviewed. If they later lose access, Rune tells you and lets you choose someone else. Only the notebook's owner can request a review. Personal notebooks don't have comments or review.
 
 ---
 

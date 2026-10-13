@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
         // The browser's zone, if it's one Intl recognises; otherwise the schema default (UTC).
         ...(isValidTimeZone(timezone) ? { timezone } : {}),
         lastLogin: new Date(),
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
+        // No stored avatar: everyone gets a default cartoon from their id (src/lib/avatars.ts).
       },
     });
 

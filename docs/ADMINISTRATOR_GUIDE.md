@@ -90,18 +90,13 @@ Rune runs entirely on PostgreSQL through Prisma (`prisma/schema.prisma`, `Prisma
 
 ### Local development
 
-There is no Postgres to install. In one terminal:
+There is no Postgres to install. Set `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres` in `.env`, then:
 
 ```bash
-npm run dev:db          # pglite Postgres on 127.0.0.1:5432, data in prisma/pglite-data/ (git-ignored)
-```
-
-Set `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres` in `.env`. In another terminal:
-
-```bash
-npm run db:migrate      # apply migrations (first run, and after updates)
 npm run dev
 ```
+
+If nothing is listening on that port, `npm run dev` starts the bundled pglite Postgres there (data in `prisma/pglite-data/`, git-ignored), applies pending migrations, and stops it cleanly on Ctrl+C. If something is already listening (your own Postgres, or `npm run dev:db` in another terminal), it's used as-is. Set `RUNE_DEV_DB=off` to never start it.
 
 pglite is real PostgreSQL compiled to WASM and speaks the wire protocol, so transactions, cascades, and constraints behave as they do in production. It accepts one connection at a time internally, so it is for development only.
 

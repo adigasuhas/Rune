@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { validateAvatarUrl } from '@/lib/avatars';
 
 export async function PUT(req: NextRequest) {
   const session = await getSessionUser();
@@ -9,11 +10,15 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { avatarUrl } = await req.json();
-    
+    const body = await req.json().catch(() => null);
+    // Only a known cartoon avatar or an uploaded photo (data: URL) - never an
+    // arbitrary URL that every viewer's browser would then fetch.
+    const checked = validateAvatarUrl(body?.avatarUrl);
+    if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+
     const updatedUser = await db.user.update({
       where: { id: session.userId },
-      data: { avatarUrl: avatarUrl || null }
+      data: { avatarUrl: checked.value }
     });
 
     // Strip sensitive columns before returning

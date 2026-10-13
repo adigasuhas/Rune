@@ -17,7 +17,9 @@ export async function GET() {
 
   const notebooks = await db.notebook.findMany({ where: { projectId: { not: null } } });
   const relevant = (notebooks as any[]).filter(
-    nb => nb.userId !== session.userId && nb.page?.reviewStatus === 'READY'
+    nb => nb.userId !== session.userId && nb.page?.reviewStatus === 'READY' &&
+      // Sent to someone in particular: it's in their queue, not everyone's.
+      (!nb.page.reviewRequestedFromId || nb.page.reviewRequestedFromId === session.userId)
   );
   if (relevant.length === 0) return NextResponse.json([]);
 

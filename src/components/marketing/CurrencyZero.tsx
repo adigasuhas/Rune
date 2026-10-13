@@ -27,7 +27,11 @@ export function CurrencyZero({ className = '' }: { className?: string }) {
   return (
     <span className={`inline-flex items-baseline ${className}`}>
       <span className="sr-only">Free, in any currency</span>
-      <span aria-hidden="true" className="relative inline-grid overflow-hidden pr-[0.04em] text-ink-secondary [&>*]:col-start-1 [&>*]:row-start-1 [&>*]:justify-self-end">
+      {/* The clip box masks the slide, so it has to be tall enough for the
+          tallest symbol: its own 1.25 line height (the price is set at a
+          tight 0.85, which cropped the tops of ₹, ₩ and ₦), pulled back by
+          -0.2em margins so it takes the same room in the line as the zero. */}
+      <span aria-hidden="true" className="relative -my-[0.2em] inline-grid overflow-hidden pr-[0.04em] leading-[1.25] text-ink-secondary [&>*]:col-start-1 [&>*]:row-start-1 [&>*]:justify-self-end">
         {ticked && <span key={`o${i}`} className="cur-out">{CURRENCIES[prev]}</span>}
         <span key={`i${i}`} className={ticked ? 'cur-in' : undefined}>{CURRENCIES[i]}</span>
       </span>

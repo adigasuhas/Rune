@@ -2590,7 +2590,7 @@ function DashboardPage() {
               right={<Link href="/analytics#activity" className="text-[12.5px] text-ink-secondary hover:text-foreground">Full year →</Link>}
             />
             <div className="pt-3">
-              <ActivityGraph compact tasks={tasks as any} events={events as any} timezone={userTimezone} today={getCurrentDateInTimezone(userTimezone)} footer={<span />} />
+              <ActivityGraph compact tasks={tasks as any} events={events as any} timezone={userTimezone} today={getCurrentDateInTimezone(userTimezone)} memberSince={user?.memberSince} footer={<span />} />
             </div>
           </div>
 

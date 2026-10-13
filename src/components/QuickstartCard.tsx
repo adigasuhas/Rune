@@ -18,8 +18,7 @@ const TABS: { id: string; label: string; lines: { cmd: string; note?: string }[]
       { cmd: 'cd Rune' },
       { cmd: 'npm install' },
       { cmd: 'npm run setup', note: 'answers a few questions, writes .env' },
-      { cmd: 'npm run dev:db', note: 'terminal 1: local Postgres' },
-      { cmd: 'npm run dev', note: 'terminal 2: http://localhost:3000' },
+      { cmd: 'npm run dev', note: 'starts the database too: http://localhost:3000' },
     ],
   },
   {

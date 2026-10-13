@@ -575,8 +575,7 @@ function finish(cfg, envFile) {
 
   if (cfg.target === 'local') {
     if (cfg.dbMode === 'bundled') {
-      say('  1. In one terminal:   npm run dev:db' + (cfg.dbPort !== 5432 ? dim(`   (uses port ${cfg.dbPort} from your config)`) : ''));
-      say('  2. In another:        npm run dev');
+      say('  1. npm run dev' + dim(`   (starts the local database on port ${cfg.dbPort} too)`));
     } else {
       say('  1. npm run dev');
     }

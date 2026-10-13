@@ -26,6 +26,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const authorIds = Array.from(new Set(comments.map((c: any) => c.authorId as string)));
   const authors = authorIds.length ? await db.user.findMany({ where: { id: { in: authorIds } } }) : [];
   const nameById = new Map(authors.map((u: any) => [u.id as string, (u.name || u.email) as string]));
+  const avatarById = new Map(authors.map((u: any) => [u.id as string, (u.avatarUrl ?? null) as string | null]));
 
   const result = comments
     .map((c: any) => ({
@@ -35,6 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       resolved: c.resolved,
       authorId: c.authorId,
       authorName: nameById.get(c.authorId) || 'Someone',
+      authorAvatarUrl: avatarById.get(c.authorId) ?? null,
       isMine: c.authorId === session.userId,
       createdAt: c.createdAt
     }))
@@ -85,7 +87,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   }
 
-  return NextResponse.json({ id: comment.id, body, anchorQuote, resolved: false, authorId: session.userId, authorName: actorName, isMine: true, createdAt: comment.createdAt }, { status: 201 });
+  return NextResponse.json({ id: comment.id, body, anchorQuote, resolved: false, authorId: session.userId, authorName: actorName, authorAvatarUrl: actor?.avatarUrl ?? null, isMine: true, createdAt: comment.createdAt }, { status: 201 });
 }
 
 export const dynamic = 'force-dynamic';

@@ -72,7 +72,6 @@ export async function ensureDeveloperAccount(): Promise<void> {
         passwordHash: hashPassword(password),
         role: 'DEVELOPER',
         isOnboarded: true,
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(DEVELOPER_EMAIL)}`,
       },
     });
     console.log(`[devAccount] Created the built-in developer account (${DEVELOPER_EMAIL}). Change its password after first sign-in.`);

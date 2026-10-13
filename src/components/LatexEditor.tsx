@@ -205,6 +205,10 @@ export const LatexEditor = forwardRef<LatexEditorHandle, LatexEditorProps>(funct
         autoSurround: 'never',
       });
       editorRef.current = editor;
+      // Always \n. Monaco picks the platform's line ending for an empty
+      // document, so on Windows a new note was saved with \r\n - which the
+      // LaTeX parser's patterns don't expect.
+      editor.getModel()?.setEOL(monaco.editor.EndOfLineSequence.LF);
       setIsEmpty(!value);
 
       disposables.push(editor.onDidChangeModelContent(() => {
@@ -250,11 +254,21 @@ export const LatexEditor = forwardRef<LatexEditorHandle, LatexEditorProps>(funct
         Home: 'cursorHome',
         End: 'cursorEnd',
       };
+      // If the popover didn't actually take the key (the context key can
+      // lag a render behind the popover closing), the key does what it
+      // normally does - Enter must never just vanish.
+      const ifNotConsumed: Partial<Record<SpecialKey, () => void>> = {
+        Enter: () => editor!.trigger('keyboard', 'type', { text: '\n' }),
+        Tab: () => editor!.trigger('keyboard', 'tab', null),
+        ArrowUp: () => editor!.trigger('keyboard', 'cursorUp', null),
+        ArrowDown: () => editor!.trigger('keyboard', 'cursorDown', null),
+      };
       for (const [keyCode, name] of specialKeys) {
         editor.addCommand(keyCode, () => {
-          onSpecialKeyRef.current(name);
+          const consumed = onSpecialKeyRef.current(name);
           const fallThrough = fallThroughCommand[name];
           if (fallThrough) editor!.trigger('keyboard', fallThrough, null);
+          else if (!consumed) ifNotConsumed[name]?.();
         }, 'runeAutocompleteOpen');
       }
 
@@ -300,6 +314,8 @@ export const LatexEditor = forwardRef<LatexEditorHandle, LatexEditorProps>(funct
     const current = editor.getValue();
     if (current === value) return;
     editor.setValue(value);
+    // setValue re-detects the line ending from the new text (platform default if it has none).
+    if (monacoRef.current) editor.getModel()?.setEOL(monacoRef.current.editor.EndOfLineSequence.LF);
     setIsEmpty(!value);
   }, [value]);
 

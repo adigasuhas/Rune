@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { dailyActivity, dayOfWeek, formatHours, LEVEL_BOUNDS, rangeStart, summarize, type DayActivity } from '@/lib/activity';
+import { dailyActivity, dayOfWeek, firstActiveDay, formatHours, LEVEL_BOUNDS, mondayOf, rangeStart, recentWeeksStart, RECENT_WEEKS_DEFAULT, summarize, type DayActivity } from '@/lib/activity';
+
+function addDaysYmd(ymd: string, n: number): string {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 /**
  * Rune's year of work, one cell per day, shaded by time worked.
@@ -41,6 +47,7 @@ export function ActivityGraph({
   today,
   compact = false,
   footer,
+  memberSince,
 }: {
   tasks: AnyTask[];
   events: AnyEvent[];
@@ -48,6 +55,8 @@ export function ActivityGraph({
   today: string; // YYYY-MM-DD in the user's zone
   compact?: boolean;
   footer?: React.ReactNode;
+  /** The day the account was created (YYYY-MM-DD) - compact mode never starts before it. */
+  memberSince?: string | null;
 }) {
   // Periods: the last 12 months, plus every calendar year that has any data.
   const years = useMemo(() => {
@@ -71,14 +80,23 @@ export function ActivityGraph({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const fitWeeks = boxW ? Math.max(8, Math.floor((boxW - LABEL_W + GAP) / (MIN_CELL + GAP))) : compact ? 20 : 53;
-  const wantWeeks = compact ? 26 : 53;
+  const fitWeeks = boxW ? Math.max(4, Math.floor((boxW - LABEL_W + GAP) / (MIN_CELL + GAP))) : compact ? RECENT_WEEKS_DEFAULT : 53;
+  // Compact (Today): an adaptive range - see recentWeeksStart.
+  const compactStart = useMemo(
+    () => (compact ? recentWeeksStart({ today, memberSince, firstActivity: firstActiveDay(tasks, events, timezone, today) }) : null),
+    [compact, today, memberSince, tasks, events, timezone]
+  );
+  const wantWeeks = compactStart ? Math.floor((Date.parse(`${mondayOf(today)}T12:00:00Z`) - Date.parse(`${compactStart}T12:00:00Z`)) / 604_800_000) + 1 : 53;
   const shownWeeks = Math.min(wantWeeks, fitWeeks);
 
   const { days } = useMemo(() => {
     let end = today;
     let start: string;
-    if (compact || period === 'last') start = rangeStart(today, shownWeeks);
+    if (compactStart) {
+      // The adaptive start, or as many recent weeks as fit on a narrow screen.
+      const fitStart = addDaysYmd(mondayOf(today), -7 * (shownWeeks - 1));
+      start = fitStart > compactStart ? fitStart : compactStart;
+    } else if (compact || period === 'last') start = rangeStart(today, shownWeeks);
     else {
       end = period === today.slice(0, 4) ? today : `${period}-12-31`;
       const yearStart = rangeStart(`${period}-01-07`, 1); // the Monday on or before 1 January
@@ -86,7 +104,7 @@ export function ActivityGraph({
       start = fitStart > yearStart ? fitStart : yearStart;
     }
     return { days: dailyActivity(tasks, events, timezone, start, end) };
-  }, [tasks, events, timezone, today, period, shownWeeks, compact]);
+  }, [tasks, events, timezone, today, period, shownWeeks, compact, compactStart]);
 
   const summary = useMemo(() => summarize(days.filter((d) => period === 'last' || compact || d.date.startsWith(period))), [days, period, compact]);
 
@@ -195,6 +213,9 @@ export function ActivityGraph({
         </div>
       </div>
 
+      {compact && summary.totalHours === 0 && (
+        <p className="mt-2 text-[12.5px] text-ink-secondary">Nothing tracked yet. These weeks fill in as you complete tasks and calendar blocks.</p>
+      )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-[12px] text-ink-faint">
         {footer ?? <span>{trimmed ? `The last ${shownWeeks} weeks fit here; widen the window for the full year. ` : ''}Time from completed calendar blocks and timed tasks.</span>}
         <span className="flex items-center gap-1.5" aria-hidden="true">

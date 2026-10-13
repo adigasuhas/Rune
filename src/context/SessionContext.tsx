@@ -16,6 +16,7 @@ interface User {
   showCreateFirstUser?: boolean;
   theme?: 'dark' | 'light' | 'system';
   timezone?: string;
+  memberSince?: string | null;
 }
 
 interface LoginOptions {

@@ -12,7 +12,7 @@ export default function GettingStartedPage() {
 
       <H2>Requirements</H2>
       <UL>
-        <li><DocLink href="https://nodejs.org">Node.js</DocLink> 20.9 or later.</li>
+        <li><DocLink href="https://nodejs.org">Node.js</DocLink> 22.12 or later.</li>
         <li>PostgreSQL - Rune&rsquo;s only datastore. For local development, a zero-install Postgres is started for you (below).</li>
       </UL>
 
@@ -29,8 +29,9 @@ export default function GettingStartedPage() {
       <OL>
         <li>Copy <Code>.env.example</Code> to <Code>.env</Code>.</li>
         <li>
-          Set <Code>DATABASE_URL</Code> (a Postgres connection string - <Code>npm run dev:db</Code> starts a
-          zero-install local one and prints the URL to use).
+          Set <Code>DATABASE_URL</Code> (a Postgres connection string - for local development use
+          <Code>postgresql://postgres:postgres@127.0.0.1:5432/postgres</Code> and <Code>npm run dev</Code> starts a
+          zero-install Postgres there for you).
         </li>
         <li>
           Set <Code>JWT_SECRET</Code> - required even in development. Without it, sign-in fails. Generate one with{' '}

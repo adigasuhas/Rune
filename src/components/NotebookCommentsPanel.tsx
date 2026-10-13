@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Check, Trash2, CornerDownLeft } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
+import { UserAvatar } from '@/components/UserAvatar';
 
 export interface NotebookComment {
   id: string;
@@ -11,6 +12,7 @@ export interface NotebookComment {
   resolved: boolean;
   authorId: string;
   authorName: string;
+  authorAvatarUrl?: string | null;
   isMine: boolean;
   createdAt: string;
 }
@@ -134,7 +136,10 @@ export function NotebookCommentsPanel({
               )}
               <p className="text-foreground whitespace-pre-wrap leading-relaxed">{c.body}</p>
               <div className="flex items-center justify-between mt-1.5">
-                <span className="text-[10px] text-ink-faint font-mono">{c.authorName} · {ago(c.createdAt)}</span>
+                <span className="flex items-center gap-1.5 text-[10px] text-ink-faint font-mono">
+                  <UserAvatar person={{ id: c.authorId, name: c.authorName, avatarUrl: c.authorAvatarUrl }} size={18} />
+                  {c.authorName} · {ago(c.createdAt)}
+                </span>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setResolved(c, !c.resolved)}

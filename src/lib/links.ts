@@ -15,3 +15,13 @@ export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/adigasuhas';
  * once the licence is settled.
  */
 export const LICENSE_SUMMARY = 'Free to use. The source lives on GitHub; see its LICENSE file for the terms.';
+
+/**
+ * Where the public pages' sign-up buttons go and what they say. This is one
+ * of two files that differ in the standalone marketing site (landing_page/,
+ * which has no accounts): its copy points these at the self-hosting guide
+ * and hides "Sign in". Everything else is shared - see
+ * landing_page/scripts/sync-from-app.mjs.
+ */
+export const SIGNUP = { href: '/login?mode=signup', label: 'Create a free account', short: 'Get started' } as const;
+export const SHOW_SIGN_IN = true;

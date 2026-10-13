@@ -71,11 +71,11 @@ npm run db:migrate            # = prisma migrate deploy
 
 Run this on every deploy, **before** the new server starts. It is safe to run repeatedly.
 
-**Local development** needs no Postgres install. `npm run dev:db` starts one
-(pglite, Postgres compiled to WASM) on `127.0.0.1:5432` with data under
-`prisma/pglite-data/`. Keep it running in its own terminal, set
-`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres`, and
-apply migrations with `npm run db:migrate`. Use the same command after pulling updates.
+**Local development** needs no Postgres install. Set
+`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres` and run
+`npm run dev`: when nothing is listening on that port it starts a local one
+(pglite, Postgres compiled to WASM) with data under `prisma/pglite-data/`, and
+applies pending migrations on start. `npm run dev:db` runs it on its own.
 
 To create a new migration after changing the schema, use `db:migrate:dev`. It needs a separate throwaway Postgres for its shadow database, and it doesn't work against `npm run dev:db`:
 

@@ -5,7 +5,7 @@ import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { CoffeeNote } from '@/components/marketing/CoffeeNote';
 import { CurrencyZero } from '@/components/marketing/CurrencyZero';
 import { GithubIcon } from '@/components/icons/GithubIcon';
-import { GITHUB_REPO_URL, LICENSE_SUMMARY } from '@/lib/links';
+import { GITHUB_REPO_URL, LICENSE_SUMMARY, SIGNUP } from '@/lib/links';
 
 export const metadata: Metadata = {
   title: 'Pricing',
@@ -68,7 +68,7 @@ export default function PricingPage() {
                 </ul>
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-x-6 gap-y-4 pt-9">
-                <Link href="/login?mode=signup" className="btn btn-primary">Create a free account</Link>
+                <Link href={SIGNUP.href} className="btn btn-primary">{SIGNUP.label}</Link>
                 <a href={GITHUB_REPO_URL} target="_blank" rel="noopener noreferrer" className="link-arrow text-[15px]">
                   <GithubIcon className="h-4 w-4" /> Download from GitHub
                 </a>

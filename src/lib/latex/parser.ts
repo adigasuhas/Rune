@@ -210,9 +210,20 @@ export function parseLatex(source: string): LatexNode[] {
     while (index < tokens.length) {
       const token = peek();
       if (!token) break;
+      const startIndex = index;
 
       if (endCond && endCond(token)) {
         break;
+      }
+
+      // A closing brace with no group open (a typo, or one left behind by an
+      // edit) is just a character. It used to stop the text loop below
+      // without being consumed, so this loop spun on it forever and froze
+      // the whole notebook tab the moment one was typed.
+      if (token.type === 'rbrace') {
+        next();
+        nodes.push({ type: 'text', content: '}' });
+        continue;
       }
 
       if (token.type === 'math_delimiter') {
@@ -376,6 +387,14 @@ export function parseLatex(source: string): LatexNode[] {
       if (textVal) {
         nodes.push({ type: 'text', content: textVal });
       }
+
+      // Every pass must consume at least one token. Anything that didn't
+      // (a token type no branch above handles) becomes literal text, so no
+      // input - however malformed - can stall the parser.
+      if (index === startIndex) {
+        const stuck = next();
+        if (stuck) nodes.push({ type: 'text', content: tokenText(stuck) });
+      }
     }
 
     return nodes;
@@ -447,4 +466,18 @@ export function parseLatex(source: string): LatexNode[] {
   }
 
   return parseNodes();
+}
+
+/** The source text a token stands for - used when a token has to be kept as plain text. */
+function tokenText(t: Token): string {
+  switch (t.type) {
+    case 'backslash': return '\\';
+    case 'lbrace': return '{';
+    case 'rbrace': return '}';
+    case 'lbracket': return '[';
+    case 'rbracket': return ']';
+    case 'math_delimiter': return t.display ? `$$${t.content}$$` : `$${t.content}$`;
+    case 'comment': return '';
+    case 'whitespace': case 'word': case 'char': return t.value;
+  }
 }

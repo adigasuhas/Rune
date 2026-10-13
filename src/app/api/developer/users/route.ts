@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         timezone: timezone || 'UTC',
         role: role || 'USER',
         status: 'ACTIVE',
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+        // No stored avatar: everyone gets a default cartoon from their id (src/lib/avatars.ts).
       },
     });
     recordAudit({ actorId: admin.userId, actorEmail: admin.email, action: 'user.create', targetId: newUser.id, targetEmail: normalizedEmail, detail: { role: newUser.role } });

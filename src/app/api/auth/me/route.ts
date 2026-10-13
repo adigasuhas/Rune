@@ -3,6 +3,7 @@ import { cookies, headers } from 'next/headers';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { isAdminUser } from '@/lib/admin';
+import { getLocalDateString } from '@/lib/dateUtils';
 
 /** True when the request carries a session cookie or an Authorization header. */
 async function sentCredentials(): Promise<boolean> {
@@ -71,7 +72,18 @@ export async function GET() {
       hasTeam,
       hasPassword: !!user.passwordHash,
       hasRecovery: !!user.recoveryAnswerHash,
+      // A date, not a timestamp: Today's activity graph never starts before it.
+      memberSince: user.createdAt ? memberSinceDate(user.createdAt, user.timezone) : null,
     },
   });
 }
 export const dynamic = 'force-dynamic';
+
+/** The account's creation day in the user's own zone (UTC if the zone is unusable). */
+function memberSinceDate(createdAt: Date | string, timezone?: string | null): string {
+  try {
+    return getLocalDateString(createdAt, timezone || 'UTC');
+  } catch {
+    return new Date(createdAt).toISOString().slice(0, 10);
+  }
+}

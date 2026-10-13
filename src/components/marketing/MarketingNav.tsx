@@ -5,20 +5,21 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Logo } from '@/components/Logo';
 import { GithubIcon } from '@/components/icons/GithubIcon';
-import { GITHUB_REPO_URL } from '@/lib/links';
-import { useSession } from '@/context/SessionContext';
+import { GITHUB_REPO_URL, SHOW_SIGN_IN, SIGNUP } from '@/lib/links';
+import { useSiteUser } from './siteUser';
 import { ThemeToggle } from './ThemeToggle';
 
 /**
  * Top bar for every public page (landing, features, pricing, docs). One
  * component so links never drift between pages; the active link comes from
  * the real route. A signed-in visitor sees "Open Rune" instead of the
- * sign-in/sign-up pair.
+ * sign-in/sign-up pair; on the standalone marketing site there is no sign-in
+ * at all (see SIGNUP / SHOW_SIGN_IN in src/lib/links.ts).
  */
 const NAV_LINKS = [
   { href: '/features', label: 'Features' },
-  { href: '/docs', label: 'Docs' },
   { href: '/pricing', label: 'Pricing' },
+  { href: '/docs', label: 'Docs' },
 ];
 
 function isActivePath(pathname: string | null, href: string): boolean {
@@ -27,7 +28,7 @@ function isActivePath(pathname: string | null, href: string): boolean {
 
 export function MarketingNav() {
   const pathname = usePathname();
-  const { user } = useSession();
+  const user = useSiteUser();
   // Keyed by the path it was opened on, so navigating closes it without an effect.
   const [openOn, setOpenOn] = useState<string | null>(null);
   const open = openOn !== null && openOn === pathname;
@@ -89,10 +90,12 @@ export function MarketingNav() {
             <Link href="/" className="btn btn-primary btn-sm">Open Rune</Link>
           ) : (
             <>
-              <Link href="/login" className="rounded-[9px] px-3 py-2 text-[14.5px] font-medium text-foreground transition-colors hover:bg-surface-raised">
-                Sign in
-              </Link>
-              <Link href="/login?mode=signup" className="btn btn-primary btn-sm ml-1">Get started</Link>
+              {SHOW_SIGN_IN && (
+                <Link href="/login" className="rounded-[9px] px-3 py-2 text-[14.5px] font-medium text-foreground transition-colors hover:bg-surface-raised">
+                  Sign in
+                </Link>
+              )}
+              <Link href={SIGNUP.href} className="btn btn-primary btn-sm ml-1">{SIGNUP.short}</Link>
             </>
           )}
         </div>
@@ -135,8 +138,8 @@ export function MarketingNav() {
                 <Link href="/" className="btn btn-primary col-span-2">Open Rune</Link>
               ) : (
                 <>
-                  <Link href="/login" className="btn btn-secondary">Sign in</Link>
-                  <Link href="/login?mode=signup" className="btn btn-primary">Get started</Link>
+                  {SHOW_SIGN_IN && <Link href="/login" className="btn btn-secondary">Sign in</Link>}
+                  <Link href={SIGNUP.href} className={`btn btn-primary ${SHOW_SIGN_IN ? '' : 'col-span-2'}`}>{SIGNUP.short}</Link>
                 </>
               )}
             </div>

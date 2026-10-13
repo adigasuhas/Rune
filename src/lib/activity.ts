@@ -76,6 +76,72 @@ export function rangeStart(end: string, weeks: number): string {
   return addDays(back, -((dow + 6) % 7));
 }
 
+/** The Monday on or before `ymd`. */
+export function mondayOf(ymd: string): string {
+  return addDays(ymd, -((dayOfWeek(ymd) + 6) % 7));
+}
+
+/** Today's "Recent weeks" span: about two months for an established account, never more. */
+export const RECENT_WEEKS_DEFAULT = 8;
+/** ...and about one month when activity has only just begun. */
+export const RECENT_WEEKS_COMPACT = 4;
+
+/**
+ * Where Today's "Recent weeks" graph starts (a Monday). It used to always
+ * show 26 weeks, which for most people was months of empty squares:
+ *
+ *  - Established history: the last ~2 months. Older weeks are one click
+ *    away in Analytics; the default never grows just because data exists.
+ *  - Activity that only began recently (a new account, or an old account
+ *    that's only now being used): from the first active week, but at least
+ *    the last ~month so the graph isn't a sliver.
+ *  - No activity at all: the last ~month.
+ *
+ * And never before the week the account was created, so a new account
+ * doesn't show weeks from before it existed.
+ */
+export function recentWeeksStart({
+  today,
+  memberSince,
+  firstActivity,
+}: {
+  today: string;
+  memberSince?: string | null;
+  firstActivity?: string | null;
+}): string {
+  // N whole weeks ending with this one.
+  const established = addDays(mondayOf(today), -7 * (RECENT_WEEKS_DEFAULT - 1));
+  const compact = addDays(mondayOf(today), -7 * (RECENT_WEEKS_COMPACT - 1));
+  let start: string;
+  if (!firstActivity || firstActivity > today) start = compact;
+  else if (firstActivity >= established) start = mondayOf(firstActivity) < compact ? mondayOf(firstActivity) : compact;
+  else start = established;
+  if (memberSince && memberSince <= today && mondayOf(memberSince) > start) start = mondayOf(memberSince);
+  return start;
+}
+
+/**
+ * The first day (YYYY-MM-DD, user's zone) with real activity - a completed
+ * task or a calendar block that has started - on or before `today`. Account
+ * creation isn't activity: people often sign up long before they use Rune.
+ */
+export function firstActiveDay(
+  tasks: Array<{ date: string | Date; status?: string }>,
+  events: Array<{ start: string | Date }>,
+  timezone: string,
+  today: string,
+): string | null {
+  let first: string | null = null;
+  const consider = (when: string | Date) => {
+    let d: string;
+    try { d = getLocalDateString(when, timezone); } catch { return; }
+    if (d <= today && (!first || d < first)) first = d;
+  };
+  for (const t of tasks || []) if (t.status === 'COMPLETED') consider(t.date);
+  for (const e of events || []) consider(e.start);
+  return first;
+}
+
 export function formatHours(h: number): string {
   const mins = Math.round(h * 60);
   if (mins <= 0) return '0m';

@@ -6,6 +6,7 @@ import { useSession } from '@/context/SessionContext';
 import { Logo } from '@/components/Logo';
 import { Modal } from '@/components/Modal';
 import { TimezonePicker } from '@/components/TimezonePicker';
+import { AvatarPicker } from '@/components/avatars/AvatarPicker';
 import {
   Calendar,
   Briefcase,
@@ -252,6 +253,11 @@ function OnboardingWizard() {
                   placeholder="Your name"
                   className="w-full bg-surface border border-border-strong rounded-md px-3 py-2 text-foreground placeholder-ink-faint text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-ring/25 transition-colors"
                 />
+              </div>
+
+              <div className="text-left">
+                <p className="text-[11.5px] font-semibold text-ink-faint mb-1.5">Pick a face <span className="font-normal">(optional, change it any time in Settings)</span></p>
+                <AvatarPicker size={44} />
               </div>
             </div>
           )}

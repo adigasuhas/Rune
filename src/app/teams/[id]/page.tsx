@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { UserAvatar } from '@/components/UserAvatar';
 import {
   Users, ArrowLeft, Plus, Copy, Trash2, Crown, ShieldCheck, LogOut,
   Pencil, Check, X as XIcon, Link2, FolderGit2, Loader2, Settings2, MessageSquare
@@ -117,12 +118,7 @@ function HierarchyNode({ person, onClick, clickable, highlight }: { person: Memb
         highlight ? 'bg-primary-soft border-primary/40' : 'bg-surface-raised border-border-strong'
       } ${clickable ? 'hover:border-primary/60 hover:shadow-md cursor-pointer' : 'cursor-default'}`}
     >
-      {person.avatarUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={person.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
-      ) : (
-        <div className="w-10 h-10 rounded-full bg-surface-sunken" />
-      )}
+      <UserAvatar person={{ id: person.userId, name: person.name, email: person.email, avatarUrl: person.avatarUrl }} size={40} />
       <div className="text-center">
         <p className="text-xs font-bold text-foreground max-w-[8rem] truncate">{memberLabel(person)}</p>
         <span className={`text-[11.5px] font-semibold ${ROLE_BADGE_CLASS[person.role]} px-1.5 py-0.5 rounded-full`}>
@@ -633,12 +629,11 @@ export default function TeamDetailPage({ params }: PageProps) {
                 disabled={!clickable}
                 className={`flex items-center gap-3 min-w-0 text-left ${clickable ? 'cursor-pointer group' : 'cursor-default'}`}
               >
-                {m.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.avatarUrl} alt="" className={`w-8 h-8 rounded-full shrink-0 ${clickable ? 'group-hover:ring-2 group-hover:ring-primary/40' : ''}`} />
-                ) : (
-                  <div className={`w-8 h-8 rounded-full bg-surface-sunken shrink-0 ${clickable ? 'group-hover:ring-2 group-hover:ring-primary/40' : ''}`} />
-                )}
+                <UserAvatar
+                  person={{ id: m.userId, name: m.name, email: m.email, avatarUrl: m.avatarUrl }}
+                  size={32}
+                  className={clickable ? 'group-hover:ring-2 group-hover:ring-primary/40' : ''}
+                />
                 <div className="min-w-0">
                   <p className={`text-sm font-semibold truncate ${clickable ? 'text-foreground group-hover:text-primary' : 'text-foreground'}`}>
                     {memberLabel(m)} {m.userId === user?.id && <span className="text-muted-foreground font-normal">(you)</span>}
@@ -1101,12 +1096,7 @@ export default function TeamDetailPage({ params }: PageProps) {
           ) : summary ? (
             <div className="space-y-5">
               <div className="flex items-center gap-3">
-                {summary.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={summary.avatarUrl} alt="" className="w-12 h-12 rounded-full shrink-0" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-surface-sunken shrink-0" />
-                )}
+                <UserAvatar person={{ id: summary.userId, name: summary.name, email: summary.email, avatarUrl: summary.avatarUrl }} size={48} />
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-foreground truncate">{summary.name || summary.email}</p>
                   <p className="text-xs text-muted-foreground truncate">{summary.email}</p>

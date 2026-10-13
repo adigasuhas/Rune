@@ -6,8 +6,8 @@ import { BUY_ME_A_COFFEE_URL, GITHUB_REPO_URL } from '@/lib/links';
 export function MarketingFooter() {
   const links: { label: string; href: string; external?: boolean }[] = [
     { label: 'Features', href: '/features' },
-    { label: 'Docs', href: '/docs' },
     { label: 'Pricing', href: '/pricing' },
+    { label: 'Docs', href: '/docs' },
     { label: 'GitHub', href: GITHUB_REPO_URL, external: true },
     { label: 'Report an issue', href: `${GITHUB_REPO_URL}/issues`, external: true },
     { label: 'Buy me a coffee', href: BUY_ME_A_COFFEE_URL, external: true },

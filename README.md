@@ -60,7 +60,7 @@ It's a single Next.js app backed by Postgres. You can run it on your laptop, a l
 
 ## Running it locally
 
-You need **Node.js 22.12 or newer**. 24 is what I use, and `.nvmrc` pins it, so `nvm use` works. You don't need Postgres installed: `npm run dev:db` starts one for you.
+You need **Node.js 22.12 or newer**. 24 is what I use, and `.nvmrc` pins it, so `nvm use` works. You don't need Postgres installed: Rune starts its own for local development.
 
 ```bash
 git clone https://github.com/adigasuhas/Rune.git
@@ -71,19 +71,17 @@ npm run setup
 
 `npm run setup` asks a few questions (where Rune will run, the port, who's allowed to sign up), writes a `.env` file, creates the database tables and creates your first admin account. Run it again any time to change things. It keeps your existing secrets.
 
-Then start two terminals:
+Then start it:
 
 ```bash
-# terminal 1: the local database, leave it running
-npm run dev:db
-
-# terminal 2: the app
 npm run dev
 ```
 
 Open http://localhost:3000 and sign in with the account you just made.
 
-If port 5432 is already taken on your machine, put a different port in `DATABASE_URL`, e.g. `postgresql://postgres:postgres@127.0.0.1:5433/postgres`. `dev:db` will use it.
+`npm run dev` also starts the local database (and applies any new migrations) if it isn't already running, and stops it cleanly when you press Ctrl+C. If you'd rather keep the database running in its own terminal, `npm run dev:db` still works, and `npm run dev` will use it.
+
+If port 5432 is already taken on your machine (say, by another project's Postgres), Rune would end up talking to the wrong database. Put a different port in `DATABASE_URL` instead, e.g. `postgresql://postgres:postgres@127.0.0.1:5433/postgres`.
 
 ### Setting it up by hand
 
@@ -125,7 +123,7 @@ npm run lint
 npm run test:e2e     # Playwright end-to-end + accessibility checks
 ```
 
-The end-to-end tests need the database running (`npm run dev:db`). They'll reuse a dev server that's already up on port 3000, or start one themselves. Point them somewhere else with `PLAYWRIGHT_BASE_URL`. They create their own throwaway accounts, but don't run them against a database you care about.
+The end-to-end tests reuse a dev server that's already up on port 3000, or start one (and its database) themselves. Point them somewhere else with `PLAYWRIGHT_BASE_URL`. They create their own throwaway accounts, but don't run them against a database you care about.
 
 CI runs all of this on every push, plus `npm audit` on the production dependencies. See `.github/workflows/ci.yml`.
 

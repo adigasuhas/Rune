@@ -1,4 +1,4 @@
-import katex from 'katex';
+import { renderMathCached } from './katexCache';
 import { parseLatex, LatexNode } from './parser';
 import { buildLabelMap, LabelMap } from './crossref';
 import { renderEnvironment } from './environments';
@@ -58,7 +58,7 @@ export function parseLatexToHtml(
       } else if (node.type === 'math') {
         // Raw math equations rendered by KaTeX
         try {
-          const rendered = katex.renderToString(node.content, {
+          const rendered = renderMathCached(node.content, {
             displayMode: node.display,
             throwOnError: false
           });

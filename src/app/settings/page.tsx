@@ -30,6 +30,8 @@ import { Modal } from '@/components/Modal';
 import { TimezonePicker } from '@/components/TimezonePicker';
 import { ApiTokensPanel } from '@/components/ApiTokensPanel';
 import { PageHeader } from '@/components/ui';
+import { UserAvatar } from '@/components/UserAvatar';
+import { AvatarPicker } from '@/components/avatars/AvatarPicker';
 
 /** Looks up a field's canonical label/description from the single source of truth. */
 function fieldMeta(key: string): { label: string; description: string } {
@@ -817,39 +819,28 @@ export default function SettingsPage() {
             {activeSection === 'general' && (
               <div className="space-y-6">
                 <div className="flex flex-col md:flex-row gap-6 items-start">
-                  {/* Avatar Upload block */}
-                  <div className="flex items-center gap-4 bg-surface-sunken/40 border border-border p-4 rounded-md w-full md:w-auto shrink-0 justify-center">
-                    <div className="relative group w-16 h-16 shrink-0">
-                      {user?.avatarUrl && !user.avatarUrl.includes('dicebear.com') ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img 
-                          src={user.avatarUrl} 
-                          alt={user.name || 'User'} 
-                          className="w-16 h-16 rounded-md object-cover border border-border-strong"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-md bg-surface-raised border border-border-strong text-muted-foreground flex items-center justify-center text-xl font-extrabold font-display">
-                          {user?.name?.[0] || 'U'}
-                        </div>
-                      )}
-                      
-                      <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 rounded-md cursor-pointer transition-opacity duration-200 border border-border-strong">
-                        <Upload className="w-3.5 h-3.5 text-foreground mb-0.5" />
-                        <span className="text-[12px] font-semibold text-foreground">Upload</span>
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          onChange={handleAvatarUpload} 
-                          className="hidden" 
-                        />
-                      </label>
-                    </div>
-                    
+                  {/* Avatar: current face, own photo upload */}
+                  <div className="flex items-center gap-4 bg-surface-sunken/40 border border-border p-4 rounded-md w-full md:w-auto shrink-0">
+                    <label className="relative group shrink-0 cursor-pointer rounded-[18px] focus-within:ring-2 focus-within:ring-ring" title="Upload a photo">
+                      <UserAvatar person={user} size={64} labelled />
+                      <span className="absolute inset-0 flex flex-col items-center justify-center rounded-[18px] bg-black/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                        <Upload className="w-3.5 h-3.5 text-white mb-0.5" />
+                        <span className="text-[11.5px] font-semibold text-white">Upload</span>
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarUpload}
+                        className="sr-only"
+                        aria-label="Upload a profile photo"
+                      />
+                    </label>
+
                     <div className="space-y-1">
                       <h4 className="text-[13.5px] font-bold text-foreground leading-none">{user?.name || 'Developer'}</h4>
                       <p className="text-[12.5px] text-muted-foreground font-mono leading-none">{user?.email}</p>
-                      {user?.avatarUrl && (
-                        <button 
+                      {user?.avatarUrl?.startsWith('data:') && (
+                        <button
                           type="button"
                           onClick={handleRemoveAvatar}
                           className="text-[12.5px] text-danger hover:text-danger block hover:underline transition-colors pt-1"
@@ -885,6 +876,12 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                <div>
+                  <h3 className="text-[13px] font-semibold text-foreground">Or pick a drawing</h3>
+                  <p className="mt-0.5 mb-3 text-[12.5px] text-ink-secondary">Shown next to your name in the sidebar, teams, chat and comments.</p>
+                  <AvatarPicker />
                 </div>
 
                 {/* Appearance: theme + font size */}

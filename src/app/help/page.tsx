@@ -251,7 +251,7 @@ const DOCS_DATA: DocSection[] = [
         description: 'Restore earlier versions and get feedback from your team.',
         details: [
           'History lists saved versions. Select one to preview it, then restore it. Restoring saves the current content as a new version first.',
-          'For a notebook in a team project, Request review notifies the team owner and the team leaders who can edit that project. They can comment and mark it reviewed.',
+          'For a notebook in a team project, Ask for review lets you pick one reviewer: the team owner or a team leader who can edit that project. Only they are notified, and they can comment and mark it reviewed.',
           'Comments and review are available on notebooks that belong to a project. Comments attach to text you select in the preview.'
         ]
       }
@@ -551,12 +551,16 @@ const TOPIC_ICON: Record<string, NavIconName> = {
   teams: 'teams', analytics: 'analytics', settings: 'settings', integrations: 'settings', shortcuts: 'help', 'pdf-exports': 'notebook', faq: 'help',
 };
 
-const FIRST_STEPS = [
-  { title: 'Set your working hours', body: 'Today, the planner and Analytics are all built on them.', href: '/settings?section=calendar', cta: 'Open Settings' },
-  { title: 'Write down today’s tasks', body: 'Only the name is required. Priority and effort can come later.', href: '/tasks', cta: 'Go to Tasks' },
-  { title: 'Give them a time', body: 'Drag tasks onto Today’s planner so the day has a shape.', href: '/', cta: 'Open Today' },
-  { title: 'Start a notebook', body: 'One LaTeX document per notebook, with every saved version kept.', href: '/notebook', cta: 'Open Notebook' },
+// The help home groups the guides by what you're trying to do, so the page
+// is three short lists rather than ten described cards.
+const TOPIC_GROUPS: { label: string; blurb: string; ids: string[] }[] = [
+  { label: 'Plan your day', blurb: 'Tasks, the planner and where the time went.', ids: ['getting-started', 'calendar', 'daily-tasks', 'analytics'] },
+  { label: 'Research tools', blurb: 'Notebooks, runs and what you can export.', ids: ['notebooks', 'runs', 'pdf-exports'] },
+  { label: 'Account and setup', blurb: 'Settings, teams, tokens and shortcuts.', ids: ['settings', 'teams', 'integrations', 'shortcuts'] },
 ];
+
+// What people most often search for, as one-tap searches.
+const POPULAR_SEARCHES = ['working hours', 'equations', 'backup'];
 
 const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -589,7 +593,6 @@ export default function HelpPage() {
   };
 
   const faq = DOCS_DATA.find((d) => d.id === 'faq');
-  const guides = DOCS_DATA.filter((d) => !['welcome', 'getting-started', 'faq'].includes(d.id));
   const topic = selectedSection ? DOCS_DATA.find((d) => d.id === selectedSection) : null;
 
   const searchBox = (big: boolean) => (
@@ -677,77 +680,99 @@ export default function HelpPage() {
   }
 
   // ---------------------------------------------------------- help home
+  const byId = (id: string) => DOCS_DATA.find((d) => d.id === id)!;
   return (
     <div className="mx-auto max-w-5xl space-y-14 pb-10">
+      {/* 1. Ask */}
       <section className="grid items-center gap-8 md:grid-cols-[minmax(0,1fr)_auto]">
         <div>
           <h1 className="app-title">How can we help?</h1>
-          <p className="mt-3 max-w-[52ch] text-[16px] leading-relaxed text-ink-secondary">Short answers in plain words. Search, follow the first steps, or pick a guide.</p>
+          <p className="mt-3 max-w-[52ch] text-[16px] leading-relaxed text-ink-secondary">Search for an answer, or browse the guides below.</p>
           <div className="mt-6">{searchBox(true)}</div>
+          <p className="mt-3 text-[13.5px] text-ink-secondary">
+            Often searched:{' '}
+            {POPULAR_SEARCHES.map((term, i) => (
+              <React.Fragment key={term}>
+                {i > 0 && <span aria-hidden="true"> · </span>}
+                <button type="button" onClick={() => setSearchQuery(term)} className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground">
+                  {term}
+                </button>
+              </React.Fragment>
+            ))}
+          </p>
         </div>
-        <Spot kind="help" size={200} className="hidden md:block" />
+        <Spot kind="help" size={180} className="hidden md:block" />
       </section>
 
-      <section>
-        <SectionHeader title="New here? Four steps" />
-        <ol className="mt-5 grid gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-          {FIRST_STEPS.map((st, i) => (
-            <li key={st.title} className="flex flex-col">
-              <span className="font-serif text-[30px] font-medium leading-none text-ink-faint tabular-nums">{i + 1}</span>
-              <span className="mt-3 text-[15.5px] font-semibold">{st.title}</span>
-              <span className="mt-1 text-[14px] leading-relaxed text-ink-secondary">{st.body}</span>
-              <Link href={st.href} className="mt-3 text-[13.5px] font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground">{st.cta}</Link>
-            </li>
+      {/* 2. Self-service: start here, then the guides by purpose */}
+      <section className="space-y-10">
+        <button
+          type="button"
+          onClick={() => open('welcome')}
+          className="group flex w-full items-center justify-between gap-4 rounded-[14px] border border-border bg-surface px-5 py-4 text-left transition-colors hover:border-border-strong"
+        >
+          <span>
+            <span className="block text-[15.5px] font-semibold text-foreground">New to Rune? Start here</span>
+            <span className="mt-0.5 block text-[14px] text-ink-secondary">What Rune does and your first five minutes, step by step.</span>
+          </span>
+          <span className="shrink-0 text-ink-faint transition-transform group-hover:translate-x-1 group-hover:text-foreground" aria-hidden="true">→</span>
+        </button>
+
+        <div className="grid gap-x-10 gap-y-8 sm:grid-cols-3">
+          {TOPIC_GROUPS.map((g) => (
+            <nav key={g.label} aria-label={g.label}>
+              <h2 className="text-[15px] font-semibold text-foreground">{g.label}</h2>
+              <p className="mt-0.5 text-[13.5px] text-ink-secondary">{g.blurb}</p>
+              <ul className="mt-3 border-t border-border">
+                {g.ids.map((id) => (
+                  <li key={id} className="border-b border-border">
+                    <button onClick={() => open(id)} className="group flex w-full items-center gap-3 py-3 text-left text-[14.5px] text-foreground hover:text-primary">
+                      <NavIcon name={TOPIC_ICON[id] ?? 'help'} size={17} className="text-ink-faint group-hover:text-primary" />
+                      {byId(id).title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           ))}
-        </ol>
+        </div>
       </section>
 
-      <section>
-        <SectionHeader title="Guides" meta={guides.length} />
-        <ul className="grid gap-x-10 sm:grid-cols-2">
-          {guides.map((g) => (
-            <li key={g.id} className="border-b border-border">
-              <button onClick={() => open(g.id)} className="group flex w-full items-start gap-3.5 py-4 text-left">
-                <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-surface-sunken text-foreground transition-colors group-hover:bg-primary-soft group-hover:text-primary">
-                  <NavIcon name={TOPIC_ICON[g.id] ?? 'help'} size={18} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold text-foreground">{g.title}</span>
-                  <span className="mt-0.5 block text-[13.5px] leading-snug text-ink-secondary">{g.description}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
+      {/* 3. Common questions, as links to their answers */}
       {faq && (
         <section>
           <SectionHeader title="Common questions" right={<button onClick={() => open('faq')} className="text-[12.5px] text-ink-secondary hover:text-foreground">All questions →</button>} />
-          <dl className="mt-6 grid gap-x-12 gap-y-7 md:grid-cols-2">
-            {faq.items.slice(0, 6).map((it) => (
-              <div key={it.title}>
-                <dt className="text-[15.5px] font-semibold">{it.title}</dt>
-                <dd className="mt-1.5 text-[14.5px] leading-relaxed text-ink-secondary">{it.description}</dd>
-              </div>
+          <ul className="mt-2 grid gap-x-10 sm:grid-cols-2">
+            {faq.items.slice(0, 4).map((it) => (
+              <li key={it.title} className="border-b border-border">
+                <button onClick={() => open('faq', slug(it.title))} className="w-full py-3 text-left text-[14.5px] text-foreground hover:text-primary">
+                  {it.title.replace(/[“”]/g, '')}
+                </button>
+              </li>
             ))}
-          </dl>
+          </ul>
+          <p className="mt-4 text-[13.5px] text-ink-secondary">
+            Setting up a server or looking for the API?{' '}
+            <Link href="/docs" className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground">Read the full documentation</Link>.
+          </p>
         </section>
       )}
 
-      <section className="grid gap-6 rounded-[16px] border border-border bg-surface p-6 sm:p-8 md:grid-cols-3">
+      {/* 4. A person - kept apart from the self-service help above */}
+      <section className="flex flex-col gap-4 rounded-[16px] bg-surface-sunken/70 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-7">
         <div>
-          <h2 className="font-serif text-[22px] font-medium">Still stuck?</h2>
-          <p className="mt-2 text-[14px] leading-relaxed text-ink-secondary">A real person reads every report.</p>
+          <h2 className="font-serif text-[21px] font-medium">Talk to a person</h2>
+          <p className="mt-1 text-[14px] leading-relaxed text-ink-secondary">Found a bug or can’t find an answer? Describe what you saw and what you expected; a real person reads every report.</p>
         </div>
-        <a href={`${GITHUB_REPO_URL}/issues`} target="_blank" rel="noopener noreferrer" className="group rounded-[12px] p-3 -m-3 hover:bg-surface-sunken">
-          <span className="flex items-center gap-2 text-[15px] font-semibold"><GithubIcon className="h-4 w-4" /> Report a problem</span>
-          <span className="mt-1 block text-[13.5px] text-ink-secondary">Open an issue on GitHub with what you saw and what you expected.</span>
+        <a
+          href={`${GITHUB_REPO_URL}/issues/new`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[10px] border border-border-strong bg-surface px-4 text-[14px] font-semibold hover:bg-surface-raised"
+        >
+          <GithubIcon className="h-4 w-4" /> Report a problem
+          <span className="sr-only"> (opens GitHub in a new tab)</span>
         </a>
-        <Link href="/docs" className="group rounded-[12px] p-3 -m-3 hover:bg-surface-sunken">
-          <span className="text-[15px] font-semibold">Read the full docs →</span>
-          <span className="mt-1 block text-[13.5px] text-ink-secondary">Setup, self-hosting, administration and the complete user guide.</span>
-        </Link>
       </section>
     </div>
   );

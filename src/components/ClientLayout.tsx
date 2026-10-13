@@ -41,14 +41,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { ToastContainer } from '@/components/ToastContainer';
 import { CommandPalette } from '@/components/CommandPalette';
 import { isPublicPage } from '@/lib/publicRoutes';
-
-/** "Ada Lovelace" -> "AL"; falls back to the email's first letter, then "U". */
-function initials(name?: string | null, email?: string | null): string {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (email?.[0] || 'U').toUpperCase();
-}
+import { UserAvatar } from '@/components/UserAvatar';
 
 /**
  * useSearchParams() forces a Suspense boundary at the exact component that
@@ -619,18 +612,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         {/* User Details */}
         <div className={`flex p-3 border-t border-border bg-surface shrink-0 ${isGlobalSidebarCollapsed ? 'md:flex-col md:items-center md:gap-2' : 'items-center justify-between gap-2.5'}`}>
           <div className={`flex items-center gap-2.5 overflow-hidden ${isGlobalSidebarCollapsed ? 'md:contents' : ''}`}>
-            {user.avatarUrl && !user.avatarUrl.includes('dicebear.com') ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={user.avatarUrl}
-                alt={user.name || 'User'}
-                className="w-[30px] h-[30px] rounded-lg border border-border shrink-0 object-cover"
-              />
-            ) : (
-              <div className="w-[30px] h-[30px] rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-display font-bold text-[12px] shrink-0">
-                {initials(user.name, user.email)}
-              </div>
-            )}
+            <UserAvatar person={user} size={30} />
             <div className={`flex-1 min-w-0 ${isGlobalSidebarCollapsed ? 'md:hidden' : ''}`}>
               <p className="text-[12.5px] font-semibold truncate text-foreground">{user.name || 'Developer'}</p>
               <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>

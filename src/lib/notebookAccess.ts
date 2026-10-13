@@ -54,3 +54,34 @@ export async function getNotebookReviewerIds(notebook: NotebookLike): Promise<st
   ids.delete(notebook.userId);
   return Array.from(ids);
 }
+
+export interface ReviewerOption {
+  id: string;
+  name: string;
+  email: string;
+  /** Why they can review: "Team owner" or "Team leader". */
+  role: string;
+  avatarUrl: string | null;
+}
+
+/**
+ * The people the owner can pick from in "Ask for review" - exactly the set
+ * `getNotebookReviewerIds` allows (so the picker can never offer someone
+ * the server would reject), with names and the reason each one qualifies.
+ */
+export async function listNotebookReviewers(notebook: NotebookLike): Promise<ReviewerOption[]> {
+  const ids = await getNotebookReviewerIds(notebook);
+  if (ids.length === 0) return [];
+  const project = notebook.projectId ? await db.project.findUnique({ where: { id: notebook.projectId } }) : null;
+  const team = project?.teamId ? await db.team.findUnique({ where: { id: project.teamId } }) : null;
+  const users = await db.user.findMany({ where: { id: { in: ids } } });
+  return (users as any[])
+    .map((u) => ({
+      id: u.id as string,
+      name: (u.name as string) || (u.email as string),
+      email: u.email as string,
+      role: team?.ownerId === u.id ? 'Team owner' : 'Team leader',
+      avatarUrl: (u.avatarUrl as string | null) ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}

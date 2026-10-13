@@ -41,9 +41,9 @@ export default function TroubleshootingPage() {
       <H2>Sign-up or sign-in says Rune can&rsquo;t reach its database</H2>
       <P>
         The database isn&rsquo;t running, isn&rsquo;t the one in <Code>DATABASE_URL</Code>, or is missing recent
-        migrations. Check <Code>/api/health</Code>. Locally, keep <Code>npm run dev:db</Code> running in its own
-        terminal; it refuses to start if another program already holds the port, and applies pending migrations when
-        it starts. On a server, run <Code>npm run db:migrate</Code> after every update.
+        migrations. Check <Code>/api/health</Code>. Locally, <Code>npm run dev</Code> starts the bundled database
+        when nothing is listening on the <Code>DATABASE_URL</Code> port, and applies pending migrations as it starts.
+        If another program already holds that port, Rune connects to it instead, so give Rune a free port. On a server, run <Code>npm run db:migrate</Code> after every update.
       </P>
 
       <H2>Notebook PDF export fails</H2>

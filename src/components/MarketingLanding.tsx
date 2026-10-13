@@ -3,15 +3,16 @@ import { QuickstartCard } from '@/components/QuickstartCard';
 import { MarketingNav } from '@/components/marketing/MarketingNav';
 import { MarketingFooter } from '@/components/marketing/MarketingFooter';
 import { LabStory } from '@/components/marketing/LabStory';
-import { JuggleSection } from '@/components/marketing/JuggleSection';
-import { BUY_ME_A_COFFEE_URL } from '@/lib/links';
+import { BUY_ME_A_COFFEE_URL, SIGNUP } from '@/lib/links';
+import { OriginScene } from '@/components/marketing/OriginScene';
 
 /**
  * Logged-out view of `/` (see src/app/page.tsx) - the app's dashboard and
  * this landing page share the same route so there's one deployable.
  *
- * Reading order: what it is (hero, with the lab comic) -> what's inside
- * (everything you juggle) -> who made it and why -> run your own -> start.
+ * Reading order: what it is (hero, with the lab comic) -> run your own ->
+ * why it exists (the origin story, near the end, once you know what it
+ * does) -> start. What's inside lives on /features, not repeated here.
  */
 export function MarketingLanding() {
   return (
@@ -28,17 +29,14 @@ export function MarketingLanding() {
               <h1 className="display hero-in mt-5 max-w-[12ch] text-[46px] min-[400px]:text-[52px] sm:text-[66px] lg:text-[60px] xl:text-[70px]" style={{ animationDelay: '60ms' }}>
                 You, with a few <span className="italic text-primary">extra hands.</span>
               </h1>
-              <p className="hero-in mt-7 max-w-[44ch] text-pretty text-[18px] leading-relaxed text-ink-secondary" style={{ animationDelay: '120ms' }}>
-                Rune is a personal assistant for people running too many things at once: tasks, your day,
-                projects, a LaTeX lab notebook and long experiments, kept in one calm place.
+              <p className="hero-in mt-7 max-w-[40ch] text-pretty text-[18px] leading-relaxed text-ink-secondary" style={{ animationDelay: '120ms' }}>
+                Rune puts the things competing for your attention in one calm place, so you can see what
+                comes first and get it done.
               </p>
-              <div className="hero-in mt-9 flex flex-wrap items-center gap-x-6 gap-y-4" style={{ animationDelay: '180ms' }}>
-                <Link href="/login?mode=signup" className="btn btn-primary">
-                  Create a free account
+              <div className="hero-in mt-9" style={{ animationDelay: '180ms' }}>
+                <Link href={SIGNUP.href} className="btn btn-primary">
+                  {SIGNUP.label}
                   <Arrow />
-                </Link>
-                <Link href="/features" className="link-arrow text-[15px]">
-                  See what’s inside <Arrow />
                 </Link>
               </div>
               <p className="hero-in mt-6 text-[13.5px] text-ink-faint" style={{ animationDelay: '240ms' }}>
@@ -48,38 +46,6 @@ export function MarketingLanding() {
             <div className="hero-in" style={{ animationDelay: '150ms' }}>
               <LabStory />
             </div>
-          </div>
-        </section>
-
-        <JuggleSection />
-
-        {/* Why it exists - a note from the person who made it, set for reading */}
-        <section className="border-t border-border bg-bg-1">
-          <div className="mkt-container grid grid-cols-1 gap-10 py-20 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16 lg:py-28">
-            <div className="reveal">
-              <h2 className="text-[13px] font-medium text-ink-secondary">Why Rune exists</h2>
-              <div className="mt-5 hidden items-center gap-3 lg:flex">
-                <Founder />
-              </div>
-            </div>
-            <figure className="reveal max-w-[38em]">
-              <blockquote className="space-y-5 text-[20px] leading-[1.6] tracking-[-0.011em] text-foreground sm:text-[22px]">
-                <p>
-                  Rune started as a small, secret tool I built for myself. That’s where the name comes from.
-                </p>
-                <p className="text-foreground/80">
-                  The things I needed were scattered across different apps, and the useful parts were often
-                  behind a paywall. So I put them in one place. So anyone can use it.
-                </p>
-              </blockquote>
-              <figcaption className="mt-8 flex flex-col gap-6 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <span className="flex items-center gap-3 lg:hidden"><Founder /></span>
-                <a href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noopener noreferrer" className="link-arrow text-[14.5px] lg:ml-auto">
-                  If it saves you an afternoon, the coffee’s on you <Arrow />
-                  <span className="sr-only"> (opens buymeacoffee.com)</span>
-                </a>
-              </figcaption>
-            </figure>
           </div>
         </section>
 
@@ -115,12 +81,41 @@ export function MarketingLanding() {
           </div>
         </section>
 
+        {/* Why it exists: the story behind it, last, once you know what it does */}
+        <section className="border-t border-border bg-bg-1" aria-labelledby="why-rune">
+          <div className="mkt-container grid grid-cols-1 items-center gap-12 py-20 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-20 lg:py-28">
+            <div className="reveal mx-auto w-full max-w-[380px] lg:mx-0">
+              <OriginScene size={380} className="h-auto w-full" />
+            </div>
+            <div className="reveal max-w-[36em]">
+              <h2 id="why-rune" className="display text-[36px] sm:text-[44px]">Why Rune exists</h2>
+              <div className="mt-7 space-y-5 text-pretty text-[18px] leading-[1.75] text-ink-secondary">
+                <p className="text-foreground">
+                  Rune started as a small, secret tool I built for myself. That’s where the name comes from.
+                </p>
+                <p>
+                  The things I needed were scattered across different apps, and the useful parts were often
+                  behind a paywall.
+                </p>
+                <p>So I put them in one place, for anyone to use.</p>
+              </div>
+              <div className="mt-9 flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <span className="flex items-center gap-3"><Founder /></span>
+                <a href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noopener noreferrer" className="text-[14px] text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-foreground hover:decoration-foreground">
+                  If it saves you an afternoon, the coffee’s on you
+                  <span className="sr-only"> (opens buymeacoffee.com)</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Last word */}
         <section className="border-t border-border">
           <div className="mkt-container flex flex-col items-start gap-8 py-20 sm:flex-row sm:items-end sm:justify-between lg:py-24">
             <h2 className="display reveal max-w-[18ch] text-[40px] sm:text-[52px]">Give your too-many-things a few extra hands.</h2>
-            <Link href="/login?mode=signup" className="btn btn-primary reveal shrink-0">
-              Create a free account <Arrow />
+            <Link href={SIGNUP.href} className="btn btn-primary reveal shrink-0">
+              {SIGNUP.label} <Arrow />
             </Link>
           </div>
         </section>

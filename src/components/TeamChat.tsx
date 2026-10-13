@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { MessageSquare, Send, Users, Crown, Search, AtSign } from 'lucide-react';
+import { UserAvatar } from '@/components/UserAvatar';
 import { detectMentionTrigger, filterMentionCandidates, buildMentionHighlightPattern } from '@/lib/chatMentions';
 
 type Role = 'OWNER' | 'TEAM_LEADER' | 'MEMBER';
@@ -333,12 +334,15 @@ export function TeamChat({
               const sender = membersById.get(m.senderId);
               const isMe = m.senderId === currentUserId;
               return (
-                <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <span className="text-[9px] text-muted-foreground font-semibold mb-0.5">
-                    {isMe ? 'You' : memberLabel(sender)} · {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <div className={`max-w-[80%] px-3 py-2 rounded-md text-sm ${isMe ? 'bg-primary text-primary-foreground' : 'bg-surface-raised text-foreground'}`}>
-                    {renderWithMentions(m.text, members)}
+                <div key={m.id} className={`flex items-end gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  {!isMe && <UserAvatar person={{ id: m.senderId, ...sender }} size={24} className="mb-0.5" />}
+                  <div className={`flex min-w-0 max-w-[80%] flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                    <span className="text-[9px] text-muted-foreground font-semibold mb-0.5">
+                      {isMe ? 'You' : memberLabel(sender)} · {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <div className={`px-3 py-2 rounded-md text-sm ${isMe ? 'bg-primary text-primary-foreground' : 'bg-surface-raised text-foreground'}`}>
+                      {renderWithMentions(m.text, members)}
+                    </div>
                   </div>
                 </div>
               );

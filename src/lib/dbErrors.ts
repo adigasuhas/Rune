@@ -26,7 +26,7 @@ export function dbErrorResponse(err: unknown, context: string): NextResponse | n
   const problem = classifyDbError(err);
   if (!problem) return null;
   console.error(
-    `[${context}] database ${problem === 'schema' ? 'schema is behind its migrations - run `npm run db:migrate`' : 'is not reachable - check DATABASE_URL and that Postgres is running (`npm run dev:db` locally)'}:`,
+    `[${context}] database ${problem === 'schema' ? 'schema is behind its migrations - run `npm run db:migrate`' : 'is not reachable - check DATABASE_URL and that Postgres is running (locally, `npm run dev` starts it)'}:`,
     (err as Error).message
   );
   return NextResponse.json(
