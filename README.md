@@ -1,16 +1,20 @@
 <div align="center">
 
+<p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/rune-logo-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/rune-logo-light.png">
-  <img alt="Rune" src="docs/assets/rune-logo-light.png" width="440">
+  <img alt="Rune" src="docs/assets/rune-logo-light.png" width="380">
 </picture>
+</p>
 
+<p>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/tagline-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tagline-light.png">
-  <img alt="You, with a few extra hands." src="docs/assets/tagline-light.png" width="390">
+  <img alt="You, with a few extra hands." src="docs/assets/tagline-light.png" width="340">
 </picture>
+</p>
 
 A self-hosted workspace for researchers and engineers: the day's plan, tasks, projects,<br>
 a LaTeX lab notebook and long-running experiments, in one place.
