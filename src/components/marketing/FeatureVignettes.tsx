@@ -237,7 +237,7 @@ export function RunsVignette() {
 export function WallVignette() {
   const notes: { text: string; rot: number; tone: string; x: string; y: string }[] = [
     { text: 'Is the effect just caffeine? Control for it.', rot: -3, tone: 'bg-warning-soft', x: '4%', y: '6%' },
-    { text: 'Ask Priya about the old dataset', rot: 2.5, tone: 'bg-primary-soft', x: '52%', y: '2%' },
+    { text: 'Ask Ishan about the old dataset', rot: 2.5, tone: 'bg-primary-soft', x: '52%', y: '2%' },
     { text: 'Fig. 3 colours are unreadable in print', rot: 1.5, tone: 'bg-info-soft', x: '10%', y: '52%' },
     { text: 'Idea: replicate on night-shift workers?', rot: -2, tone: 'bg-danger-soft', x: '55%', y: '48%' },
   ];
@@ -335,5 +335,73 @@ export function TeamsVignette() {
         </div>
       </div>
     </Frame>
+  );
+}
+
+/* ---------------------------------------------------------------- Hero */
+/**
+ * The /features hero: one Thursday, with something from each of the three
+ * groups below it - the day's plan, a running job and a notebook, a message
+ * from the lab - sitting in the same list. The rows arrive one after another
+ * once, then stay put.
+ */
+export function HeroPreview() {
+  const groups: { label: string; rows: { icon: FeatureKey; title: string; meta: React.ReactNode; tail?: React.ReactNode }[] }[] = [
+    {
+      label: 'Your day',
+      rows: [
+        { icon: 'today', title: 'Write methods section', meta: <span className="tnum">09:00 – 11:00</span>, tail: <Pill tone="pine">Deep work</Pill> },
+        { icon: 'tasks', title: 'Reply to reviewer 2', meta: 'Due Friday · postponed 2×', tail: <Pill tone="clay">Critical</Pill> },
+      ],
+    },
+    {
+      label: 'Your work',
+      rows: [
+        {
+          icon: 'runs', title: 'DFT relax · Pt(111) slab',
+          meta: (
+            <span className="flex items-center gap-2">
+              <span className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-sunken"><span className="block h-full w-[72%] rounded-full bg-primary" /></span>
+              <span className="tnum">72% · check in 14:40</span>
+            </span>
+          ),
+          tail: <Pill tone="pine">Running</Pill>,
+        },
+        { icon: 'notebook', title: 'Lab notebook · 3 Results', meta: 'Saved · version 31' },
+      ],
+    },
+    {
+      label: 'Your people',
+      rows: [{ icon: 'teams', title: 'Mei: group meeting moved to Thursday', meta: 'Kobayashi group' }],
+    },
+  ];
+  return (
+    <div className="vignette select-none" aria-hidden="true">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+        <span className="text-[13.5px] font-semibold">Thursday 9 October</span>
+        <span className="text-[12.5px] text-ink-faint">5 things, one list</span>
+      </div>
+      <div className="px-4 pb-2 pt-1 sm:px-5">
+        {groups.map((g, gi) => (
+          <div key={g.label} className="border-b border-border/70 py-2.5 last:border-b-0">
+            <p className="pb-1 text-[11.5px] font-medium text-ink-faint">{g.label}</p>
+            <ul>
+              {g.rows.map((r, ri) => (
+                <li key={r.title} className="hero-in flex items-center gap-3 py-1.5" style={{ animationDelay: `${260 + (gi * 2 + ri) * 110}ms` }}>
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] border border-border bg-surface-raised text-ink-secondary">
+                    <FeatureIcon name={r.icon} size={17} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] font-medium">{r.title}</span>
+                    <span className="block text-[12px] text-ink-faint">{r.meta}</span>
+                  </span>
+                  {r.tail && <span className="shrink-0">{r.tail}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -8,6 +8,7 @@ import { FEATURE_GROUPS, FeatureIcon, type FeatureKey } from '@/components/marke
 import { FeatureScene } from '@/components/marketing/FeatureScenes';
 import {
   AnalyticsVignette,
+  HeroPreview,
   NotebookVignette,
   ProjectsVignette,
   RunsVignette,
@@ -18,10 +19,11 @@ import {
 } from '@/components/marketing/FeatureVignettes';
 
 /**
- * /features - one section per part of Rune. Each pairs a plain statement of
- * the benefit with an illustration of the actual interface, so the picture
- * does most of the explaining and the copy stays short - and the Rune
- * character acting the feature out under the text (FeatureScenes.tsx).
+ * /features - the eight parts of Rune in three chapters: your day, your
+ * work, your people. Each feature pairs a plain statement of the benefit
+ * with an illustration of the actual interface, so the picture does most of
+ * the explaining and the copy stays short. The Rune character appears once
+ * per chapter (FeatureScenes.tsx), not beside every feature.
  */
 const SECTIONS: { key: FeatureKey; name: string; headline: string; body: string; points: string[]; Visual: () => React.ReactElement }[] = [
   {
@@ -74,23 +76,37 @@ const SECTIONS: { key: FeatureKey; name: string; headline: string; body: string;
   },
 ];
 
+/** The scene that introduces each chapter. */
+const CHAPTER_SCENE: Record<string, FeatureKey> = { day: 'today', work: 'notebook', people: 'teams' };
+
+const Check = () => (
+  <svg viewBox="0 0 16 16" width="16" height="16" className="mt-[3px] shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7" /></svg>
+);
+
 export default function FeaturesPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <MarketingNav />
       <main id="main">
-        <section className="mkt-container pb-12 pt-16 sm:pt-24">
-          <p className="eyebrow hero-in">Features</p>
-          <h1 className="display hero-in mt-4 max-w-[17ch] text-[44px] sm:text-[64px]" style={{ animationDelay: '60ms' }}>
-            Everything you juggle, in one place.
-          </h1>
-          <p className="hero-in mt-6 max-w-[54ch] text-[18px] leading-relaxed text-ink-secondary" style={{ animationDelay: '120ms' }}>
-            Eight parts that know about each other. Every one of them is free, for every account.
-          </p>
-          <nav aria-label="Jump to a feature" className="hero-in mt-12 grid gap-6 border-t border-border pt-6 sm:grid-cols-[1.1fr_1.4fr_0.6fr] sm:gap-8" style={{ animationDelay: '180ms' }}>
-            {FEATURE_GROUPS.map((g) => (
+        <section className="mkt-container pb-14 pt-14 sm:pt-20">
+          <div className="grid items-center gap-10 lg:grid-cols-[1fr_minmax(0,500px)] lg:gap-16">
+            <div>
+              <p className="eyebrow hero-in">Features</p>
+              <h1 className="display hero-in mt-4 max-w-[14ch] text-[44px] sm:text-[64px] lg:text-[72px]" style={{ animationDelay: '60ms' }}>
+                Everything you juggle, in one place.
+              </h1>
+            </div>
+            <div className="hero-in" style={{ animationDelay: '160ms' }}>
+              <HeroPreview />
+            </div>
+          </div>
+
+          <nav aria-label="Jump to a feature" className="hero-in mt-14 grid gap-6 border-t border-border pt-6 sm:grid-cols-[1.1fr_1.4fr_0.6fr] sm:gap-8" style={{ animationDelay: '240ms' }}>
+            {FEATURE_GROUPS.map((g, gi) => (
               <div key={g.id}>
-                <p className="text-[13px] font-medium text-ink-faint">{g.label}</p>
+                <a href={`#${g.id}`} className="text-[13px] font-medium text-ink-faint transition-colors hover:text-foreground">
+                  <span className="tnum">0{gi + 1}</span>&nbsp;&nbsp;{g.label}
+                </a>
                 <ul className="mt-3 flex flex-wrap gap-2">
                   {g.keys.map((k) => {
                     const sec = SECTIONS.find((x) => x.key === k)!;
@@ -111,31 +127,43 @@ export default function FeaturesPage() {
           </nav>
         </section>
 
-        {SECTIONS.map(({ key, name, headline, body, points, Visual }, i) => (
-          <section key={key} id={key} className="scroll-mt-20 border-t border-border">
-            <div className={`mkt-container grid items-center gap-10 py-16 lg:grid-cols-2 lg:gap-16 lg:py-24`}>
-              <div className={`reveal ${i % 2 ? 'lg:order-2' : ''}`}>
-                <p className="flex items-center gap-2 text-[14px] font-medium text-ink-secondary">
-                  <span className="grid h-8 w-8 place-items-center rounded-[9px] border border-border bg-surface text-foreground">
-                    <FeatureIcon name={key} size={18} />
-                  </span>
-                  {name}
-                </p>
-                <h2 className="display mt-5 text-[34px] sm:text-[42px]">{headline}</h2>
-                <p className="mt-4 max-w-[46ch] text-[16.5px] leading-relaxed text-ink-secondary">{body}</p>
-                <ul className="mt-6 space-y-2.5">
-                  {points.map((p) => (
-                    <li key={p} className="flex items-start gap-3 text-[15px]">
-                      <svg viewBox="0 0 16 16" width="16" height="16" className="mt-[3px] shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7" /></svg>
-                      {p}
-                    </li>
-                  ))}
-                </ul>
-                <FeatureScene feature={key} size={250} className="mt-8 max-w-full" />
-              </div>
-              <div className={`reveal ${i % 2 ? 'lg:order-1' : ''}`}>
-                <Visual />
-              </div>
+        {FEATURE_GROUPS.map((g, gi) => (
+          <section key={g.id} id={g.id} aria-labelledby={`${g.id}-title`} className="scroll-mt-16 border-t border-border">
+            <div className="mkt-container">
+              <header className="flex items-end justify-between gap-8 pb-2 pt-16 lg:pt-20">
+                <div>
+                  <p className="text-[13px] font-medium text-ink-faint tnum">0{gi + 1} / 03</p>
+                  <h2 id={`${g.id}-title`} className="display mt-2 text-[40px] sm:text-[52px]">{g.label}</h2>
+                  <p className="mt-2 text-[17px] text-ink-secondary">{g.blurb}</p>
+                </div>
+                <FeatureScene feature={CHAPTER_SCENE[g.id]} size={168} className="hidden shrink-0 sm:block" />
+              </header>
+
+              {g.keys.map((k, i) => {
+                const { name, headline, body, points, Visual } = SECTIONS.find((x) => x.key === k)!;
+                const flip = i % 2 === 1;
+                return (
+                  <article key={k} id={k} className="grid scroll-mt-20 items-center gap-8 py-10 lg:grid-cols-2 lg:gap-16 lg:py-12">
+                    <div className={`reveal ${flip ? 'lg:order-2' : ''}`}>
+                      <p className="flex items-center gap-2 text-[14px] font-medium text-ink-secondary">
+                        <FeatureIcon name={k} size={18} className="text-primary" />
+                        {name}
+                      </p>
+                      <h3 className="display mt-3 text-[30px] sm:text-[34px]">{headline}</h3>
+                      <p className="mt-3 max-w-[46ch] text-[16px] leading-relaxed text-ink-secondary">{body}</p>
+                      <ul className="mt-5 space-y-2">
+                        {points.map((p) => (
+                          <li key={p} className="flex items-start gap-3 text-[15px]"><Check />{p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className={`reveal ${flip ? 'lg:order-1' : ''}`}>
+                      <Visual />
+                    </div>
+                  </article>
+                );
+              })}
+              <div className="pb-6 lg:pb-10" />
             </div>
           </section>
         ))}

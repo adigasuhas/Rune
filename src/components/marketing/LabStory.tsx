@@ -19,8 +19,10 @@ import { useEffect, useRef, useState } from 'react';
  * 13-15s  12:00. The professor comes back and finds it all done.
  *
  * One inline SVG in the Rune pen line, laid out in clear areas: the fume
- * hood and its robot (left), the bench with the furnace and balance, the
- * desk with the monitor (centre-right), the door (right). Every moving part
+ * hood and its robot (left), the argon cylinders feeding the tube furnace,
+ * the bench with the furnace and balance, the desk with the monitor
+ * (centre-right), the door (right); a periodic table and the clock on the
+ * back wall. Every moving part
  * is a CSS keyframe on transform/opacity on a 15-second clock; the two
  * close-ups are one deliberate camera move each. Resting styles are the
  * final frame - everything done, the professor back - which is what reduced
@@ -362,6 +364,9 @@ function Scene() {
           <text className="ls-a ls-t12" x="360" y="104" fill="var(--primary)">12:00 PM</text>
         </g>
 
+        <PeriodicTable />
+        <GasCylinders />
+
         {/* ---------- the experiment area */}
         <FumeHood />
 
@@ -462,12 +467,68 @@ function FumeHood() {
   );
 }
 
+/**
+ * A periodic-table poster on the back wall: the real 18-column shape, f-block
+ * pulled out underneath, one cell (platinum - the slab on the cluster) in pine.
+ */
+const PT_ROWS: [number, number][][] = [
+  [[1, 1], [18, 18]],
+  [[1, 2], [13, 18]],
+  [[1, 2], [13, 18]],
+  [[1, 18]], [[1, 18]], [[1, 18]], [[1, 18]],
+];
+function PeriodicTable() {
+  const x0 = 196, y0 = 70, c = 5.4, g = 0.9;
+  const cell = 'color-mix(in srgb, var(--text) 12%, var(--ls-bg))';
+  const cells: React.ReactElement[] = [];
+  PT_ROWS.forEach((spans, r) => spans.forEach(([a, b]) => {
+    for (let col = a; col <= b; col++) {
+      const pt = r === 5 && col === 10;
+      cells.push(<rect key={`${r}-${col}`} x={x0 + (col - 1) * c} y={y0 + r * c} width={c - g} height={c - g} rx=".5" fill={pt ? 'var(--primary)' : cell} />);
+    }
+  }));
+  for (let r = 0; r < 2; r++) for (let col = 0; col < 14; col++) {
+    cells.push(<rect key={`f${r}-${col}`} x={x0 + (col + 3) * c} y={y0 + (7.5 + r) * c} width={c - g} height={c - g} rx=".5" fill={cell} />);
+  }
+  return (
+    <g>
+      <rect x={x0 - 8} y={y0 - 10} width={18 * c + 16 - g} height={9.5 * c + 18 - g} rx="1.5" fill={BG} stroke={FAINT} strokeWidth={1} />
+      <g stroke="none">{cells}</g>
+    </g>
+  );
+}
+
+/** Argon for the tube furnace: two cylinders strapped to the wall at the end of the bench, one line to the tube. */
+function GasCylinders() {
+  const cyl = (cx: number, label: string) => (
+    <g key={cx}>
+      <path d={`M${cx - 6} 248v-92a6 6 0 0 1 6-6a6 6 0 0 1 6 6v92z`} fill={BG} />
+      <path d={`M${cx - 1.6} 150v-5h3.2v5`} fill={BG} />
+      <path d={`M${cx - 6} 170h12`} stroke={FAINT} strokeWidth={0.8} />
+      <text x={cx} y="182" textAnchor="middle" fontSize="5.5" fill={FAINT} stroke="none" fontFamily={MONO}>{label}</text>
+    </g>
+  );
+  return (
+    <g>
+      {cyl(158, 'Ar')}
+      {cyl(172, 'Ar')}
+      {/* wall straps */}
+      <path d="M150 194h30M150 226h30" stroke={FAINT} strokeWidth={1} />
+      {/* regulator on the right one, and the line to the furnace tube */}
+      <circle cx="172" cy="141" r="3.4" fill={BG} />
+      <path d="M172 139.4v1.8l1.2.8" strokeWidth={0.7} />
+      <path d="M175.4 141h4.6c1.4 0 2.2.8 2.2 2.2v92.4c0 1.6.8 2.4 2.4 2.4h1.4" stroke={FAINT} strokeWidth={1} />
+    </g>
+  );
+}
+
 function Bench() {
   const dashRight = SC.x + DASH_W;
   const codeX = dashRight + 2;
   return (
     <g>
       {/* tube furnace: insulated body, quartz tube through it, controller */}
+      <g transform="translate(-14 0)">
       <path d="M200 236h76M200 242h76" />
       <path d="M200 233v12M276 233v12" strokeWidth={1.6} />
       <rect x="216" y="224" width="44" height="30" rx="5" fill={BG} />
@@ -480,6 +541,7 @@ function Bench() {
       <text className="ls-a ls-temp1" x="291" y="244.6" textAnchor="middle" fontSize="4.6" fill="#e2c47e" stroke="none" fontFamily={MONO}>320°C</text>
       <text className="ls-a ls-temp2" x="291" y="244.6" textAnchor="middle" fontSize="4.6" fill="#e08a4c" stroke="none" fontFamily={MONO}>600°C</text>
       <circle cx="291" cy="252" r="2" />
+      </g>
 
       {/* analytical balance in its draft shield */}
       <path d="M306 258v-8h38v8" fill={BG} />
@@ -541,11 +603,16 @@ function Bench() {
       <path d="M362 258l4-6h40l4 6z" fill={BG} />
       <path d="M370 255.6h32" stroke={FAINT} strokeWidth={0.9} strokeDasharray="2.4 2" />
 
+      {/* two lab notebooks, squared up at the far end */}
+      <rect x="494" y="252" width="30" height="6" rx="1" fill={BG} />
+      <rect x="496.5" y="247" width="26" height="5" rx="1" fill={BG} />
+      <path d="M499 247v5" stroke="var(--primary)" strokeWidth={1.2} />
+
       {/* the bench: one long top, cabinets below */}
-      <path d="M194 258h336" strokeWidth={1.6} />
-      <rect x="198" y="260" width="328" height="40" fill={BG} />
-      <path d="M198 260v40h328v-40M280 262v38M362 262v38M444 262v38" />
-      <path d="M236 276h8M318 276h8M400 276h8M482 276h8" stroke={FAINT} />
+      <path d="M180 258h350" strokeWidth={1.6} />
+      <rect x="184" y="260" width="342" height="40" fill={BG} />
+      <path d="M184 260v40h342v-40M280 262v38M362 262v38M444 262v38" />
+      <path d="M228 276h8M318 276h8M400 276h8M482 276h8" stroke={FAINT} />
     </g>
   );
 }
