@@ -1,0 +1,61 @@
+# Local / small-VPS deployment: Postgres + the app.
+# 1. npm run setup   (or: cp .env.example .env and fill in JWT_SECRET + POSTGRES_PASSWORD)
+# 2. docker compose up -d --build
+# 3. open the URL you gave setup (default http://localhost:3000)
+#
+# Sign-in is email + password only. SMTP (for "forgot password" emails) is
+# OPTIONAL: leave SMTP_HOST empty and reset links go to `docker compose logs
+# app` instead.
+#
+# Postgres is NOT exposed to the host — the app reaches it over the internal
+# compose network only. For local `prisma migrate dev` against this database,
+# temporarily add a `ports: ["5432:5432"]` mapping under db, or run
+# `docker compose exec db psql -U rune`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rune
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: rune
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rune"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://rune:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/rune
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      RUNE_BASE_URL: ${RUNE_BASE_URL:-}
+      RUNE_SIGNUP_MODE: ${RUNE_SIGNUP_MODE:-}
+      RUNE_ALLOWED_EMAIL_DOMAINS: ${RUNE_ALLOWED_EMAIL_DOMAINS:-}
+      RUNE_ADMIN_EMAILS: ${RUNE_ADMIN_EMAILS:-}
+      RUNE_DEVELOPER_PASSWORD: ${RUNE_DEVELOPER_PASSWORD:-}
+      RUNE_TRUSTED_PROXY_HOPS: ${RUNE_TRUSTED_PROXY_HOPS:-1}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      RUNE_WHISPER_MODEL: ${RUNE_WHISPER_MODEL:-}
+      RUNE_DATA_DIR: /data
+    volumes:
+      - app-data:/data
+    ports:
+      - "${PORT:-3000}:3000"
+
+volumes:
+  db-data:
+  app-data:

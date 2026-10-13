@@ -1,0 +1,54 @@
+# ── Secrets & environment ──────────────────────────────────────────
+# Never commit real secrets. Keep .env.example (a template) in the repo,
+# but every actual .env file stays local-only.
+.env
+.env.*
+!.env.example
+
+# ── Local development database ─────────────────────────────────────
+# `npm run dev:db` runs a local Postgres (pglite) and persists its
+# cluster here. Contains real local user data — never commit it.
+prisma/pglite-data*/
+prisma/dev-db.json
+prisma/*.db
+prisma/*.db-journal
+
+# ── User-uploaded files ───────────────────────────────────────────
+# Runtime uploads (notebook attachments, avatars). Not source code.
+/uploads
+/public/uploads
+
+# ── Security audit log ────────────────────────────────────────────
+/data/audit.log
+/data
+
+# ── Dependencies & build output ───────────────────────────────────
+node_modules/
+/.next
+/out
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# ── Review / working artefacts ────────────────────────────────────
+/_review
+/_scratch
+
+# ── OS / editor noise ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Test / CI
+/coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+tests-e2e/.auth-state.json
+
+# MCP server build output
+mcp-server/dist/
+mcp-server/node_modules/

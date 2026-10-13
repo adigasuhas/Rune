@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Errors block; the remaining warnings are tracked debt (explicit `any`
+      # from the database facade, React Compiler diagnostics) - see
+      # eslint.config.mjs.
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+        env:
+          JWT_SECRET: ci-only-placeholder-secret-not-used-anywhere-real
+
+      # Runtime dependencies must be clean at "high"; the full tree is
+      # reported too. As of 2026-10-13 the only findings left are in
+      # ESLint's own toolchain (braces/micromatch via eslint-config-next),
+      # which never ships and has no patched release yet.
+      - name: Dependency audit (runtime, high)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Dependency audit (all, informational)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Signs in as the built-in developer account, which a development
+    # server creates on first boot (src/lib/devAccount.ts) - no secrets needed.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: rune
+          POSTGRES_PASSWORD: rune
+          POSTGRES_DB: rune
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rune"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://rune:rune@localhost:5432/rune
+      JWT_SECRET: ci-only-placeholder-secret-not-used-anywhere-real
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
+      # Runs every spec under tests-e2e/ - the golden-path suite and the
+      # axe-core accessibility pass (tests-e2e/accessibility.spec.ts).
+      - name: E2E + accessibility suite
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

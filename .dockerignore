@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+data
+coverage
+prisma/dev-db.json
+prisma/*.db
+*.log
+.env
+.env.*
+!.env.example
+_review
+_scratch
+tests
+scripts
+docs/internal

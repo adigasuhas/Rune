@@ -1,0 +1,1124 @@
+<title>Rune Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   RUNE — design plan
+   Layout: a marketing shell (asymmetric hero, zig-zag features) hands off
+   into a persistent-sidebar workspace shell; both read from one token set
+   so the seam between them disappears.
+   Color: warm near-black ground with an olive cast (Rune's own dark palette,
+   deepened), one desaturated pine-green accent, muted clay/ochre/slate for
+   danger/warning/info — never a second accent hue.
+   Type: one engineered grotesk (Geist) for every display size, paired with
+   its own mono for every technical/meta label — a Factory.com-style
+   "software company," not an editorial one; no display serif anywhere.
+   Reference pass: factory.com (bold grotesk headlines, tracked uppercase
+   mono for nav/eyebrow/button labels, sharp rounded-rect CTAs, real product
+   UI shown in window-chrome frames) and futureagi.com (near-black ground,
+   two-tone headline, a terminal/quickstart card as the hero's centerpiece,
+   a floating "ask" affordance) — studied for typographic confidence, the
+   window-chrome device, and the quickstart-card pattern; Rune keeps its own
+   palette and copy throughout, not either site's.
+   ============================================================ */
+:root{
+  --bg:#0d0c09; --bg-1:#15140e; --surface:#1c1b14; --surface-2:#242219;
+  --sunken:#0a0908; --border:#2c2a1f; --border-2:#3d3c2c;
+  --text:#f1efe4; --text-2:#a9a693; --text-3:#767460;
+  --accent:#4bab82; --accent-2:#69c49c; --accent-dim:#173224; --accent-ink:#04150d;
+  --warn:#c99a4d; --warn-dim:#2c2414; --danger:#c1654a; --danger-dim:#2c1a15; --info:#5b93ab; --info-dim:#14262c;
+  --shadow-1:0 1px 0 rgba(0,0,0,.4); --shadow-2:0 8px 24px -8px rgba(0,0,0,.5); --shadow-3:0 24px 64px -20px rgba(0,0,0,.6);
+  --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:22px;
+  --ease:cubic-bezier(.16,1,.3,1); --ease-in:cubic-bezier(.4,0,1,1); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+  --sans:'Geist',system-ui,-apple-system,sans-serif; --mono:'Geist Mono',ui-monospace,monospace; --serif:var(--sans);
+  --glow-o:.5;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f6f4ec; --bg-1:#efece0; --surface:#fffdf8; --surface-2:#f7f4ea;
+    --sunken:#e9e6d8; --border:#e0dcc9; --border-2:#cbc6ae;
+    --text:#211f16; --text-2:#5c5946; --text-3:#84806a;
+    --accent:#2f6e51; --accent-2:#1f5a40; --accent-dim:#e2ecdf; --accent-ink:#f4fbf5;
+    --warn:#8a6a26; --warn-dim:#f2e8cd; --danger:#a4432b; --danger-dim:#f5e2da; --info:#37647a; --info-dim:#e0eaee;
+    --shadow-1:0 1px 0 rgba(30,28,18,.06); --shadow-2:0 8px 24px -10px rgba(30,28,18,.16); --shadow-3:0 24px 64px -20px rgba(30,28,18,.24);
+    --glow-o:.16;
+    color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f6f4ec; --bg-1:#efece0; --surface:#fffdf8; --surface-2:#f7f4ea;
+  --sunken:#e9e6d8; --border:#e0dcc9; --border-2:#cbc6ae;
+  --text:#211f16; --text-2:#5c5946; --text-3:#84806a;
+  --accent:#2f6e51; --accent-2:#1f5a40; --accent-dim:#e2ecdf; --accent-ink:#f4fbf5;
+  --warn:#8a6a26; --warn-dim:#f2e8cd; --danger:#a4432b; --danger-dim:#f5e2da; --info:#37647a; --info-dim:#e0eaee;
+  --shadow-1:0 1px 0 rgba(30,28,18,.06); --shadow-2:0 8px 24px -10px rgba(30,28,18,.16); --shadow-3:0 24px 64px -20px rgba(30,28,18,.24);
+  --glow-o:.16;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{max-width:100%}
+h1,h2,h3,h4{margin:0;text-wrap:balance;font-weight:600;letter-spacing:-.01em}
+p{margin:0}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,textarea,select{font-family:inherit;font-size:inherit;color:inherit;background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-sm)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.tnum{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}}
+
+/* ---------- layout primitives ---------- */
+.wrap{max-width:1180px;margin-inline:auto;padding-inline:24px}
+.stack{display:flex;flex-direction:column}
+.row{display:flex;align-items:center}
+.gap-1{gap:8px}.gap-2{gap:14px}.gap-3{gap:22px}.gap-4{gap:36px}
+[hidden]{display:none !important}
+.vis-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip-link{position:absolute;left:12px;top:-48px;background:var(--accent);color:var(--accent-ink);padding:10px 16px;border-radius:var(--r-sm);z-index:999;transition:top .18s var(--ease)}
+.skip-link:focus{top:12px}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:99px;font-weight:600;font-size:13.5px;transition:transform .18s var(--ease),background .18s var(--ease),border-color .18s var(--ease),box-shadow .18s var(--ease);white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{background:var(--accent-2);transform:translateY(-1px);box-shadow:0 6px 18px -6px color-mix(in srgb, var(--accent) 55%, transparent)}
+.btn-ghost{background:transparent;border:1px solid var(--border-2);color:var(--text)}
+.btn-ghost:hover{border-color:var(--text-3);background:var(--surface-2);transform:translateY(-1px)}
+.btn-quiet{background:transparent;color:var(--text-2)}
+.btn-quiet:hover{color:var(--text)}
+.btn-icon{width:34px;height:34px;padding:0;border-radius:var(--r-sm);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);transition:background .15s,color .15s,transform .15s var(--ease)}
+.btn-icon:hover{background:var(--surface-2);color:var(--text);transform:translateY(-1px)}
+.btn-sm{padding:7px 13px;font-size:12.5px}
+.icon{width:17px;height:17px;flex:none;transition:transform .18s var(--ease)}
+.icon-sm{width:14px;height:14px}
+/* Marketing surface borrows Factory's convention: tracked uppercase mono
+   labels and sharp rounded-rect CTAs with a drawn arrow, distinct from the
+   app's sentence-case pill buttons. */
+.btn-mono{border-radius:var(--r-md);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:12px;padding:12px 20px}
+.btn-mono .arrow{transition:transform .25s var(--ease)}
+.btn-mono:hover .arrow{transform:translateX(3px)}
+.btn-mono.btn-ghost{border-color:var(--border-2)}
+
+/* ---------- badges / pills ---------- */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10.5px;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
+.badge-accent{background:var(--accent-dim);color:var(--accent-2)}
+.badge-warn{background:var(--warn-dim);color:var(--warn)}
+.badge-danger{background:var(--danger-dim);color:var(--danger)}
+.badge-info{background:var(--info-dim);color:var(--info)}
+.badge-neutral{background:var(--surface-2);color:var(--text-2)}
+.dot{width:6px;height:6px;border-radius:50%;flex:none}
+
+/* ==================================================================
+   MARKETING
+   ================================================================== */
+#marketing{display:block}
+.mkt-nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:40;background:color-mix(in srgb, var(--bg) 82%, transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.mkt-nav-inner{display:flex;align-items:center;justify-content:space-between;height:66px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;letter-spacing:-.01em}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;transition:transform .3s var(--ease-spring)}
+.brand:hover .brand-mark{transform:rotate(-8deg) scale(1.06)}
+.mkt-links{display:flex;align-items:center;gap:30px;font-family:var(--mono);font-size:12px;letter-spacing:.02em;text-transform:uppercase;color:var(--text-2)}
+.mkt-links a{position:relative;transition:color .15s;padding-bottom:2px}
+.mkt-links a::after{content:'';position:absolute;left:0;right:100%;bottom:0;height:1px;background:var(--accent-2);transition:right .25s var(--ease)}
+.mkt-links a:hover{color:var(--text)}
+.mkt-links a:hover::after{right:0}
+.mkt-actions{display:flex;align-items:center;gap:10px}
+.mobile-nav-toggle{display:none}
+
+.hero{position:relative;padding-block:88px 64px;overflow:hidden}
+.hero-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:99px;border:1px solid var(--border-2);font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2);margin-bottom:24px}
+.eyebrow .dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-dim);animation:pulse-dot 2.4s var(--ease) infinite}
+@keyframes pulse-dot{0%,100%{box-shadow:0 0 0 3px var(--accent-dim)}50%{box-shadow:0 0 0 5px var(--accent-dim)}}
+.hero h1{font-weight:700;font-size:clamp(36px,5vw,62px);line-height:1.02;letter-spacing:-.03em;color:var(--text)}
+.hero h1 em{font-style:normal;color:var(--text-3)}
+.hero-sub{margin-top:22px;font-size:16.5px;line-height:1.6;color:var(--text-2);max-width:46ch}
+.hero-cta{margin-top:34px;display:flex;gap:12px;flex-wrap:wrap}
+.hero-meta{margin-top:26px;font-family:var(--mono);font-size:11.5px;color:var(--text-3);letter-spacing:.02em}
+.hero-visual{position:relative;aspect-ratio:1/1;border-radius:var(--r-xl);background:linear-gradient(160deg,var(--surface),var(--bg-1));border:1px solid var(--border);overflow:hidden;box-shadow:var(--shadow-3)}
+.orb{position:absolute;border-radius:50%;filter:blur(50px);opacity:calc(var(--glow-o, .5))}
+.orb1{width:220px;height:220px;background:var(--accent);top:-40px;right:-30px}
+.orb2{width:160px;height:160px;background:var(--info);bottom:-20px;left:-20px;opacity:calc(var(--glow-o, .5) * .55)}
+.hero-card{position:absolute;background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r-lg);box-shadow:var(--shadow-2);padding:16px;width:220px}
+.hero-card-1{top:34px;left:28px;animation:float1 7s var(--ease) infinite}
+.hero-card-2{bottom:40px;right:24px;width:190px;animation:float2 8s var(--ease) infinite}
+@keyframes float1{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes float2{0%,100%{transform:translateY(0)}50%{transform:translateY(12px)}}
+.hero-card-title{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.hero-card-row{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;color:var(--text-2)}
+.hero-card-row.done{color:var(--text-3);text-decoration:line-through}
+.hero-ask{position:absolute;left:24px;bottom:24px;display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border-2);border-radius:99px;padding:10px 16px 10px 13px;font-size:12px;color:var(--text-2);box-shadow:var(--shadow-2);animation:asknudge 4.5s var(--ease) infinite}
+@keyframes asknudge{0%,80%,100%{transform:translateY(0)}90%{transform:translateY(-4px)}}
+.check-dot{width:14px;height:14px;border-radius:5px;border:1.5px solid var(--border-2);flex:none;display:flex;align-items:center;justify-content:center}
+.check-dot.on{background:var(--accent);border-color:var(--accent)}
+.check-dot.on svg{width:9px;height:9px;color:var(--accent-ink)}
+
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.reveal.in{opacity:1;transform:translateY(0)}
+
+.section{padding-block:76px}
+.section-head{max-width:640px;margin-bottom:48px}
+.section-label{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-2);margin-bottom:12px}
+.section-head h2{font-family:var(--serif);font-weight:500;font-size:clamp(26px,3vw,36px);letter-spacing:-.01em}
+.section-head p{margin-top:14px;color:var(--text-2);font-size:15.5px;line-height:1.65;max-width:52ch}
+
+.zigzag{display:flex;flex-direction:column;gap:8px}
+.zig-row{display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:center;padding-block:44px;border-top:1px solid var(--border)}
+.zig-row:nth-child(even) .zig-text{order:2}
+.zig-num{font-family:var(--mono);font-size:12px;color:var(--text-3);margin-bottom:14px}
+.zig-text h3{font-size:22px;margin-bottom:12px}
+.zig-text p{color:var(--text-2);line-height:1.65;max-width:42ch}
+.zig-visual{border-radius:var(--r-lg);border:1px solid var(--border);background:var(--surface);padding:22px;min-height:220px;display:flex;flex-direction:column;justify-content:center;gap:10px;box-shadow:var(--shadow-1)}
+
+.bento{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}
+.bento .card{grid-column:span 2}
+.bento .card.wide{grid-column:span 4}
+.bento .card.tall{grid-row:span 2}
+.card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:26px;box-shadow:var(--shadow-1);overflow:hidden;transition:border-color .2s var(--ease),transform .2s var(--ease)}
+.card::before{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%), color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);opacity:0;transition:opacity .3s var(--ease);pointer-events:none}
+.card:hover{border-color:var(--border-2);transform:translateY(-2px)}
+.card:hover::before{opacity:1}
+.card h4{font-size:15px;margin-bottom:8px}
+.card p{color:var(--text-2);font-size:13.5px;line-height:1.6}
+.card .icon-slot{width:38px;height:38px;border-radius:var(--r-md);background:var(--accent-dim);color:var(--accent-2);display:flex;align-items:center;justify-content:center;margin-bottom:16px;transition:transform .3s var(--ease-spring)}
+.card:hover .icon-slot{transform:scale(1.08) rotate(-4deg)}
+.card > *{position:relative}
+
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.stat{padding:30px 4px;border-left:1px solid var(--border)}
+.stat:first-child{border-left:none}
+.stat .n{font-family:var(--mono);font-size:30px;font-weight:600}
+.stat .l{font-size:12px;color:var(--text-3);margin-top:6px}
+
+.cta-band{border-radius:var(--r-xl);background:linear-gradient(150deg,var(--surface),var(--bg-1));border:1px solid var(--border-2);padding:56px;display:flex;align-items:center;justify-content:space-between;gap:32px;box-shadow:var(--shadow-2)}
+.cta-band h2{font-size:30px;font-weight:700;letter-spacing:-.02em;max-width:20ch}
+
+/* ---------- Quickstart terminal card (Future AGI's window-chrome device,
+   filled with Rune's own real setup command) ---------- */
+.term-band{padding-block:0 72px}
+.term-card{position:relative;border-radius:var(--r-xl);background:var(--sunken);border:1px solid var(--border-2);box-shadow:var(--shadow-3);overflow:hidden}
+.term-glow{position:absolute;width:340px;height:340px;border-radius:50%;background:var(--accent);opacity:calc(var(--glow-o, .5) * .28);filter:blur(90px);top:-140px;right:-60px;pointer-events:none}
+.term-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.term-dots{display:flex;gap:7px}
+.term-dots span{width:10px;height:10px;border-radius:50%;background:var(--border-2)}
+.term-dots span:nth-child(1){background:#c1654a99}
+.term-dots span:nth-child(2){background:#c99a4d99}
+.term-dots span:nth-child(3){background:#4bab8299}
+.term-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3)}
+.term-tabs{display:flex;gap:4px;padding:12px 18px 0}
+.term-tab{font-family:var(--mono);font-size:12px;padding:7px 13px;border-radius:var(--r-sm) var(--r-sm) 0 0;color:var(--text-3);cursor:pointer;transition:color .15s,background .15s}
+.term-tab.active{background:var(--surface);color:var(--text)}
+.term-tab:not(.active):hover{color:var(--text-2)}
+.term-body{background:var(--surface);margin:0 18px 18px;border-radius:0 var(--r-md) var(--r-md) var(--r-md);padding:20px 22px;position:relative}
+.term-line{font-family:var(--mono);font-size:13px;line-height:2;color:var(--text-2)}
+.term-line .prompt{color:var(--accent-2);margin-right:10px}
+.term-copy{position:absolute;top:14px;right:14px;transition:transform .15s var(--ease)}
+.term-copy:active{transform:scale(.92)}
+.term-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:0 18px 20px}
+.term-note{font-family:var(--mono);font-size:11px;color:var(--text-3)}
+
+footer.mkt-footer{border-top:1px solid var(--border);padding-block:52px 34px;margin-top:20px}
+.footer-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:36px}
+.footer-brand p{color:var(--text-3);font-size:13px;margin-top:12px;max-width:32ch;line-height:1.6}
+.footer-col h5{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:14px}
+.footer-col a{display:inline-block;font-size:13.5px;color:var(--text-2);padding-block:5px;transition:color .15s,transform .15s var(--ease)}
+.footer-col a:hover{color:var(--text);transform:translateX(3px)}
+.footer-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:40px;padding-top:22px;border-top:1px solid var(--border);font-size:12px;color:var(--text-3)}
+
+/* ---------- Docs ---------- */
+.docs-shell{display:grid;grid-template-columns:220px 1fr;gap:48px;padding-block:56px}
+.docs-nav{position:sticky;top:100px;align-self:start}
+.docs-nav-group{margin-bottom:22px}
+.docs-nav-group h5{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);margin-bottom:8px}
+.docs-nav a{display:block;font-size:13.5px;color:var(--text-2);padding:6px 10px;border-radius:var(--r-sm);margin-inline:-10px}
+.docs-nav a:hover{background:var(--surface-2);color:var(--text)}
+.docs-nav a.active{background:var(--accent-dim);color:var(--accent-2);font-weight:600}
+.docs-body h1{font-family:var(--serif);font-size:34px;font-weight:500;margin-bottom:14px}
+.docs-body > p.lead{font-size:16px;color:var(--text-2);max-width:60ch;line-height:1.7;margin-bottom:36px}
+.docs-body h2{font-size:19px;margin-block:34px 12px}
+.docs-body p{color:var(--text-2);max-width:66ch;line-height:1.7;margin-bottom:14px}
+.docs-body code{font-family:var(--mono);background:var(--surface-2);padding:2px 6px;border-radius:4px;font-size:12.5px;color:var(--accent-2)}
+.docs-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:18px 20px;margin-block:18px}
+
+/* ==================================================================
+   LOGIN
+   ================================================================== */
+#login{min-height:100%;display:grid;grid-template-columns:1fr 1fr}
+.login-side{padding:56px;display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid var(--border);background:var(--bg-1)}
+.login-side h2{font-family:var(--serif);font-size:30px;font-weight:500;max-width:13ch;line-height:1.15}
+.login-side p{color:var(--text-2);margin-top:16px;max-width:36ch;line-height:1.6}
+.login-main{display:flex;align-items:center;justify-content:center;padding:40px}
+.login-card{width:100%;max-width:360px}
+.field{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;color:var(--text-3)}
+.field input{padding:11px 13px;border-radius:var(--r-sm);width:100%}
+.field input:focus{border-color:var(--accent)}
+.field-error{font-size:12px;color:var(--danger);display:none}
+.field.has-error input{border-color:var(--danger)}
+.field.has-error .field-error{display:block}
+.login-submit{width:100%;padding:12px;margin-top:6px}
+.login-divider{display:flex;align-items:center;gap:12px;margin:22px 0;color:var(--text-3);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.login-switch{text-align:center;font-size:13px;color:var(--text-2);margin-top:20px}
+.login-switch button{color:var(--accent-2);font-weight:600}
+
+/* ==================================================================
+   APP SHELL
+   ================================================================== */
+#app{display:flex;height:100%}
+.sidebar{width:236px;flex:none;background:var(--bg-1);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:width .22s var(--ease);overflow:hidden}
+.sidebar.collapsed{width:70px}
+.sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 14px}
+.sidebar-search{margin:0 14px 14px;display:flex;align-items:center;gap:8px;background:var(--sunken);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;color:var(--text-3);font-size:12.5px;cursor:pointer}
+.sidebar-search kbd{margin-left:auto;font-family:var(--mono);font-size:10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;padding:1px 5px}
+.sidebar-scroll{flex:1;overflow-y:auto;padding:0 10px}
+.nav-group{margin-bottom:6px}
+.nav-group-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);padding:14px 10px 6px}
+.sidebar.collapsed .nav-group-label,.sidebar.collapsed .label-text,.sidebar.collapsed .brand-text,.sidebar.collapsed .sidebar-search span{display:none}
+.nav-item{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:var(--r-sm);font-size:13.5px;color:var(--text-2);position:relative;transition:background .15s,color .15s,transform .15s var(--ease),padding-left .15s var(--ease)}
+.nav-item:hover{background:var(--surface-2);color:var(--text);padding-left:14px}
+.nav-item:hover .icon{transform:scale(1.08)}
+.nav-item.active{background:var(--accent-dim);color:var(--accent-2);font-weight:600}
+.nav-item .icon{color:inherit}
+.sidebar-foot{padding:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.avatar{width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none}
+.who{min-width:0}
+.who .name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who .role{font-size:11px;color:var(--text-3)}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;height:100%}
+.topbar{height:60px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 26px;border-bottom:1px solid var(--border)}
+.topbar-title{font-size:15px;font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:8px}
+.page{flex:1;overflow-y:auto;padding:30px 34px 60px}
+.page-anim{animation:pagein .38s var(--ease)}
+@keyframes pagein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:26px;gap:20px}
+.page-head h1{font-size:23px}
+.page-head .sub{color:var(--text-2);font-size:13.5px;margin-top:5px}
+
+/* task rows */
+.task-list{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.task-row{display:flex;align-items:center;gap:14px;padding:13px 4px;border-bottom:1px solid var(--border);transition:background .13s}
+.task-row:hover{background:var(--surface)}
+.task-check{width:19px;height:19px;border-radius:6px;border:1.5px solid var(--border-2);flex:none;display:flex;align-items:center;justify-content:center;transition:all .18s var(--ease)}
+.task-check:hover{border-color:var(--accent)}
+.task-check.on{background:var(--accent);border-color:var(--accent);animation:pop .32s var(--ease)}
+@keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.25)}100%{transform:scale(1)}}
+.task-check svg{width:11px;height:11px;color:var(--accent-ink);opacity:0;transition:opacity .1s}
+.task-check.on svg{opacity:1}
+.task-name{font-size:13.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .2s}
+.task-row.done .task-name{color:var(--text-3);text-decoration:line-through}
+.task-meta{display:flex;align-items:center;gap:10px;flex:none}
+.pill-priority{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 8px;border-radius:99px;text-transform:uppercase}
+.pri-CRITICAL{background:var(--danger-dim);color:var(--danger)}
+.pri-HIGH{background:var(--warn-dim);color:var(--warn)}
+.pri-MEDIUM{background:var(--info-dim);color:var(--info)}
+.pri-LOW{background:var(--surface-2);color:var(--text-3)}
+.task-context{font-size:11px;color:var(--text-3);width:88px}
+
+/* project cards */
+.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.proj-card{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;flex-direction:column;gap:14px;transition:border-color .15s,transform .15s var(--ease);cursor:pointer}
+.proj-card::before{content:'';position:absolute;inset:0;border-radius:inherit;background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%), color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%);opacity:0;transition:opacity .3s var(--ease);pointer-events:none}
+.proj-card:hover{border-color:var(--border-2);transform:translateY(-3px)}
+.proj-card:hover::before{opacity:1}
+.proj-card > *{position:relative}
+.proj-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.proj-name{font-size:14.5px;font-weight:600}
+.proj-bar-track{height:5px;border-radius:99px;background:var(--sunken);overflow:hidden}
+.proj-bar-fill{height:100%;background:var(--accent);border-radius:99px;transition:width .6s var(--ease)}
+.proj-foot{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--text-3)}
+
+/* notebook */
+.nb-shell{display:grid;grid-template-columns:220px 1fr 250px;gap:0;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;height:calc(100vh - 220px);min-height:480px}
+.nb-col{overflow-y:auto}
+.nb-outline{background:var(--bg-1);border-right:1px solid var(--border);padding:16px}
+.nb-outline h5{font-size:11px;text-transform:uppercase;color:var(--text-3);margin-bottom:10px;letter-spacing:.08em}
+.nb-outline-item{padding:7px 9px;border-radius:var(--r-sm);font-size:12.5px;color:var(--text-2);cursor:pointer}
+.nb-outline-item:hover{background:var(--surface-2)}
+.nb-outline-item.active{background:var(--accent-dim);color:var(--accent-2)}
+.nb-doc{padding:36px 46px;font-size:14.5px;line-height:1.75}
+.nb-doc h2{font-family:var(--sans);font-size:20px;font-weight:700;margin-block:26px 10px;padding-top:6px;border-top:1px solid var(--border)}
+.nb-doc h2:first-child{border-top:none;margin-top:0}
+.nb-doc p{color:var(--text-2);margin-bottom:12px}
+.nb-doc .eq{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 16px;font-family:var(--mono);font-size:13px;margin-block:12px;color:var(--accent-2)}
+.nb-details{background:var(--bg-1);border-left:1px solid var(--border);padding:18px}
+.nb-details h5{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;margin-top:20px}
+.nb-details h5:first-child{margin-top:0}
+.nb-toolbar{display:flex;align-items:center;gap:4px;padding:9px 12px;border-bottom:1px solid var(--border);background:var(--bg-1)}
+.nb-toolbar .sep{width:1px;height:18px;background:var(--border);margin:0 5px}
+
+/* settings */
+.settings-shell{display:grid;grid-template-columns:200px 1fr;gap:44px}
+.settings-nav a{display:block;padding:8px 12px;border-radius:var(--r-sm);font-size:13px;color:var(--text-2);margin-bottom:2px}
+.settings-nav a.active{background:var(--surface-2);color:var(--text);font-weight:600}
+.settings-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;margin-bottom:18px}
+.settings-section h3{font-size:14.5px;margin-bottom:4px}
+.settings-section .desc{font-size:12.5px;color:var(--text-3);margin-bottom:18px}
+.settings-row{display:flex;justify-content:space-between;align-items:center;padding-block:13px;border-top:1px solid var(--border)}
+.settings-row:first-of-type{border-top:none}
+.settings-row .label{font-size:13px}
+.settings-row .hint{font-size:11.5px;color:var(--text-3);margin-top:2px}
+.switch{width:38px;height:22px;border-radius:99px;background:var(--sunken);border:1px solid var(--border-2);position:relative;flex:none;transition:background .18s}
+.switch::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:var(--text-3);top:2px;left:2px;transition:transform .2s var(--ease),background .2s}
+.switch.on{background:var(--accent-dim);border-color:var(--accent)}
+.switch.on::after{transform:translateX(16px);background:var(--accent)}
+
+/* empty / loading / error */
+.empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:70px 20px;color:var(--text-3)}
+.empty-state .icon-slot{width:52px;height:52px;border-radius:var(--r-md);background:var(--surface-2);display:flex;align-items:center;justify-content:center;margin-bottom:18px;color:var(--text-3)}
+.empty-state h4{color:var(--text);font-size:15px;margin-bottom:6px}
+.empty-state p{max-width:32ch;font-size:13px;margin-bottom:18px}
+.skeleton{background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 45%,var(--surface) 60%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:var(--r-sm)}
+@keyframes shimmer{0%{background-position:150% 0}100%{background-position:-50% 0}}
+.error-banner{display:flex;align-items:center;gap:10px;background:var(--danger-dim);color:var(--danger);border:1px solid var(--danger);border-radius:var(--r-md);padding:11px 15px;font-size:12.5px;margin-bottom:18px}
+
+/* modals / overlays */
+.overlay{position:fixed;inset:0;background:rgba(6,6,4,.6);backdrop-filter:blur(3px);z-index:80;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;opacity:0;pointer-events:none;transition:opacity .2s var(--ease)}
+.overlay.open{opacity:1;pointer-events:auto}
+.modal{background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r-lg);box-shadow:var(--shadow-3);width:100%;max-width:480px;transform:translateY(-14px) scale(.98);opacity:0;transition:transform .22s var(--ease),opacity .22s var(--ease)}
+.overlay.open .modal{transform:translateY(0) scale(1);opacity:1}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-size:14.5px}
+.modal-body{padding:20px}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--border)}
+.cmdk-box{width:100%;max-width:560px}
+.cmdk-input{width:100%;padding:16px 20px;border:none;border-bottom:1px solid var(--border);font-size:15px;background:transparent;border-radius:0}
+.cmdk-input:focus{outline:none}
+.cmdk-list{max-height:340px;overflow-y:auto;padding:8px}
+.cmdk-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--r-sm);font-size:13.5px;color:var(--text-2)}
+.cmdk-item.sel{background:var(--surface-2);color:var(--text)}
+.cmdk-item .icon{color:var(--text-3)}
+.cmdk-hint{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-3)}
+.notif-panel{position:fixed;top:64px;right:26px;width:340px;background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r-lg);box-shadow:var(--shadow-3);z-index:75;opacity:0;transform:translateY(-8px);pointer-events:none;transition:.18s var(--ease)}
+.notif-panel.open{opacity:1;transform:translateY(0);pointer-events:auto}
+.notif-item{display:flex;gap:11px;padding:13px 16px;border-bottom:1px solid var(--border)}
+.notif-item:last-child{border-bottom:none}
+.notif-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);margin-top:6px;flex:none}
+.notif-item .t{font-size:12.5px}
+.notif-item .m{font-size:11.5px;color:var(--text-3);margin-top:2px}
+
+.toast-wrap{position:fixed;bottom:22px;right:22px;display:flex;flex-direction:column;gap:8px;z-index:90}
+.toast{background:var(--surface);border:1px solid var(--border-2);border-radius:var(--r-md);box-shadow:var(--shadow-2);padding:12px 16px;display:flex;align-items:center;gap:10px;font-size:13px;min-width:220px;animation:toastin .3s var(--ease)}
+.toast .icon{color:var(--accent-2)}
+@keyframes toastin{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* mobile */
+.mobile-menu-btn{display:none}
+@media (max-width:880px){
+  .hero-grid{grid-template-columns:1fr}
+  .hero-visual{aspect-ratio:16/10}
+  .zig-row,.zig-row:nth-child(even) .zig-text{grid-template-columns:1fr;order:0}
+  .bento{grid-template-columns:1fr 1fr}
+  .bento .card.wide{grid-column:span 2}
+  .stat-row{grid-template-columns:1fr 1fr}
+  .stat:nth-child(3){border-left:none}
+  .footer-grid{grid-template-columns:1fr 1fr;gap:28px 20px}
+  .cta-band{flex-direction:column;text-align:center;padding:40px 26px}
+  #login{grid-template-columns:1fr}
+  .login-side{display:none}
+  .docs-shell{grid-template-columns:1fr}
+  .docs-nav{position:static;display:flex;gap:18px;overflow-x:auto;padding-bottom:10px}
+  .docs-nav-group{margin-bottom:0}
+  .settings-shell{grid-template-columns:1fr}
+  .nb-shell{grid-template-columns:1fr;height:auto}
+  .nb-outline,.nb-details{display:none}
+  .mkt-links{display:none}
+  .mobile-nav-toggle{display:flex}
+  .sidebar{position:fixed;inset:0 auto 0 0;z-index:70;transform:translateX(-100%);width:250px}
+  .sidebar.mobile-open{transform:translateX(0);box-shadow:var(--shadow-3)}
+  .mobile-menu-btn{display:inline-flex}
+  .page{padding:22px 16px 50px}
+  .task-context{display:none}
+  .modal,.notif-panel{max-width:calc(100vw - 32px)}
+  .notif-panel{right:16px}
+}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:65;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.open{opacity:1;pointer-events:auto}
+</style>
+
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<!-- ============================================================= MARKETING ============================================================= -->
+<div id="marketing">
+  <nav class="mkt-nav">
+    <div class="wrap mkt-nav-inner">
+      <div class="brand"><span class="brand-mark">R</span> Rune</div>
+      <div class="mkt-links">
+        <a href="#" data-nav="product">Product</a>
+        <a href="#" data-nav="workflow">Workflow</a>
+        <a href="#" data-go="docs">Docs</a>
+        <a href="#" data-nav="pricing">Pricing</a>
+      </div>
+      <div class="mkt-actions">
+        <button class="btn btn-quiet mobile-nav-toggle btn-icon" aria-label="Menu" id="mktMobileBtn">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"/></svg>
+        </button>
+        <button class="btn btn-quiet" data-go="login">Sign in</button>
+        <button class="btn btn-mono btn-primary" data-go="login" data-mode="signup">Get started</button>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main-content">
+    <section class="hero wrap hero-grid">
+      <div>
+        <div class="eyebrow"><span class="dot"></span> Built for the PhD, not the sprint</div>
+        <h1>Your assistant<br><em>for a better you.</em></h1>
+        <p class="hero-sub">Plan your week, run experiments, keep project notebooks, and manage a team — all in one free, self-hostable app built for the days that run thirteen hours.</p>
+        <div class="hero-cta">
+          <button class="btn btn-mono btn-primary" data-go="login" data-mode="signup">Get started <span class="arrow">→</span></button>
+          <button class="btn btn-mono btn-ghost" data-go="app">See it running</button>
+        </div>
+        <div class="hero-meta">SELF-HOSTABLE · YOUR DATA STAYS YOURS · NO LOCK-IN</div>
+      </div>
+      <div class="hero-visual">
+        <div class="orb orb1"></div><div class="orb orb2"></div>
+        <div class="hero-card hero-card-1">
+          <div class="term-dots" style="margin-bottom:10px"><span></span><span></span><span></span></div>
+          <div class="hero-card-title">Today · Deep work</div>
+          <div class="hero-card-row"><span class="check-dot on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></span> Analyse g(r), T=0.45 replicas</div>
+          <div class="hero-card-row"><span class="check-dot"></span> Draft the methods section</div>
+        </div>
+        <div class="hero-card hero-card-2">
+          <div class="hero-card-title">Rigidity of amorphous solids</div>
+          <div class="proj-bar-track" style="margin:8px 0"><div class="proj-bar-fill" style="width:42%"></div></div>
+          <div style="font-size:11px;color:var(--text-3)">4 open tasks · due in 12 days</div>
+        </div>
+        <div class="hero-ask">
+          <span class="dot" style="background:var(--accent);width:6px;height:6px;border-radius:50%"></span>
+          Ask Rune to plan tomorrow…
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap term-band">
+      <div class="term-card reveal">
+        <div class="term-glow"></div>
+        <div class="term-head">
+          <div class="term-dots"><span></span><span></span><span></span></div>
+          <div class="term-tag">Quickstart</div>
+        </div>
+        <div class="term-tabs">
+          <div class="term-tab active">npm</div>
+          <div class="term-tab">Docker</div>
+          <div class="term-tab">Manual</div>
+        </div>
+        <div class="term-body">
+          <button class="btn-icon term-copy" id="termCopyBtn" aria-label="Copy commands">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+          </button>
+          <div class="term-line"><span class="prompt">$</span>git clone https://github.com/rune/rune.git</div>
+          <div class="term-line"><span class="prompt">$</span>cd rune &amp;&amp; npm install</div>
+          <div class="term-line"><span class="prompt">$</span>npm run setup</div>
+        </div>
+        <div class="term-foot">
+          <div class="row gap-2"><button class="btn btn-mono btn-ghost btn-sm" data-go="docs">Full self-hosting guide <span class="arrow">→</span></button><button class="btn btn-mono btn-ghost btn-sm">View source</button></div>
+          <div class="term-note">NO TELEMETRY · WORKS FULLY OFFLINE</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section">
+      <div class="section-head reveal">
+        <div class="section-label">What it replaces</div>
+        <h2>One calm surface, instead of six open tabs.</h2>
+        <p>Rune keeps the parts of research that usually live in separate apps — a to-do list, a lab notebook, a calendar, a reference manager, a team channel — under one roof, without becoming a dashboard you have to manage.</p>
+      </div>
+      <div class="bento">
+        <div class="card wide tall reveal">
+          <div class="icon-slot"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+          <h4>Today, planned by the hour</h4>
+          <p>Drag tasks straight onto an hourly grid. Deep work, focus, and regular sessions get their own rhythm so a 13-hour day still has real breaks in it.</p>
+          <div class="task-list" style="margin-top:16px;border-top:1px solid var(--border)">
+            <div class="task-row"><span class="task-check on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></span><span class="task-name">Back up raw trajectories</span><span class="pill-priority pri-LOW">Low</span></div>
+            <div class="task-row"><span class="task-check"></span><span class="task-name">Draft the methods section</span><span class="pill-priority pri-CRITICAL">Critical</span></div>
+            <div class="task-row"><span class="task-check"></span><span class="task-name">Reply to reviewer #2</span><span class="pill-priority pri-CRITICAL">Critical</span></div>
+          </div>
+        </div>
+        <div class="card reveal">
+          <div class="icon-slot"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"/></svg></div>
+          <h4>One notebook, LaTeX-native</h4>
+          <p>A continuous document per notebook, math and citations included — not a page per day.</p>
+        </div>
+        <div class="card reveal">
+          <div class="icon-slot"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 7L9 18l-5-5"/></svg></div>
+          <h4>Projects that track themselves</h4>
+          <p>Progress comes from the tasks underneath, not a number you update by hand.</p>
+        </div>
+        <div class="card wide reveal">
+          <div class="icon-slot"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-8a4 4 0 110 8 4 4 0 010-8z"/></svg></div>
+          <h4>A lab, not just a to-do list</h4>
+          <p>Assign work, watch a shared board, and keep the whole group's runs and instruments in one shared record.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section" style="padding-top:0">
+      <div class="section-head reveal">
+        <div class="section-label">How a week actually goes</div>
+        <h2>From a stray idea to a submitted paper.</h2>
+      </div>
+      <div class="zigzag">
+        <div class="zig-row reveal">
+          <div class="zig-text"><div class="zig-num">01</div><h3>Capture the task where it happens</h3><p>A run finishes, a reviewer replies, an idea shows up mid-meeting — it becomes a task with a project, a priority, and an honest time estimate in one motion.</p></div>
+          <div class="zig-visual"><div class="task-row" style="border:none"><span class="task-check"></span><span class="task-name">Reply to reviewer #2</span><span class="pill-priority pri-CRITICAL">Critical</span></div><div class="task-row" style="border:none;border-top:1px solid var(--border)"><span class="task-check"></span><span class="task-name">Review Chen &amp; Ito 2026</span><span class="pill-priority pri-MEDIUM">Medium</span></div></div>
+        </div>
+        <div class="zig-row reveal">
+          <div class="zig-text"><div class="zig-num">02</div><h3>Write it up as you go</h3><p>The notebook sits next to the run that produced it, so the write-up happens while the reasoning is still fresh, not three weeks later from memory.</p></div>
+          <div class="zig-visual"><div class="nb-doc" style="padding:0"><h2 style="border:none;margin:0">Analysis</h2><p style="margin-bottom:0">The split-peak onset in g(r) appears at T* ≈ 0.41, consistent with Okafor (2025)…</p></div></div>
+        </div>
+        <div class="zig-row reveal">
+          <div class="zig-text"><div class="zig-num">03</div><h3>See the week, not just the day</h3><p>Analytics shows deep-work hours, postponement rate, and where the time actually went — a working-day-aware picture, not a vanity streak counter.</p></div>
+          <div class="zig-visual"><div class="stat-row" style="border:none"><div class="stat" style="border:none;padding-block:0"><div class="n tnum">4.2h</div><div class="l">Deep work / day</div></div><div class="stat" style="border-left:1px solid var(--border);padding-block:0"><div class="n tnum">86%</div><div class="l">On-time rate</div></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section" style="padding-top:0">
+      <div class="cta-band reveal">
+        <h2>Run it on your own machine tonight.</h2>
+        <div class="row gap-2"><button class="btn btn-mono btn-primary" data-go="login" data-mode="signup">Get started free <span class="arrow">→</span></button><button class="btn btn-mono btn-ghost" data-go="docs">Read the docs</button></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mkt-footer wrap">
+    <div class="footer-grid">
+      <div class="footer-brand"><div class="brand"><span class="brand-mark">R</span> Rune</div><p>A calm, self-hostable operating system for a research day — tasks, projects, notebooks, and a lab, in one place.</p></div>
+      <div class="footer-col"><h5>Product</h5><a href="#">Today</a><a href="#">Notebook</a><a href="#">Analytics</a><a href="#" data-go="docs">Docs</a></div>
+      <div class="footer-col"><h5>Company</h5><a href="#">About</a><a href="#">Security</a><a href="#">Changelog</a></div>
+      <div class="footer-col"><h5>Legal</h5><a href="#">Privacy policy</a><a href="#">Terms of service</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Rune. All rights reserved.</span>
+      <span>Developed by Suhas Adiga</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ============================================================= DOCS ============================================================= -->
+<div id="docs" hidden>
+  <nav class="mkt-nav">
+    <div class="wrap mkt-nav-inner">
+      <div class="brand" style="cursor:pointer" data-go="marketing"><span class="brand-mark">R</span> Rune</div>
+      <div class="mkt-links"><a href="#" data-go="marketing">Product</a><a href="#" data-go="docs" class="active-link">Docs</a></div>
+      <div class="mkt-actions"><button class="btn btn-quiet" data-go="login">Sign in</button></div>
+    </div>
+  </nav>
+  <div class="wrap docs-shell">
+    <aside class="docs-nav">
+      <div class="docs-nav-group"><h5>Get started</h5><a href="#" class="active">Introduction</a><a href="#">Installation</a><a href="#">First project</a></div>
+      <div class="docs-nav-group"><h5>Guides</h5><a href="#">Tasks &amp; scheduling</a><a href="#">The notebook</a><a href="#">Teams &amp; labs</a><a href="#">Self-hosting</a></div>
+      <div class="docs-nav-group"><h5>Reference</h5><a href="#">Keyboard shortcuts</a><a href="#">API &amp; MCP server</a></div>
+    </aside>
+    <div class="docs-body">
+      <h1>Introduction</h1>
+      <p class="lead">Rune is a self-hostable operating system for a research day: tasks, projects, a LaTeX notebook, and an optional team mode, run from your own server.</p>
+      <h2>Why self-hosted</h2>
+      <p>Your tasks, notebooks, and run history stay on infrastructure you control. Nothing about Rune requires a hosted account to be useful — <code>npm run setup</code> gets a working instance running locally in a few minutes.</p>
+      <div class="docs-card"><strong>Quick start</strong><p style="margin-top:8px;margin-bottom:0">Clone the repository, run <code>npm install</code>, then <code>npm run setup</code>. The setup tool asks where Rune will run and writes the configuration for it.</p></div>
+      <h2>Core ideas</h2>
+      <p>A <strong>project</strong> groups related tasks and can hold one or more <strong>notebooks</strong> — each a single continuous LaTeX document, not a folder of pages. A <strong>run</strong> tracks a compute job or lab instrument session and can be referenced directly from the notebook that writes it up.</p>
+      <h2>Next</h2>
+      <p>Continue with <em>Installation</em> to set up a local instance, or <em>First project</em> to see the core workflow end to end.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= LOGIN ============================================================= -->
+<div id="login" hidden>
+  <div class="login-side">
+    <div class="brand"><span class="brand-mark">R</span> Rune</div>
+    <div>
+      <h2>Plan your week. Run your research. Write it up as you go.</h2>
+      <p>Tasks, projects, a LaTeX notebook, and an optional team mode — one free, self-hostable app.</p>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text-3)">SELF-HOSTABLE · YOUR DATA STAYS YOURS</div>
+  </div>
+  <div class="login-main">
+    <div class="login-card">
+      <div class="brand" style="margin-bottom:28px"><span class="brand-mark">R</span> Rune</div>
+      <h2 id="loginHeading" style="font-size:19px;margin-bottom:6px">Sign in</h2>
+      <p style="color:var(--text-2);font-size:13px;margin-bottom:24px" id="loginSub">Welcome back. Sign in with your email and password.</p>
+      <form id="loginForm" novalidate>
+        <div class="field" id="nameField" hidden><label for="nameInput">Name (optional)</label><input id="nameInput" type="text" placeholder="Ada Lovelace"></div>
+        <div class="field" id="emailField"><label for="emailInput">Email address</label><input id="emailInput" type="email" placeholder="you@example.com" required><span class="field-error">Enter a valid email address.</span></div>
+        <div class="field" id="passField"><label for="passInput">Password</label><input id="passInput" type="password" placeholder="Your password" required><span class="field-error">Password must be at least 10 characters.</span></div>
+        <button class="btn btn-primary login-submit" type="submit" id="loginSubmitBtn">Sign in</button>
+      </form>
+      <div class="login-switch">
+        <span id="switchPrompt">New to Rune?</span> <button id="switchModeBtn">Create an account</button>
+      </div>
+      <p style="text-align:center;margin-top:14px"><a href="#" style="font-size:12px;color:var(--text-3)">Forgot your password?</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= APP ============================================================= -->
+<div class="scrim" id="scrim"></div>
+<div id="app" hidden>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand"><span class="brand-mark">R</span><span class="brand-text">Rune</span></div>
+      <button class="btn-icon" id="collapseBtn" aria-label="Collapse sidebar"><svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 6l-6 6 6 6"/></svg></button>
+    </div>
+    <button class="sidebar-search" id="openCmdk"><svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+    <nav class="sidebar-scroll" id="sidebarNav"></nav>
+    <div class="sidebar-foot">
+      <div class="avatar">SA</div>
+      <div class="who label-text"><div class="name">Suhas Adiga</div><div class="role">PhD researcher</div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="row gap-2">
+        <button class="btn-icon mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"/></svg></button>
+        <div class="topbar-title" id="topbarTitle">Today</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn-icon" id="openNotifBtn" aria-label="Notifications" style="position:relative">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+          <span style="position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--danger)"></span>
+        </button>
+        <button class="btn-icon" id="themeToggle" aria-label="Toggle theme"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3a6 6 0 109 9 9 9 0 11-9-9z"/></svg></button>
+        <button class="btn btn-primary btn-sm" id="newTaskBtn">New task</button>
+      </div>
+    </div>
+    <div class="page" id="pageMount"></div>
+  </div>
+</div>
+
+<!-- overlays -->
+<div class="overlay" id="cmdkOverlay">
+  <div class="modal cmdk-box">
+    <input class="cmdk-input" id="cmdkInput" placeholder="Jump to a page, task, or project…" aria-label="Command search">
+    <div class="cmdk-list" id="cmdkList"></div>
+  </div>
+</div>
+<div class="overlay" id="taskOverlay">
+  <div class="modal">
+    <div class="modal-head"><h3>New task</h3><button class="btn-icon" data-close-modal aria-label="Close"><svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+    <div class="modal-body stack gap-2">
+      <div class="field"><label for="taskNameInput">Task</label><input id="taskNameInput" placeholder="Analyse g(r) for T=0.5 replicas"></div>
+      <div class="row gap-2">
+        <div class="field" style="flex:1"><label for="taskProjSel">Project</label><select id="taskProjSel"><option>Rigidity of amorphous solids</option><option>CDT-DAMC</option></select></div>
+        <div class="field" style="flex:1"><label for="taskPriSel">Priority</label><select id="taskPriSel"><option>Medium</option><option>High</option><option>Critical</option><option>Low</option></select></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost btn-sm" data-close-modal>Cancel</button><button class="btn btn-primary btn-sm" id="createTaskBtn">Create task</button></div>
+  </div>
+</div>
+<div class="notif-panel" id="notifPanel">
+  <div class="modal-head"><h3>Notifications</h3></div>
+  <div class="notif-item"><span class="notif-dot"></span><div><div class="t">Draft the methods section is due tomorrow</div><div class="m">2 hours ago</div></div></div>
+  <div class="notif-item"><span class="notif-dot" style="background:var(--info)"></span><div><div class="t">Priya commented on Rigidity of amorphous solids</div><div class="m">Yesterday</div></div></div>
+  <div class="notif-item"><span class="notif-dot" style="background:var(--text-3)"></span><div><div class="t">Weekly digest is ready</div><div class="m">Monday</div></div></div>
+</div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- real content ---------------- */
+var TASKS = [
+  {name:"Back up raw trajectories", project:"Rigidity of amorphous solids", priority:"LOW", context:"Computer", done:true},
+  {name:"Draft the methods section", project:"Rigidity of amorphous solids", priority:"CRITICAL", context:"Research", done:false},
+  {name:"Reply to reviewer #2", project:"CDT-DAMC", priority:"CRITICAL", context:"Computer", done:false},
+  {name:"Analyse g(r) for T=0.45 replicas", project:"Rigidity of amorphous solids", priority:"MEDIUM", context:"Computer", done:false},
+  {name:"Review Chen & Ito 2026", project:"Rigidity of amorphous solids", priority:"MEDIUM", context:"Reading", done:false},
+  {name:"Draft methods section", project:"CDT-DAMC", priority:"LOW", context:"Computer", done:false}
+];
+var PROJECTS = [
+  {name:"Rigidity of amorphous solids", status:"Active", priority:"HIGH", progress:42, tasks:"4 open"},
+  {name:"CDT-DAMC", status:"Active", priority:"MEDIUM", progress:18, tasks:"6 open"},
+  {name:"Amorphous solids rigidity", status:"Active", priority:"HIGH", progress:64, tasks:"2 open"},
+  {name:"Two-step relaxation review", status:"On hold", priority:"LOW", progress:8, tasks:"1 open"}
+];
+var NB_SECTIONS = ["Daily Observations","Experimental Results","Literature Review","Research Ideas","Meeting Notes","References"];
+
+/* ---------------- nav config ---------------- */
+var NAV = [
+  {label:"Plan", items:[
+    {id:"today", name:"Today", icon:'M3 9h18M9 21V9M3 5h18v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5z'},
+    {id:"tasks", name:"Tasks", icon:'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11'}
+  ]},
+  {label:"Work", items:[
+    {id:"projects", name:"Projects", icon:'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z'},
+    {id:"notebook", name:"Notebook", icon:'M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z'},
+    {id:"runs", name:"Runs", icon:'M4 4h16v16H4z M9 9h6v6H9z'},
+    {id:"wall", name:"Wall", icon:'M4 4h16v16H4zM4 10h16M10 4v16'}
+  ]},
+  {label:"Review", items:[
+    {id:"analytics", name:"Analytics", icon:'M4 19h16M8 19V9m4 10V5m4 14v-7'}
+  ]},
+  {label:null, items:[
+    {id:"team", name:"Team", icon:'M17 21v-2a4 4 0 00-3-3.87M13 5a4 4 0 010 7.75M9 21v-2a4 4 0 00-4-4H4M9 3a4 4 0 100 8 4 4 0 000-8z'},
+    {id:"settings", name:"Settings", icon:'M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 005 15c0-.6-.34-1.15-1-1.51H3.5a2 2 0 010-4H4a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4a1.65 1.65 0 001-1.5V2.5a2 2 0 014 0V4c0 .6.34 1.15 1 1.51.6.28 1.3.19 1.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06c-.52.52-.61 1.22-.33 1.82.28.6.9 1 1.5 1H21a2 2 0 010 4h-.5c-.6 0-1.22.34-1.51 1z'},
+    {id:"help", name:"Help", icon:'M9.1 9a3 3 0 115.8 1c0 2-3 2-3 4M12 17h.01'}
+  ]},
+  {label:"Admin", items:[
+    {id:"admin-users", name:"User management", icon:'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75'},
+    {id:"admin-settings", name:"System settings", icon:'M12 15a3 3 0 100-6 3 3 0 000 6z'},
+    {id:"admin-db", name:"Database", icon:'M4 6c0-1.66 3.58-3 8-3s8 1.34 8 3-3.58 3-8 3-8-1.34-8-3zM4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6'},
+    {id:"admin-logs", name:"Logs", icon:'M4 4h16v16H4zM8 9h8M8 13h8M8 17h4'}
+  ]}
+];
+var TITLES = {today:"Today",tasks:"Tasks",projects:"Projects",notebook:"Notebook",runs:"Runs",wall:"Wall",analytics:"Analytics",team:"Team",settings:"Settings",help:"Help","admin-users":"User management","admin-settings":"System settings","admin-db":"Database","admin-logs":"Logs"};
+
+function icon(path, cls){ return '<svg class="icon '+(cls||'')+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+path+'"/></svg>'; }
+function esc(s){ return String(s).replace(/[&<>]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];}); }
+
+/* ---------------- sidebar ---------------- */
+function buildSidebar(){
+  var html = "";
+  NAV.forEach(function(group){
+    html += '<div class="nav-group">';
+    if(group.label) html += '<div class="nav-group-label">'+group.label+'</div>';
+    group.items.forEach(function(item){
+      html += '<a href="#" class="nav-item" data-page="'+item.id+'">'+icon(item.icon)+'<span class="label-text">'+item.name+'</span></a>';
+    });
+    html += '</div>';
+  });
+  document.getElementById('sidebarNav').innerHTML = html;
+}
+
+/* ---------------- page renderers ---------------- */
+function priBadge(p){ return '<span class="pill-priority pri-'+p+'">'+p.charAt(0)+p.slice(1).toLowerCase()+'</span>'; }
+
+function pageToday(){
+  var doneCount = TASKS.filter(function(t){return t.done;}).length;
+  var rows = TASKS.map(function(t,i){
+    return '<div class="task-row'+(t.done?' done':'')+'" data-i="'+i+'">'+
+      '<button class="task-check'+(t.done?' on':'')+'" data-toggle="'+i+'" aria-label="Toggle done">'+icon('M5 13l4 4L19 7','icon-sm')+'</button>'+
+      '<span class="task-name">'+esc(t.name)+'</span>'+
+      '<span class="task-meta">'+priBadge(t.priority)+'<span class="task-context">'+t.context+'</span></span></div>';
+  }).join('');
+  return '<div class="page-head"><div><h1>Today</h1><div class="sub">'+doneCount+' of '+TASKS.length+' tasks done · Tuesday, 29 September</div></div>'+
+    '<div class="row gap-2"><button class="btn btn-ghost btn-sm">This week</button><button class="btn btn-primary btn-sm" data-open-task>New task</button></div></div>'+
+    '<div class="stat-row" style="margin-bottom:26px"><div class="stat"><div class="n tnum">3.4h</div><div class="l">Deep work today</div></div><div class="stat"><div class="n tnum">'+doneCount+'/'+TASKS.length+'</div><div class="l">Tasks done</div></div><div class="stat"><div class="n tnum">2</div><div class="l">Projects active</div></div><div class="stat"><div class="n tnum">86%</div><div class="l">On-time this week</div></div></div>'+
+    '<h3 style="font-size:13px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Up next</h3>'+
+    '<div class="task-list">'+rows+'</div>';
+}
+
+function pageTasks(){
+  var rows = TASKS.map(function(t,i){
+    return '<div class="task-row'+(t.done?' done':'')+'" data-i="'+i+'">'+
+      '<button class="task-check'+(t.done?' on':'')+'" data-toggle="'+i+'" aria-label="Toggle done">'+icon('M5 13l4 4L19 7','icon-sm')+'</button>'+
+      '<span class="task-name">'+esc(t.name)+'</span>'+
+      '<span class="task-meta"><span class="badge badge-neutral">'+esc(t.project)+'</span>'+priBadge(t.priority)+'<span class="task-context">'+t.context+'</span></span></div>';
+  }).join('');
+  return '<div class="page-head"><div><h1>Tasks</h1><div class="sub">'+TASKS.length+' tasks across '+PROJECTS.length+' projects</div></div>'+
+    '<button class="btn btn-primary btn-sm" data-open-task>New task</button></div><div class="task-list">'+rows+'</div>';
+}
+
+function pageProjects(){
+  var cards = PROJECTS.map(function(p){
+    var pri = p.priority;
+    return '<div class="proj-card"><div class="proj-top"><div class="proj-name">'+esc(p.name)+'</div>'+priBadge(pri)+'</div>'+
+      '<div class="proj-bar-track"><div class="proj-bar-fill" style="width:'+p.progress+'%"></div></div>'+
+      '<div class="proj-foot"><span>'+p.status+'</span><span>'+p.tasks+' · '+p.progress+'%</span></div></div>';
+  }).join('');
+  return '<div class="page-head"><div><h1>Projects</h1><div class="sub">'+PROJECTS.length+' active projects</div></div><button class="btn btn-primary btn-sm">New project</button></div>'+
+    '<div class="project-grid">'+cards+'</div>';
+}
+
+function pageNotebook(){
+  var outline = NB_SECTIONS.map(function(s,i){ return '<div class="nb-outline-item'+(i===1?' active':'')+'">'+s+'</div>'; }).join('');
+  return '<div class="page-head"><div><h1>Notebook</h1><div class="sub">Rigidity of amorphous solids</div></div>'+
+    '<div class="row gap-2"><button class="btn btn-ghost btn-sm">History</button><button class="btn btn-primary btn-sm">Export PDF</button></div></div>'+
+    '<div class="nb-shell">'+
+      '<div class="nb-col nb-outline"><h5>Sections</h5>'+outline+'</div>'+
+      '<div class="nb-col">'+
+        '<div class="nb-toolbar">'+icon('M6 12h12M6 6h12M6 18h8','icon-sm')+'<span class="sep"></span>'+icon('M4 6h16M4 12h10M4 18h16','icon-sm')+'<span class="sep"></span>'+icon('M12 4v16M4 12h16','icon-sm')+'<span class="sep"></span>'+icon('M12 18.5a1 1 0 100-2 1 1 0 000 2zM19 10a7 7 0 10-14 0c0 5 5 6 5 10','icon-sm')+'</div>'+
+        '<div class="nb-doc"><h2>Experimental Results</h2>'+
+        '<p>Re-ran g(r) and S(q) for the eight T=0.45 replicas following the equilibration protocol from Section 2. The split-peak onset in g(r) appears at T* ≈ 0.41, consistent with Okafor (2025).</p>'+
+        '<div class="eq">g(r) = (1/ρN) ⟨Σᵢ≠ⱼ δ(r − rᵢⱼ)⟩</div>'+
+        '<p>Cross-referencing against the batch 3 dataset shows the rigidity onset shifting by roughly 0.02 in reduced temperature units, within the noise floor reported for this ensemble size.</p></div>'+
+      '</div>'+
+      '<div class="nb-col nb-details"><h5>Author</h5><div class="row gap-1"><div class="avatar" style="width:22px;height:22px;font-size:10px">SA</div><span style="font-size:12.5px">Suhas Adiga</span></div>'+
+      '<h5>Tags</h5><div class="row gap-1"><span class="badge badge-neutral">#simulation</span><span class="badge badge-neutral">#g(r)</span></div>'+
+      '<h5>Linked run</h5><div class="badge badge-info">batch-3-t045</div>'+
+      '<h5>Attachments</h5><span style="font-size:12px;color:var(--text-3)">No attachments yet.</span></div>'+
+    '</div>';
+}
+
+function pageAnalytics(){
+  return '<div class="page-head"><div><h1>Analytics</h1><div class="sub">Last 7 working days</div></div></div>'+
+    '<div class="stat-row" style="margin-bottom:30px"><div class="stat"><div class="n tnum">4.2h</div><div class="l">Deep work / day</div></div><div class="stat"><div class="n tnum">86%</div><div class="l">On-time rate</div></div><div class="stat"><div class="n tnum">12%</div><div class="l">Postponed</div></div><div class="stat"><div class="n tnum">74</div><div class="l">Productivity score</div></div></div>'+
+    '<div class="card"><h4>Deep work vs. shallow work</h4><div style="display:flex;align-items:flex-end;gap:10px;height:120px;margin-top:18px">'+
+    [62,48,71,55,80,34,20].map(function(v,i){return '<div style="flex:1;background:var(--accent-dim);border-radius:4px 4px 0 0;height:'+v+'%;position:relative"><div style="position:absolute;bottom:0;left:0;right:0;height:60%;background:var(--accent);border-radius:4px 4px 0 0;opacity:.8"></div></div>';}).join('')+
+    '</div></div>';
+}
+
+function pageRuns(){
+  return '<div class="page-head"><div><h1>Runs</h1><div class="sub">Compute jobs and instrument sessions</div></div><button class="btn btn-primary btn-sm">New run</button></div>'+
+    '<div class="task-list"><div class="task-row"><span class="badge badge-accent">Running</span><span class="task-name">batch-3-t045 · MD simulation</span><span class="task-context">2h 14m</span></div>'+
+    '<div class="task-row"><span class="badge badge-neutral">Queued</span><span class="task-name">batch-4-t050 · MD simulation</span><span class="task-context">—</span></div>'+
+    '<div class="task-row"><span class="badge badge-info">Completed</span><span class="task-name">batch-2-t040 · MD simulation</span><span class="task-context">4h 02m</span></div></div>';
+}
+
+function pageWall(){
+  var notes = [["Ask Priya about the T=0.5 replica seeds","#FDE68A"],["Reviewer #2 wants a sensitivity analysis","#c8e6d8"],["Check if batch 3 seeds overlap with batch 2","#f3d0c4"]];
+  return '<div class="page-head"><div><h1>Wall</h1><div class="sub">Rigidity of amorphous solids</div></div><button class="btn btn-primary btn-sm">New note</button></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">'+
+    notes.map(function(n){return '<div style="background:'+n[1]+';color:#2a2a1f;border-radius:var(--r-md);padding:16px;font-size:13px;min-height:120px;box-shadow:var(--shadow-1)">'+n[0]+'</div>';}).join('')+'</div>';
+}
+
+function pageTeam(){
+  return '<div class="page-head"><div><h1>Team</h1><div class="sub">Rigidity Lab · 4 members</div></div><button class="btn btn-primary btn-sm">Invite</button></div>'+
+    '<div class="task-list">'+
+    [["Suhas Adiga","Owner"],["Priya Raghunathan","Team leader"],["Marcus Webb","Member"],["Elena Sokolova","Member"]].map(function(m){
+      return '<div class="task-row"><div class="avatar" style="width:26px;height:26px;font-size:11px">'+m[0].split(' ').map(function(x){return x[0];}).join('')+'</div><span class="task-name">'+m[0]+'</span><span class="badge badge-neutral">'+m[1]+'</span></div>';
+    }).join('')+'</div>';
+}
+
+function pageSettings(){
+  return '<div class="page-head"><h1>Settings</h1></div>'+
+    '<div class="settings-shell"><nav class="settings-nav"><a class="active">General</a><a>Work schedule</a><a>Notifications</a><a>Advanced</a></nav>'+
+    '<div>'+
+    '<div class="settings-section"><h3>Profile</h3><div class="desc">Your name and how the day is measured.</div>'+
+    '<div class="settings-row"><div><div class="label">Display name</div><div class="hint">Shown across the app and in Team</div></div><input value="Suhas Adiga" style="width:200px;padding:8px 10px"></div>'+
+    '<div class="settings-row"><div><div class="label">Time zone</div></div><span class="badge badge-neutral">UTC</span></div></div>'+
+    '<div class="settings-section"><h3>Notifications &amp; reminders</h3><div class="desc">Per-type opt-outs — nothing changes until you turn something off.</div>'+
+    '<div class="settings-row"><div><div class="label">Task reminders</div></div><div class="switch on"></div></div>'+
+    '<div class="settings-row"><div><div class="label">Weekly digest</div><div class="hint">Sent at the start of each week</div></div><div class="switch on"></div></div>'+
+    '<div class="settings-row"><div><div class="label">Notebook comments</div></div><div class="switch"></div></div></div>'+
+    '<div class="settings-section"><h3>Advanced</h3><div class="desc">Password sign-in.</div>'+
+    '<div class="settings-row"><div><div class="label">Change password</div></div><button class="btn btn-ghost btn-sm">Update</button></div></div>'+
+    '</div></div>';
+}
+
+function pageHelp(){
+  return '<div class="page-head"><h1>Help</h1></div>'+
+    '<div style="max-width:520px" class="field"><input placeholder="Search help topics…"></div>'+
+    '<div class="task-list" style="margin-top:20px">'+
+    ["Signing in and first-time setup","Tasks and scheduling","Notebooks","Calendar and scheduling","Settings"].map(function(t){
+      return '<div class="task-row"><span class="task-name">'+t+'</span>'+icon('M9 18l6-6-6-6','icon-sm')+'</div>';
+    }).join('')+'</div>';
+}
+
+function pageAdminUsers(){
+  return '<div class="page-head"><div><h1>User management</h1><div class="sub">4 accounts</div></div><button class="btn btn-primary btn-sm">Create user</button></div>'+
+    '<div class="task-list">'+
+    [["Suhas Adiga","DEVELOPER","Active"],["Priya Raghunathan","USER","Active"],["Marcus Webb","USER","Active"],["Elena Sokolova","USER","Suspended"]].map(function(u){
+      return '<div class="task-row"><span class="task-name">'+u[0]+'</span><span class="badge badge-neutral">'+u[1]+'</span><span class="badge '+(u[2]==='Active'?'badge-accent':'badge-danger')+'">'+u[2]+'</span></div>';
+    }).join('')+'</div>';
+}
+function pageAdminSettings(){
+  return '<div class="page-head"><h1>System settings</h1></div><div class="card"><h4>Runtime</h4><div class="stat-row" style="border:none;margin-top:10px"><div class="stat" style="padding-block:0;border:none"><div class="n" style="font-size:15px">PostgreSQL</div><div class="l">Database</div></div><div class="stat" style="padding-block:0"><div class="n" style="font-size:15px">Next.js 16</div><div class="l">Framework</div></div></div></div>';
+}
+function pageAdminDb(){
+  return '<div class="page-head"><h1>Database</h1></div><div class="task-list">'+
+    ["users · 4 records","projects · 5 records","tasks · 48 records","notebooks · 3 records"].map(function(t){return '<div class="task-row"><span class="task-name tnum">'+t+'</span></div>';}).join('')+'</div>';
+}
+function pageAdminLogs(){
+  return '<div class="page-head"><h1>Logs</h1></div><div class="empty-state"><div class="icon-slot">'+icon('M4 4h16v16H4z')+'</div><h4>No entries yet</h4><p>Admin actions and server errors will appear here.</p></div>';
+}
+
+var RENDERERS = {today:pageToday,tasks:pageTasks,projects:pageProjects,notebook:pageNotebook,analytics:pageAnalytics,runs:pageRuns,wall:pageWall,team:pageTeam,settings:pageSettings,help:pageHelp,"admin-users":pageAdminUsers,"admin-settings":pageAdminSettings,"admin-db":pageAdminDb,"admin-logs":pageAdminLogs};
+
+/* ---------------- app state / routing ---------------- */
+var state = { view:"marketing", page:"today" };
+
+function showView(v){
+  ["marketing","docs","login","app"].forEach(function(id){ document.getElementById(id).hidden = (id!==v); });
+  state.view = v;
+  document.body.style.overflowY = (v==="app") ? "hidden" : "auto";
+  if(v==="app"){ renderPage(state.page); }
+  window.scrollTo(0,0);
+}
+
+function renderPage(id){
+  state.page = id;
+  var fn = RENDERERS[id] || pageToday;
+  var mount = document.getElementById('pageMount');
+  mount.innerHTML = fn();
+  mount.classList.remove('page-anim'); void mount.offsetWidth; mount.classList.add('page-anim');
+  document.getElementById('topbarTitle').textContent = TITLES[id] || id;
+  document.querySelectorAll('.nav-item').forEach(function(a){ a.classList.toggle('active', a.getAttribute('data-page')===id); });
+  bindPageEvents();
+  if(window.innerWidth<=880){ closeMobileSidebar(); }
+}
+
+function bindPageEvents(){
+  document.querySelectorAll('[data-toggle]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var i = +btn.getAttribute('data-toggle');
+      TASKS[i].done = !TASKS[i].done;
+      if(TASKS[i].done) toast('Task completed', TASKS[i].name);
+      renderPage(state.page);
+    });
+  });
+  document.querySelectorAll('[data-open-task]').forEach(function(b){ b.addEventListener('click', function(){ openModal('taskOverlay'); }); });
+}
+
+/* ---------------- global nav wiring ---------------- */
+document.addEventListener('click', function(e){
+  var goEl = e.target.closest('[data-go]');
+  if(goEl){
+    e.preventDefault();
+    var go = goEl.getAttribute('data-go');
+    if(go==='login'){
+      setLoginMode(goEl.getAttribute('data-mode')==='signup');
+    }
+    showView(go);
+    return;
+  }
+  var navEl = e.target.closest('.nav-item');
+  if(navEl){ e.preventDefault(); renderPage(navEl.getAttribute('data-page')); }
+});
+
+buildSidebar();
+
+/* ---------------- login form ---------------- */
+var isSignup = false;
+function setLoginMode(signup){
+  isSignup = signup;
+  document.getElementById('loginHeading').textContent = signup ? 'Create your account' : 'Sign in';
+  document.getElementById('loginSub').textContent = signup ? 'All you need is an email address and a password.' : 'Welcome back. Sign in with your email and password.';
+  document.getElementById('nameField').hidden = !signup;
+  document.getElementById('loginSubmitBtn').textContent = signup ? 'Create account' : 'Sign in';
+  document.getElementById('switchPrompt').textContent = signup ? 'Already have an account?' : 'New to Rune?';
+  document.getElementById('switchModeBtn').textContent = signup ? 'Sign in' : 'Create an account';
+}
+document.getElementById('switchModeBtn').addEventListener('click', function(){ setLoginMode(!isSignup); });
+document.getElementById('loginForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  var email = document.getElementById('emailInput');
+  var pass = document.getElementById('passInput');
+  var emailOk = /.+@.+\..+/.test(email.value);
+  var passOk = pass.value.length>=10;
+  document.getElementById('emailField').classList.toggle('has-error', !emailOk);
+  document.getElementById('passField').classList.toggle('has-error', !passOk);
+  if(emailOk && passOk){ showView('app'); toast('Signed in', 'Welcome back to Rune.'); }
+});
+
+/* ---------------- sidebar collapse / mobile ---------------- */
+document.getElementById('collapseBtn').addEventListener('click', function(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+});
+function openMobileSidebar(){ document.getElementById('sidebar').classList.add('mobile-open'); document.getElementById('scrim').classList.add('open'); }
+function closeMobileSidebar(){ document.getElementById('sidebar').classList.remove('mobile-open'); document.getElementById('scrim').classList.remove('open'); }
+document.getElementById('mobileMenuBtn').addEventListener('click', openMobileSidebar);
+document.getElementById('scrim').addEventListener('click', closeMobileSidebar);
+document.getElementById('mktMobileBtn').addEventListener('click', function(){ document.querySelector('.mkt-links').style.display = document.querySelector('.mkt-links').style.display==='flex' ? 'none' : 'flex'; });
+
+/* ---------------- theme toggle ---------------- */
+document.getElementById('themeToggle').addEventListener('click', function(){
+  var root = document.documentElement;
+  var cur = root.getAttribute('data-theme');
+  var next = cur==='light' ? 'dark' : 'light';
+  root.setAttribute('data-theme', next);
+  try{ localStorage.setItem('rune-mock-theme', next); }catch(e){}
+});
+try{ var saved = localStorage.getItem('rune-mock-theme'); if(saved) document.documentElement.setAttribute('data-theme', saved); }catch(e){}
+
+/* ---------------- modals ---------------- */
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close-modal]').forEach(function(b){ b.addEventListener('click', function(){ b.closest('.overlay').classList.remove('open'); }); });
+document.querySelectorAll('.overlay').forEach(function(ov){ ov.addEventListener('click', function(e){ if(e.target===ov) ov.classList.remove('open'); }); });
+document.getElementById('newTaskBtn').addEventListener('click', function(){ openModal('taskOverlay'); });
+document.getElementById('createTaskBtn').addEventListener('click', function(){
+  var name = document.getElementById('taskNameInput').value.trim();
+  if(!name){ document.getElementById('taskNameInput').focus(); return; }
+  TASKS.unshift({name:name, project:document.getElementById('taskProjSel').value, priority:document.getElementById('taskPriSel').value.toUpperCase(), context:"Computer", done:false});
+  document.getElementById('taskNameInput').value='';
+  closeModal('taskOverlay');
+  toast('Task created', name);
+  if(state.page==='today'||state.page==='tasks') renderPage(state.page);
+});
+
+/* command palette */
+var CMDK_ITEMS = NAV.reduce(function(acc,g){ return acc.concat(g.items); }, []);
+function renderCmdk(query){
+  var q = (query||'').toLowerCase();
+  var items = CMDK_ITEMS.filter(function(i){ return i.name.toLowerCase().indexOf(q)>-1; });
+  document.getElementById('cmdkList').innerHTML = items.map(function(i,idx){
+    return '<div class="cmdk-item'+(idx===0?' sel':'')+'" data-page="'+i.id+'">'+icon(i.icon,'icon-sm')+'<span>'+i.name+'</span><span class="cmdk-hint">Go to page</span></div>';
+  }).join('') || '<div class="cmdk-item">No results</div>';
+}
+document.getElementById('openCmdk').addEventListener('click', function(){ openModal('cmdkOverlay'); renderCmdk(''); document.getElementById('cmdkInput').value=''; setTimeout(function(){document.getElementById('cmdkInput').focus();},50); });
+document.getElementById('cmdkInput').addEventListener('input', function(e){ renderCmdk(e.target.value); });
+document.getElementById('cmdkList').addEventListener('click', function(e){
+  var it = e.target.closest('[data-page]');
+  if(it){ closeModal('cmdkOverlay'); renderPage(it.getAttribute('data-page')); }
+});
+document.addEventListener('keydown', function(e){
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); if(state.view==='app'){ document.getElementById('openCmdk').click(); } }
+  if(e.key==='Escape'){ document.querySelectorAll('.overlay.open').forEach(function(o){o.classList.remove('open');}); document.getElementById('notifPanel').classList.remove('open'); }
+});
+
+/* notifications */
+document.getElementById('openNotifBtn').addEventListener('click', function(e){ e.stopPropagation(); document.getElementById('notifPanel').classList.toggle('open'); });
+document.addEventListener('click', function(e){ if(!e.target.closest('#notifPanel') && !e.target.closest('#openNotifBtn')) document.getElementById('notifPanel').classList.remove('open'); });
+
+/* toasts */
+function toast(title, msg){
+  var wrap = document.getElementById('toastWrap');
+  var el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = icon('M5 13l4 4L19 7')+'<div><div style="font-weight:600">'+esc(title)+'</div><div style="color:var(--text-3);font-size:11.5px">'+esc(msg)+'</div></div>';
+  wrap.appendChild(el);
+  setTimeout(function(){ el.style.transition='opacity .25s,transform .25s'; el.style.opacity='0'; el.style.transform='translateX(12px)'; setTimeout(function(){el.remove();},260); }, 3200);
+}
+
+/* scroll reveal for marketing */
+var io = ('IntersectionObserver' in window) ? new IntersectionObserver(function(entries){
+  entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
+}, {threshold:.15}) : null;
+document.querySelectorAll('.reveal').forEach(function(el){ io ? io.observe(el) : el.classList.add('in'); });
+
+/* cursor-tracked spotlight on cards (high-end-visual-design: spotlight border card) */
+document.addEventListener('pointermove', function(e){
+  var el = e.target.closest('.card, .proj-card');
+  if(!el) return;
+  var r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+  el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+});
+
+/* quickstart terminal: tabs + copy */
+var TERM_COMMANDS = {
+  npm: ['git clone https://github.com/rune/rune.git', 'cd rune && npm install', 'npm run setup'],
+  Docker: ['git clone https://github.com/rune/rune.git', 'cd rune && npm run setup', 'docker compose up -d --build'],
+  Manual: ['cp .env.example .env', 'npm run db:migrate', 'npm run create-user -- --admin && npm start']
+};
+document.querySelectorAll('.term-tab').forEach(function(tab){
+  tab.addEventListener('click', function(){
+    document.querySelectorAll('.term-tab').forEach(function(t){ t.classList.remove('active'); });
+    tab.classList.add('active');
+    var lines = TERM_COMMANDS[tab.textContent.trim()] || TERM_COMMANDS.npm;
+    var body = document.querySelector('.term-body');
+    body.querySelectorAll('.term-line').forEach(function(l){ l.remove(); });
+    lines.forEach(function(cmd){
+      var d = document.createElement('div');
+      d.className = 'term-line';
+      d.innerHTML = '<span class="prompt">$</span>' + esc(cmd);
+      body.appendChild(d);
+    });
+  });
+});
+var termCopyBtn = document.getElementById('termCopyBtn');
+if(termCopyBtn){
+  termCopyBtn.addEventListener('click', function(){
+    var lines = Array.prototype.slice.call(document.querySelectorAll('.term-line')).map(function(l){ return l.textContent.replace(/^\$/,'').trim(); });
+    var text = lines.join('\n');
+    (navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){
+      toast('Copied', 'Commands copied to clipboard.');
+    }).catch(function(){ toast('Copy this', text.split('\n')[0] + '…'); });
+  });
+}
+
+/* start on marketing */
+showView('marketing');
+setLoginMode(false);
+})();
+</script>

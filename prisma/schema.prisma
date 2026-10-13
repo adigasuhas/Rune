@@ -1,0 +1,665 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TaskContext {
+  COMPUTER
+  READING
+  WRITING
+  RESEARCH
+  MEETING
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  // Work that cannot proceed until something external clears - optionally
+  // "waiting on" a specific person (Task.blockedOnUserId). A BLOCKED task
+  // stays on its owner's board but is visually set apart, and surfaces in
+  // the blocker's "Needs attention" so the dependency is visible to the one
+  // person who can clear it (Theory of Constraints).
+  BLOCKED
+}
+
+// Assignment state is separate from execution state (TaskStatus above) - a
+// delegated task can be PENDING_ACCEPTANCE while its status is still
+// PENDING. Null on a task the owner created for themselves (assignedById
+// null); only meaningful once someone else assigned it.
+enum TaskAssignmentStatus {
+  PENDING_ACCEPTANCE
+  ACCEPTED
+  DECLINED
+}
+
+enum SessionType {
+  DEEP_WORK
+  FOCUS
+  REGULAR
+}
+
+model User {
+  id              String                 @id @default(uuid())
+  email           String                 @unique
+  name            String?
+  avatarUrl       String?
+  passwordHash    String?
+  role            String                 @default("USER") // USER, DEVELOPER
+  status          String                 @default("ACTIVE") // ACTIVE, SUSPENDED, DISABLED
+  timezone        String                 @default("UTC")
+  theme           String                 @default("dark")
+  deletedAt       DateTime?
+  lastLogin       DateTime?
+  isOnboarded     Boolean                @default(false)
+  // Bumped to invalidate every existing session token for this user at once
+  // (suspend/disable/delete, or an explicit "sign out everywhere").
+  sessionVersion  Int                    @default(0)
+  createdAt       DateTime               @default(now())
+  // Epoch analytics windows (working-days count, lifetime averages) are computed
+  // from. Distinct from createdAt so a backup restore ("migrating from another
+  // account") can reset it to the restore date instead of analytics being
+  // silently diluted by a working-days count stretching back to the original
+  // signup, before any of the restored data was actually tracked.
+  analyticsStartDate DateTime            @default(now())
+  updatedAt       DateTime               @updatedAt
+  // Self-service "forgot password" - a one-time, short-lived token. Only the
+  // SHA-256 of the token is stored (same pattern as ApiToken.tokenHash); the
+  // plaintext only ever appears in the emailed/console-logged reset link.
+  passwordResetTokenHash        String?   @unique
+  passwordResetTokenExpiresAt   DateTime?
+  // Self-service recovery: the id of a question from src/lib/recovery.ts
+  // (an id, not the text, so wording can change without orphaning answers)
+  // and a PBKDF2 hash of the normalised answer - treated like a password,
+  // never stored or returned in plain text.
+  recoveryQuestion              String?
+  recoveryAnswerHash            String?
+  projects        Project[]
+  tasks           Task[]
+  tasksAssignedByMe Task[]               @relation("TaskAssignedBy")
+  tasksBlockedOnMe Task[]                @relation("TaskBlockedOn")
+  accomplishments AccomplishmentRecord[]
+  settings        Setting?
+  calendarEvents  CalendarEvent[]
+  notebooks       Notebook[]
+  notebookPagesAuthored NotebookPage[]
+  notebookRevisionsAuthored NotebookRevision[]
+  instruments     Instrument[]
+  jobs            Job[]
+  notifications   Notification[]
+  wallNotes       WallNote[]
+  projectCollaborations ProjectCollaborator[]
+  ownedTeams        Team[]               @relation("TeamOwner")
+  teamMemberships   TeamMembership[]     @relation("TeamMemberships")
+  subgroupsAsLeader TeamSubgroupMember[] @relation("SubgroupLeader")
+  subgroupsAsMember TeamSubgroupMember[] @relation("SubgroupMemberOf")
+  createdInvites    TeamInvite[]
+  sentChatMessages  ChatMessage[]
+  notebookComments  NotebookComment[]
+  apiTokens         ApiToken[]
+}
+
+model Project {
+  id                     String        @id @default(uuid())
+  name                   String
+  description            String?
+  goals                  String?
+  startDate              DateTime?
+  deadline               DateTime?
+  status                 ProjectStatus @default(ACTIVE)
+  priority               TaskPriority  @default(MEDIUM)
+  progress               Float         @default(0) // 0 to 100
+  tasksCompleted         Int           @default(0)
+  tasksRemaining         Int           @default(0)
+  timeSpent              Float         @default(0) // in hours
+  estimatedTimeRemaining Float         @default(0) // in hours
+  userId                 String
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks                  Task[]
+  color                  String        @default("#71717A")
+  notebooks              Notebook[]
+  wallNotes              WallNote[]
+  // Phase 7 Teams: null = personal project (unchanged, pre-Phase-7 behavior).
+  // Set = a team-scoped project. Visibility beyond the Owner (who sees every
+  // team project unconditionally) and this project's own userId creator is
+  // governed strictly by ProjectCollaborator rows - never inherited from a
+  // Team Leader's subgroup relationship (see docs/Plan_overhaul.md Phase 7).
+  teamId                 String?
+  team                   Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  collaborators          ProjectCollaborator[]
+  // Opt-in read visibility for a Team Leader whose sub-group actually works
+  // on this project (the creator or a collaborator is one of their members).
+  // Still explicit - someone with edit rights flips this deliberately - and
+  // still bounded: it never exposes the project to leaders with no one on it.
+  // Set only via the project's own edit surface.
+  visibleToSubgroup      Boolean       @default(false)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+}
+
+// Explicit per-project access grant for team-scoped projects - the only
+// mechanism that grants a Team Leader or Member visibility into a project
+// they didn't create, deliberately uniform across both roles.
+model ProjectCollaborator {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedAt   DateTime @default(now())
+
+  @@unique([projectId, userId])
+}
+
+// A Notebook is ONE continuous LaTeX document, Overleaf-style - not a
+// container of separate pages. `page` (singular, enforced by the
+// `@unique` on NotebookPage.notebookId below) holds the whole document;
+// sections are `\section{}`/`\subsection{}` headings written *inside*
+// that one `content` string and parsed client-side for the outline/TOC,
+// never separate database rows. Simpler mental model, simpler
+// "trackability" (one revision history per notebook, not per-section).
+// A project can hold several notebooks (GoodNotes-style: project = folder,
+// each notebook inside it = one continuous document) - projectId is
+// deliberately NOT unique. A personal notebook (isPersonal, projectId null)
+// isn't filed under any folder.
+model Notebook {
+  id         String        @id @default(uuid())
+  title      String
+  projectId  String?
+  project    Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPersonal Boolean       @default(false)
+  color      String?
+  page       NotebookPage?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([projectId])
+}
+
+model NotebookPage {
+  id         String  @id @default(uuid())
+  notebookId String  @unique
+  notebook   Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+  title      String
+  content    String  @default("")
+  tags       String[] @default([]) // e.g. #experiment, #meeting
+  // Who wrote this document - distinct from Notebook.userId (whose
+  // notebook it lives in), since a project notebook can be edited by any
+  // collaborator with edit access. SetNull rather than Cascade so
+  // deleting an account never takes someone else's notebook down with it.
+  authorId   String?
+  author     User?   @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  // Runs (experiments / compute jobs) linked to this document - the
+  // write-up and the run that produced it live together instead of in
+  // two apps.
+  linkedRuns  Job[]
+  attachments NotebookAttachment[]
+  revisions   NotebookRevision[]
+  // Lightweight review workflow for project-linked notebooks: the
+  // notebook owner marks it READY, a reviewer (someone who can edit the
+  // linked project) reads it, leaves NotebookComments, and marks it
+  // REVIEWED. "NONE" for personal notebooks / drafts.
+  reviewStatus      String    @default("NONE") // NONE | READY | REVIEWED
+  reviewRequestedAt DateTime?
+  comments          NotebookComment[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([reviewStatus])
+}
+
+// A snapshot of the document, taken on manual save (not every autosave
+// tick, to avoid flooding near-duplicate revisions) - a simple, real
+// version history: one stream per document, browse/restore a prior save.
+model NotebookRevision {
+  id        String       @id @default(uuid())
+  pageId    String
+  page      NotebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  content   String
+  authorId  String?
+  author    User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime     @default(now())
+
+  @@index([pageId, createdAt])
+}
+
+// A comment thread entry on a notebook page. anchorQuote is the (optional)
+// verbatim text span the comment is attached to - the client highlights the
+// first match; a comment with no anchor is a page-level note.
+model NotebookComment {
+  id          String       @id @default(uuid())
+  pageId      String
+  page        NotebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body        String
+  anchorQuote String?
+  resolved    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([pageId, createdAt])
+}
+
+// A research artifact attached to a notebook entry - a PDF, data file, or
+// image kept as a real attachment rather than inlined as a LaTeX figure
+// (which is still the right tool for a figure the writer wants rendered
+// inline with a caption; this is for supplementary files meant to be
+// listed and downloaded, not rendered in the document body).
+model NotebookAttachment {
+  id         String       @id @default(uuid())
+  pageId     String
+  page       NotebookPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  url        String
+  filename   String
+  mimeType   String
+  size       Int
+  uploadedAt DateTime     @default(now())
+
+  @@index([pageId])
+}
+
+enum WallNoteSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+// Phase 8 "Wall" - a freeform sticky-note board, one per Project. Position
+// (x/y) and zIndex are free-form pixel coordinates on a bounded canvas (not
+// an infinite/zoomable one - see docs/Plan_overhaul.md Phase 8 for why).
+model WallNote {
+  id        String       @id @default(uuid())
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String       @default("")
+  color     String       @default("#FDE68A") // hex from the curated WALL_NOTE_COLORS palette (src/lib/colors.ts)
+  size      WallNoteSize @default(MEDIUM)
+  x         Float        @default(0)
+  y         Float        @default(0)
+  zIndex    Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([projectId])
+}
+
+model Task {
+  id                String       @id @default(uuid())
+  name              String
+  detail            String?
+  projectId         String?
+  project           Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  linkedGoalId      String?
+  priority          TaskPriority @default(MEDIUM)
+  date              DateTime
+  sessionType       SessionType  @default(REGULAR)
+  estimatedTime     Float        @default(1) // in hours
+  actualTime        Float        @default(0) // in hours
+  timeDifference    Float        @default(0) // in hours
+  context           String       @default("COMPUTER")
+  effort            Int          @default(5) // 1-10
+  impact            Int          @default(5) // 1-10
+  status            TaskStatus   @default(PENDING)
+  notes             String?
+  // Populated only while status is BLOCKED. blockedOnUserId is the person the
+  // task is waiting on (nullable - a task can be blocked on an external thing
+  // with no owner); SetNull so deleting that account just clears the pointer.
+  blockedReason     String?
+  blockedOnUserId   String?
+  blockedOn         User?        @relation("TaskBlockedOn", fields: [blockedOnUserId], references: [id], onDelete: SetNull)
+  postponeHistory   String?      @default("[]")
+  startTime         String?
+  endTime           String?
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // userId is always "whose day/calendar/time-tracking this task belongs
+  // to" - for a task assigned by a team Owner/Leader to someone else, that's
+  // the assignee, not the creator, so the task flows into the assignee's
+  // personal dashboard/calendar/time-tracking with zero special-casing
+  // anywhere else in the app. assignedById is purely an audit trail of who
+  // (if anyone) assigned it - SetNull rather than Cascade so deleting the
+  // assigner's account never takes the assignee's task down with it.
+  assignedById      String?
+  assignedBy        User?        @relation("TaskAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  // Set to PENDING_ACCEPTANCE when assignedById is set on create; the
+  // assignee accepts/declines it. Null for self-created tasks.
+  assignmentStatus  TaskAssignmentStatus?
+  declineReason     String?
+  jobs              Job[]
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  // userId+date backs the "my tasks for today/this week" queries hit on
+  // nearly every page load; userId+status backs the Tasks board's status
+  // filter. Without these, both are full sequential scans of the user's
+  // entire task history as it grows.
+  @@index([userId, date])
+  @@index([userId, status])
+  @@index([projectId])
+  @@index([assignedById])
+  @@index([blockedOnUserId])
+}
+
+model AccomplishmentRecord {
+  id                 String   @id @default(uuid())
+  date               String // YYYY-MM-DD format
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completedTasks     Json // Array of completed tasks metadata
+  deepWorkHours      Float    @default(0)
+  timeSpent          Float    @default(0)
+  projectsProgressed Json // Summary of projects progressed during the day
+  keyAchievements    String?
+  productivityScore  Int      @default(0) // 1-100
+  createdAt          DateTime @default(now())
+
+  @@unique([userId, date])
+}
+
+model Setting {
+  id                       String   @id @default(uuid())
+  userId                   String   @unique
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workStart                String   @default("08:00")
+  workEnd                  String   @default("18:00")
+  workingDays              String   @default("Monday,Tuesday,Wednesday,Thursday,Friday")
+  deepWorkStart            String   @default("09:00")
+  deepWorkEnd              String   @default("17:00")
+  deepWorkMaxSession       Int      @default(90) // in minutes
+  allowConcurrentTasks     Boolean  @default(false)
+  taskNotificationsEnabled Boolean  @default(true)
+  jobReminderDefaultMins   Int      @default(15) // minutes after a job starts running before the first check-in reminder
+  jobReminderRecurringMins Int      @default(10) // minutes between subsequent check-in reminders
+  showOffDayWork           Boolean  @default(false) // include work logged on non-working days in analytics instead of shifting it to the nearest working day
+  // Per-NotificationType opt-out, e.g. {"WEEKLY_DIGEST": false}. Null/absent
+  // key = enabled (so existing accounts see no behavior change until they
+  // actively turn something off) - checked by notify.ts's isNotificationTypeEnabled.
+  notificationPreferences  Json?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model CalendarEvent {
+  id          String      @id @default(uuid())
+  title       String
+  start       DateTime
+  end         DateTime
+  description String?
+  sessionType SessionType @default(REGULAR)
+  taskId      String?
+  completed   Boolean     @default(false)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([userId])
+}
+
+model Instrument {
+  id            String   @id @default(uuid())
+  name          String
+  category      String
+  // Set to share the instrument with a team: every member of that team sees
+  // it in the Run form's picker (read-only - only the owner edits its
+  // specs). Null = private to the owner. A lightweight "shared kit list",
+  // not a booking system.
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  ram           String?
+  cpuArch       String?
+  nodes         Int?
+  coresPerNode  Int?
+  gpuNodes      Int?
+  gpusPerNode   Int?
+  gpuModel      String?
+  gpuMemory     String?
+  hardwareSpecs String?
+  runtimeType   String   @default("fixed") // fixed or slots
+  maxRuntime    String?
+  slots         Json? // Array of predefined runtime slots (strings)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isFavorite    Boolean  @default(false)
+  jobs          Job[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// "Job" is the historically HPC-specific name (kept for backward-compat with
+// the DB/API) for what the UI now calls a "Run" - any tracked in-progress
+// process, computational or not. instrumentId/instrument are optional: an
+// Instrument is now an optional attachment, not a gate every Run must pick
+// one to be created (onDelete: SetNull, not Cascade, so deleting an
+// Instrument detaches Runs instead of deleting them).
+model Job {
+  id                      String      @id @default(uuid())
+  name                    String
+  taskId                  String?
+  task                    Task?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  category                String      @default("General") // free text or preset ("HPC Job", "Lab Instrument", "General") - the categorization mechanism now that instrument is optional
+  instrumentId            String?
+  instrument              Instrument? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
+  // Optional link to the notebook page that writes this run up.
+  notebookPageId          String?
+  notebookPage            NotebookPage? @relation(fields: [notebookPageId], references: [id], onDelete: SetNull)
+  isCpu                   Boolean     @default(true)
+  isGpu                   Boolean     @default(false)
+  queue                   String?
+  status                  String      @default("Queued") // Queued, Running, Completed, Failed, Cancelled, Timed Out
+  jobId                   String?
+  submitTime              DateTime
+  projectedStartTime      DateTime?
+  projectedCompletionTime DateTime?
+  computeTime             Float       @default(0) // duration in minutes
+  inputFile               String?
+  workingDirectory        String?
+  sampleName              String?
+  sampleId                String?
+  reminders               Json? // { enabled?: boolean, tags?: string[] } - check-in cadence itself is a global Setting
+  notes                   String?
+  actualEndTime           DateTime?
+  userId                  String
+  user                    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts                Json // JSON array of past execution attempts
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+}
+
+enum NotificationType {
+  JOB_REMINDER
+  JOB_RECURRING
+  JOB_TERMINATION
+  TASK_REMINDER
+  RUN_APPROACHING_END
+  RUN_OVERDUE
+  // A teammate marked one of their tasks as waiting on you.
+  TASK_BLOCKED
+  // Weekly wrap-up / forward-plan digest (fires on the user's first session
+  // of a new week - a temporal landmark / fresh-start nudge).
+  WEEKLY_DIGEST
+  // A notebook page you can review was marked "ready for review".
+  NOTEBOOK_REVIEW_REQUESTED
+  // Someone commented on a notebook page you own or can review.
+  NOTEBOOK_COMMENT
+  // Someone assigned you a task and it's awaiting your acceptance.
+  TASK_ASSIGNED
+  // The assignee accepted a task you assigned them.
+  TASK_ACCEPTED
+  // The assignee declined a task you assigned them.
+  TASK_DECLINED
+  // Someone @mentioned you in team chat.
+  CHAT_MENTION
+}
+
+// Personal access token for non-browser clients (the MCP server, chat bots).
+// Only the SHA-256 of the token is stored - the plaintext is shown once at
+// creation. Bearer auth is confined to an allow-list of API paths in
+// src/proxy.ts; it can never reach password/account/backup/admin routes.
+model ApiToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  prefix     String // first chars of the token, shown in the UI to tell tokens apart
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  body        String?
+  sourceType  String // "Job" | "Task"
+  sourceId    String?
+  dedupeKey   String? // e.g. "job:<id>:checkin:0", "job:<id>:termination", "task:<id>:upcoming:<date>"
+  read        Boolean          @default(false)
+  dismissedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, read, createdAt])
+}
+
+// ============================================================
+// Phase 7 — Teams / Lab management mode
+// Opt-in, off by default: a user gains their first TeamMembership row
+// either by creating a team (becoming its Owner) or by redeeming an
+// invite - that first row is what "enables" Teams for them; there is no
+// separate boolean flag to keep in sync. Personal projects/tasks/etc are
+// completely unaffected either way - Teams is additive, not a mode switch.
+// ============================================================
+
+enum TeamRole {
+  OWNER
+  TEAM_LEADER
+  MEMBER
+}
+
+model Team {
+  id          String               @id @default(uuid())
+  name        String
+  ownerId     String
+  owner       User                 @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  memberships TeamMembership[]
+  subgroups   TeamSubgroupMember[]
+  invites     TeamInvite[]
+  projects    Project[]
+  chatMessages ChatMessage[]
+  sharedInstruments Instrument[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+}
+
+model TeamMembership {
+  id       String   @id @default(uuid())
+  teamId   String
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation("TeamMemberships", fields: [userId], references: [id], onDelete: Cascade)
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+// Many-to-many: which Team Leader(s) a given Member sits under within a
+// team - overlapping sets, not a tree, since a Member isn't confined to one
+// Team Leader. Deliberately NOT consulted for project visibility (that's
+// ProjectCollaborator only) - this is purely the organizational grouping,
+// relevant to Phase 9's Team-Leader-group chat scope once that's built.
+model TeamSubgroupMember {
+  id           String   @id @default(uuid())
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamLeaderId String
+  teamLeader   User     @relation("SubgroupLeader", fields: [teamLeaderId], references: [id], onDelete: Cascade)
+  memberId     String
+  member       User     @relation("SubgroupMemberOf", fields: [memberId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@unique([teamLeaderId, memberId])
+}
+
+// A shareable invite link/code (not a per-email invite) - redeeming it is
+// the opt-in step for regular Teams usage (see comment above). Reusable
+// until revoked or expired, matching how a Discord-style invite link works,
+// rather than single-use.
+model TeamInvite {
+  id          String    @id @default(uuid())
+  teamId      String
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  code        String    @unique
+  role        TeamRole  @default(MEMBER) // role granted on redemption - OWNER is never invite-able, only transferable
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  revoked     Boolean   @default(false)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+enum ChatScope {
+  DIRECT
+  LEADER_GROUP
+  TEAM
+  // A contextual discussion thread anchored to a specific project or task,
+  // not a person/group - conversationKey is "<objectType>:<objectId>" (e.g.
+  // "project:<id>"), so no new columns are needed on ChatMessage.
+  OBJECT
+}
+
+// Phase 9 - team chat, deliberately without E2EE for v1 (see
+// docs/Plan_overhaul.md Phase 9 for the tradeoff discussion) - standard
+// TLS-in-transit + DB-encryption-at-rest only, same posture as Slack/Teams.
+// Direct (1:1) messages are team-scoped, not a global cross-team DM system,
+// since all three scopes are defined in terms of team membership.
+// conversationKey's meaning depends on scope: DIRECT -> the two
+// participants' user ids, sorted and joined with "_" (a stable pairing key
+// regardless of who sent first); LEADER_GROUP -> that Team Leader's own
+// userId (their sub-group's chat - a Member under multiple Leaders has one
+// thread per Leader); TEAM -> unused, scope alone identifies the single
+// team-wide thread.
+model ChatMessage {
+  id              String    @id @default(uuid())
+  teamId          String
+  team            Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  scope           ChatScope
+  conversationKey String    @default("")
+  senderId        String
+  sender          User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  text            String
+  createdAt       DateTime  @default(now())
+
+  @@index([teamId, scope, conversationKey, createdAt])
+}

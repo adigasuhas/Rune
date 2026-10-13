@@ -1,0 +1,154 @@
+'use client';
+
+import Link from 'next/link';
+import { MarketingNav } from '@/components/marketing/MarketingNav';
+import { MarketingFooter } from '@/components/marketing/MarketingFooter';
+import { FEATURE_GROUPS, FeatureIcon, type FeatureKey } from '@/components/marketing/FeatureIcons';
+import {
+  AnalyticsVignette,
+  NotebookVignette,
+  ProjectsVignette,
+  RunsVignette,
+  TasksVignette,
+  TeamsVignette,
+  TodayVignette,
+  WallVignette,
+} from '@/components/marketing/FeatureVignettes';
+
+/**
+ * /features - one section per part of Rune. Each pairs a plain statement of
+ * the benefit with an illustration of the actual interface, so the picture
+ * does most of the explaining and the copy stays short.
+ */
+const SECTIONS: { key: FeatureKey; name: string; headline: string; body: string; points: string[]; Visual: () => React.ReactElement }[] = [
+  {
+    key: 'today', name: 'Today', Visual: TodayVignette,
+    headline: 'Plan the day you actually have.',
+    body: 'Drag tasks onto an hourly grid, keep your deep-work windows clear, and watch a daily score move as things get done.',
+    points: ['Hourly planner you drag tasks onto', 'Deep-work windows blocked out', '“Up next” and “Needs attention” at a glance'],
+  },
+  {
+    key: 'tasks', name: 'Tasks', Visual: TasksVignette,
+    headline: 'Tasks with enough context to decide.',
+    body: 'Priority, effort and impact, the kind of session a task needs, and the project it belongs to, so picking what’s next takes seconds.',
+    points: ['Deep work, focus or regular sessions', 'Effort and impact scoring', 'Postponement history, so nothing quietly slips'],
+  },
+  {
+    key: 'analytics', name: 'Analytics', Visual: AnalyticsVignette,
+    headline: 'See where the week actually went.',
+    body: 'Deep versus shallow work, completion and postponement rates, and a heatmap that only counts the days you work.',
+    points: ['Daily score breakdown', 'Deep vs. shallow work over time', 'Respects your working days'],
+  },
+  {
+    key: 'projects', name: 'Projects', Visual: ProjectsVignette,
+    headline: 'Every project, with everything attached.',
+    body: 'Status, priority and a checklist of objectives that fills a progress ring, with the project’s notebooks, runs and wall one click away.',
+    points: ['Objectives drive the progress ring', 'Reusable project templates', 'Linked notebooks, runs and notes'],
+  },
+  {
+    key: 'notebook', name: 'Notebook', Visual: NotebookVignette,
+    headline: 'A real lab notebook, written in LaTeX.',
+    body: 'One continuous document per notebook, with proper maths, citations and cross-references, and every version kept.',
+    points: ['KaTeX maths, citations and references', 'Outline, version history and PDF export', 'On-device dictation for when your hands are busy'],
+  },
+  {
+    key: 'runs', name: 'Runs', Visual: RunsVignette,
+    headline: 'Long jobs, tracked without babysitting.',
+    body: 'Log compute jobs, experiments and instrument bookings. Every attempt is kept, and Rune nudges you when one needs a look.',
+    points: ['Full attempt history, failures included', 'Check-in reminders', 'Instrument specs you set up once'],
+  },
+  {
+    key: 'wall', name: 'Wall', Visual: WallVignette,
+    headline: 'Somewhere for the half-formed ideas.',
+    body: 'A sticky-note board on every project for open questions and loose thoughts that aren’t tasks yet, and might never be.',
+    points: ['One board per project', 'Notes, not tickets'],
+  },
+  {
+    key: 'teams', name: 'Teams', Visual: TeamsVignette,
+    headline: 'Bring your lab along, if you want to.',
+    body: 'Entirely optional. Shared projects, roles, task assignment and chat, plus a Lab overview for whoever runs the group.',
+    points: ['Owner, team leader and member roles', 'Direct, group and whole-team chat', 'Per-project visibility'],
+  },
+];
+
+export default function FeaturesPage() {
+  return (
+    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <MarketingNav />
+      <main id="main">
+        <section className="mkt-container pb-12 pt-16 sm:pt-24">
+          <p className="eyebrow hero-in">Features</p>
+          <h1 className="display hero-in mt-4 max-w-[17ch] text-[44px] sm:text-[64px]" style={{ animationDelay: '60ms' }}>
+            Everything you juggle, in one place.
+          </h1>
+          <p className="hero-in mt-6 max-w-[54ch] text-[18px] leading-relaxed text-ink-secondary" style={{ animationDelay: '120ms' }}>
+            Eight parts that know about each other. Every one of them is free, for every account.
+          </p>
+          <nav aria-label="Jump to a feature" className="hero-in mt-12 grid gap-6 border-t border-border pt-6 sm:grid-cols-[1.1fr_1.4fr_0.6fr] sm:gap-8" style={{ animationDelay: '180ms' }}>
+            {FEATURE_GROUPS.map((g) => (
+              <div key={g.id}>
+                <p className="text-[13px] font-medium text-ink-faint">{g.label}</p>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {g.keys.map((k) => {
+                    const sec = SECTIONS.find((x) => x.key === k)!;
+                    return (
+                      <li key={k}>
+                        <a
+                          href={`#${k}`}
+                          className="group inline-flex items-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2 text-[14px] text-ink-secondary transition-[color,border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:text-foreground"
+                        >
+                          <FeatureIcon name={k} size={18} className="transition-colors group-hover:text-primary" /> {sec.name}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </section>
+
+        {SECTIONS.map(({ key, name, headline, body, points, Visual }, i) => (
+          <section key={key} id={key} className="scroll-mt-20 border-t border-border">
+            <div className={`mkt-container grid items-center gap-10 py-16 lg:grid-cols-2 lg:gap-16 lg:py-24`}>
+              <div className={`reveal ${i % 2 ? 'lg:order-2' : ''}`}>
+                <p className="flex items-center gap-2 text-[14px] font-medium text-ink-secondary">
+                  <span className="grid h-8 w-8 place-items-center rounded-[9px] border border-border bg-surface text-foreground">
+                    <FeatureIcon name={key} size={18} />
+                  </span>
+                  {name}
+                </p>
+                <h2 className="display mt-5 text-[34px] sm:text-[42px]">{headline}</h2>
+                <p className="mt-4 max-w-[46ch] text-[16.5px] leading-relaxed text-ink-secondary">{body}</p>
+                <ul className="mt-6 space-y-2.5">
+                  {points.map((p) => (
+                    <li key={p} className="flex items-start gap-3 text-[15px]">
+                      <svg viewBox="0 0 16 16" width="16" height="16" className="mt-[3px] shrink-0 text-primary" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7" /></svg>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className={`reveal ${i % 2 ? 'lg:order-1' : ''}`}>
+                <Visual />
+              </div>
+            </div>
+          </section>
+        ))}
+
+        <section className="border-t border-border">
+          <div className="mkt-container flex flex-col items-start gap-8 py-20 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="display max-w-[16ch] text-[40px] sm:text-[50px]">Try it on your own mess.</h2>
+              <p className="mt-4 text-[16px] text-ink-secondary">
+                Or read the <Link href="/docs/user-guide" className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground">user guide</Link> first.
+              </p>
+            </div>
+            <Link href="/login?mode=signup" className="btn btn-primary shrink-0">Create a free account</Link>
+          </div>
+        </section>
+      </main>
+      <MarketingFooter />
+    </div>
+  );
+}
