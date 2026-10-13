@@ -16,7 +16,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # JWT_SECRET is only read at request time; a placeholder is fine for `next build`.
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# public/ may hold no tracked files (git keeps no empty folders), but the
+# runtime stage copies it, so make sure it exists.
+RUN mkdir -p public && npm run build
 
 # ---------- runtime ----------
 FROM node:24-bookworm-slim AS runtime
