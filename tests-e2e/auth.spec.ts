@@ -28,6 +28,18 @@ async function signIn(page: Page, addr: string, pw: string) {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }
 
+/**
+ * /forgot-password is server-rendered, so its form is on screen before React
+ * takes it over. On a slow CI runner, typing into it that early is lost when
+ * React resets the field, and clicking Continue does a plain form submit
+ * that reloads the page - either way the question never appears. The page
+ * focuses the email field from an effect, i.e. only once it's interactive,
+ * so wait for that.
+ */
+async function waitForForgotForm(page: Page) {
+  await expect(page.getByLabel('Email')).toBeFocused();
+}
+
 test.describe.serial('accounts', () => {
   const addr = `mira.${stamp}@example.org`;
 
@@ -92,6 +104,7 @@ test.describe.serial('accounts', () => {
     await page.goto('/login');
     await page.getByRole('link', { name: 'Forgot password?' }).click();
     await expect(page).toHaveURL(/\/forgot-password$/); // used to bounce back to /login
+    await waitForForgotForm(page);
 
     await page.getByLabel('Email').fill(addr);
     await page.getByRole('button', { name: 'Continue' }).click();
@@ -128,6 +141,7 @@ test.describe.serial('accounts', () => {
 
   test('an unknown email still gets a question, and the answer just fails', async ({ page }) => {
     await page.goto('/forgot-password');
+    await waitForForgotForm(page);
     await page.getByLabel('Email').fill(`nobody.${stamp}@example.org`);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByText('Your question')).toBeVisible();
