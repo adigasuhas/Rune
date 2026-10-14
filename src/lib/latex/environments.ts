@@ -63,7 +63,7 @@ export function renderEnvironment(
       return `
         <div class="my-6 py-4 px-6 ${borderClass} flex flex-col items-center relative gap-2 page-break-inside-avoid">
           ${tagValue && !nameClean.endsWith('*') ? `<div class="${labelClass}">Equation (${tagValue})</div>` : ''}
-          <div class="w-full overflow-x-auto py-2 flex justify-center">${rendered}</div>
+          <div class="w-full overflow-x-auto py-2 text-center">${rendered}</div>
         </div>
       `;
     } catch (err) {

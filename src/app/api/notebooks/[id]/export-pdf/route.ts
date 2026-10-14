@@ -4,7 +4,7 @@ import path from 'path';
 import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { buildNotebookExportHtml, ExportOptions, ExportPage } from '@/lib/notebookExport';
+import { buildNotebookExportHtml, buildPdfFooterTemplate, ExportOptions, ExportPage, stripPageMetadata } from '@/lib/notebookExport';
 import { enforceRateLimit } from '@/lib/rateLimit';
 import { readLocalUpload, mimeForStoredName } from '@/lib/storage';
 
@@ -16,6 +16,9 @@ const exportOptionsSchema = z.object({
   includeHeader: z.boolean().optional(),
   includeFooter: z.boolean().optional(),
   includeSummary: z.boolean().optional(),
+  // What the editor currently shows, unsaved edits included. Exported as-is
+  // and never written back - exporting doesn't touch the saved document.
+  content: z.string().max(10_000_000).optional(),
 });
 
 /**
@@ -168,7 +171,9 @@ async function resolveLaunchOptions(): Promise<{ executablePath: string; args: s
 
   const executablePath = resolveLocalChromiumExecutablePath();
   if (!executablePath) return null;
-  return { executablePath, args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+  // --disable-dev-shm-usage: Docker gives containers a 64 MB /dev/shm, which
+  // Chromium outgrows on longer documents and then crashes mid-render.
+  return { executablePath, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] };
 }
 
 export async function POST(
@@ -195,7 +200,7 @@ export async function POST(
     if (!parsed.success) {
       return NextResponse.json({ error: 'Some fields are missing or invalid.', details: parsed.error.flatten() }, { status: 400 });
     }
-    const { profile, titleFont, bodyFont, includeCover, includeHeader, includeFooter, includeSummary } = parsed.data;
+    const { profile, titleFont, bodyFont, includeCover, includeHeader, includeFooter, includeSummary, content } = parsed.data;
 
     const page = await db.notebookPage.findUnique({ where: { notebookId: id } });
     if (!page) {
@@ -204,7 +209,7 @@ export async function POST(
     const orderedPages: ExportPage[] = [{
       id: page.id,
       title: page.title,
-      content: page.content,
+      content: typeof content === 'string' ? stripPageMetadata(content) : page.content,
       tags: page.tags || []
     }];
 
@@ -236,7 +241,15 @@ export async function POST(
     }
 
     const puppeteer = await import('puppeteer-core');
-    const browser = await puppeteer.launch(launchOptions);
+    let browser;
+    try {
+      browser = await puppeteer.launch(launchOptions);
+    } catch (err) {
+      console.error(`[export-pdf] Chromium failed to start (${launchOptions.executablePath}):`, err);
+      return NextResponse.json({
+        error: 'The PDF renderer (Chromium) couldn’t start on the server. Check that it’s installed and that PUPPETEER_EXECUTABLE_PATH points at it - see DEPLOY.md.'
+      }, { status: 500 });
+    }
 
     try {
       const page = await browser.newPage();
@@ -260,8 +273,17 @@ export async function POST(
       await page.setContent(html, { waitUntil: 'load', timeout: 20_000 });
       const pdfBuffer = await page.pdf({
         format: 'A4',
-        printBackground: true
+        printBackground: true,
+        // Keep the document's own @page margins; the footer prints inside them.
+        preferCSSPageSize: true,
+        displayHeaderFooter: options.includeFooter,
+        headerTemplate: '<span></span>',
+        footerTemplate: buildPdfFooterTemplate(notebook.title),
       });
+      // Never hand back something that isn't a PDF as if it were one.
+      if (pdfBuffer.length < 100 || Buffer.from(pdfBuffer.subarray(0, 5)).toString('latin1') !== '%PDF-') {
+        throw new Error(`Chromium returned ${pdfBuffer.length} bytes that aren't a PDF`);
+      }
 
       const fileNameBase = (orderedPages.length === 1 ? orderedPages[0].title : notebook.title)
         .replace(/[^a-z0-9\- ]/gi, '')

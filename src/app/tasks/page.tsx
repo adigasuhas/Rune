@@ -36,7 +36,7 @@ import {
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
-import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps } from './taskHelpers';
+import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
   const { user } = useSession();
@@ -735,16 +735,15 @@ export default function TasksPage() {
   };
 
   // Filter tasks based on selected filters and mini calendar selection
+  // Tasks on the selected day only (by scheduled date). Everything date-scoped
+  // on this page - the list, the tab counts, the header summary - starts here.
+  const dayTasks = React.useMemo(() => tasksOnDate(tasks, selectedDate, userTimezone), [tasks, selectedDate, userTimezone]);
+
   const filteredTasks = React.useMemo(() => {
-    return tasks.filter(t => {
+    return dayTasks.filter(t => {
       // Search filter
       if (searchQuery && !t.name.toLowerCase().includes(searchQuery.toLowerCase()) && !(t.detail && t.detail.toLowerCase().includes(searchQuery.toLowerCase()))) {
         return false;
-      }
-      // Mini calendar filter
-      if (selectedDate) {
-        const taskDateOnly = getLocalDateString(t.date, userTimezone);
-        if (taskDateOnly !== selectedDate) return false;
       }
       // Status is applied at the grouping stage (the segmented bar), not here,
       // so "Postponed" can cut across all three states.
@@ -757,7 +756,7 @@ export default function TasksPage() {
 
       return true;
     });
-  }, [tasks, searchQuery, selectedDate, priorityFilter, contextFilter, projectFilter, userTimezone]);
+  }, [dayTasks, searchQuery, priorityFilter, contextFilter, projectFilter]);
 
   // Sort tasks
   const sortedTasks = React.useMemo(() => {
@@ -852,6 +851,8 @@ export default function TasksPage() {
   }, [formattedTasksList, statusFilter]);
 
   const totalShown = groupedByState.reduce((n, g) => n + g.tasks.length, 0);
+  const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, getPostponeCount), [filteredTasks]);
+  const dayCounts = React.useMemo(() => countByStatusTab(dayTasks, getPostponeCount), [dayTasks]);
 
   // Pre-calculate task counts per day for the mini-calendar indicators
   const tasksByDateMap = React.useMemo(() => {
@@ -915,7 +916,7 @@ export default function TasksPage() {
       <PageHeader
         className=""
         title="Tasks"
-        subtitle={`${tasks.filter(t => t.status !== 'COMPLETED').length} open · ${tasks.filter(t => t.status === 'IN_PROGRESS').length} in progress · ${tasks.filter(t => t.status === 'BLOCKED').length} blocked`}
+        subtitle={`${dayCounts.ALL - dayCounts.COMPLETED} open · ${dayCounts.IN_PROGRESS} in progress · ${dayCounts.BLOCKED} blocked${selectedDate ? (selectedDate === todayStr ? ' today' : ` on ${new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}`) : ''}`}
         actions={
           <>
             <Button variant="ghost" onClick={handleOpenExportModal}><Download className="w-4 h-4 text-ink-faint" /> Export</Button>
@@ -1046,11 +1047,7 @@ export default function TasksPage() {
                 }`}
               >
                 {label}
-                {val !== 'ALL' && (
-                  <span className="ml-1.5 text-[12px] font-normal text-ink-faint tabular-nums">
-                    {val === 'POSTPONED' ? tasks.filter(t => getPostponeCount(t) > 0 && t.status !== 'COMPLETED').length : tasks.filter(t => t.status === val).length}
-                  </span>
-                )}
+                <span className="ml-1.5 text-[12px] font-normal text-ink-faint tabular-nums">{statusCounts[val]}</span>
               </button>
             ))}
           </div>

@@ -157,3 +157,30 @@ export function getOverlaps(
 export function anchorForToday(timezone: string): Date {
   return new Date(`${getCurrentDateInTimezone(timezone)}T12:00:00Z`);
 }
+
+export type StatusTab = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED' | 'POSTPONED';
+
+/**
+ * Tasks scheduled on `dateKey` (YYYY-MM-DD in the account's timezone), by
+ * their scheduled `date` - never createdAt or a deadline. A null dateKey
+ * ("Clear" in the date rail) keeps every task.
+ */
+export function tasksOnDate<T extends { date: string | Date | null }>(tasks: T[], dateKey: string | null, timezone: string): T[] {
+  if (!dateKey) return tasks;
+  return tasks.filter((t) => getLocalDateString(t.date, timezone) === dateKey);
+}
+
+/**
+ * The number on each status tab, counted from the same set the list shows,
+ * so a tab's number always equals the rows it reveals. "Postponed" counts
+ * every task that was ever pushed back, in any state - the Postponed tab
+ * lists them across all its sections.
+ */
+export function countByStatusTab<T extends { status: string }>(tasks: T[], postponeCount: (t: T) => number): Record<StatusTab, number> {
+  const counts: Record<StatusTab, number> = { ALL: tasks.length, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 0, POSTPONED: 0 };
+  for (const t of tasks) {
+    if (t.status in counts && t.status !== 'ALL' && t.status !== 'POSTPONED') counts[t.status as StatusTab]++;
+    if (postponeCount(t) > 0) counts.POSTPONED++;
+  }
+  return counts;
+}

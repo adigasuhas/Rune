@@ -28,7 +28,9 @@ export function downloadPdfBlob(blob: Blob, fileNameBase: string): void {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  // Revoking straight away can cancel the download before the browser has
+  // read the blob (Firefox, Safari); give it time first.
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
 /** In-document outline: every \section/\subsection/\subsubsection heading, in document order, with its nesting level and line number for the jump-to-heading sidebar. */

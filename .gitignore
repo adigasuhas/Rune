@@ -52,3 +52,5 @@ tests-e2e/.auth-state.json
 # MCP server build output
 mcp-server/dist/
 mcp-server/node_modules/
+.vercel
+.env*

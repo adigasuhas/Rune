@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { firstActiveDay, mondayOf, recentWeeksStart } from '@/lib/activity';
+import { clampCardCenter, firstActiveDay, mondayOf, recentWeeksStart } from '@/lib/activity';
 
 /**
  * Today's "Recent weeks" graph used to always span 26 weeks. It now opens on
@@ -84,5 +84,18 @@ describe('firstActiveDay', () => {
 
   it('returns null with nothing done yet', () => {
     expect(firstActiveDay([{ date: '2026-09-01', status: 'PENDING' }], [], tz, today)).toBeNull();
+  });
+});
+
+describe('clampCardCenter (the activity graph\'s day card)', () => {
+  it('keeps the card inside a wide graph at both ends', () => {
+    expect(clampCardCenter(10, 112, 1000)).toBe(112);
+    expect(clampCardCenter(995, 112, 1000)).toBe(888);
+    expect(clampCardCenter(500, 112, 1000)).toBe(500);
+  });
+  it('centres the card when the graph is narrower than the card, instead of pushing it off the left edge', () => {
+    // A new account's few weeks: the old clamp gave min(max(x,112), 80-112) = -32.
+    expect(clampCardCenter(40, 112, 80)).toBe(40);
+    expect(clampCardCenter(70, 112, 120)).toBe(60);
   });
 });

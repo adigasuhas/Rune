@@ -68,7 +68,7 @@ export function parseLatexToHtml(
               : 'border-y border-border bg-surface-sunken/40';
             html += `
               <div class="my-6 py-4 px-6 ${borderClass} flex flex-col items-center relative page-break-inside-avoid">
-                <div class="w-full overflow-x-auto py-2 flex justify-center">${rendered}</div>
+                <div class="w-full overflow-x-auto py-2 text-center">${rendered}</div>
               </div>
             `;
           } else {

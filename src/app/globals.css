@@ -644,3 +644,11 @@ body {
 /* Notebook library: covers that sit like books on a desk. */
 .nb-book { box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent), 0 16px 30px -22px color-mix(in srgb, var(--text) 40%, transparent); }
 .nb-book:hover { box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent), 0 22px 36px -22px color-mix(in srgb, var(--text) 48%, transparent); }
+
+/* Notebook preview: wide blocks (display maths, tables, code) scroll on
+   their own instead of widening the pane - in Split view the pane is narrow,
+   and the body hides horizontal overflow, so anything wider would be cut. */
+.notebook-preview .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 2px; }
+.notebook-preview table { display: block; max-width: 100%; overflow-x: auto; }
+.notebook-preview pre { max-width: 100%; overflow-x: auto; }
+.notebook-preview img { max-width: 100%; height: auto; }

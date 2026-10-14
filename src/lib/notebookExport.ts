@@ -148,6 +148,11 @@ export function getPdfStyles(
     code, pre {
       font-family: courier, Courier, monospace !important;
     }
+    /* Paper can't scroll: long code lines wrap instead of running off the page. */
+    pre {
+      white-space: pre-wrap !important;
+      overflow-wrap: anywhere;
+    }
     .page-break-inside-avoid {
       page-break-inside: avoid;
     }
@@ -599,12 +604,9 @@ export function buildNotebookExportHtml(
       </div>
     ` : '';
 
-    const footerHtml = options.includeFooter ? `
-      <div class="page-footer-container">
-        <span></span>
-        <span>Page ${index + 1} of ${sortedPages.length}</span>
-      </div>
-    ` : '';
+    // Page numbers come from the printed footer (buildPdfFooterTemplate) -
+    // this used to print "Page 1 of 1" once, at the end of the document.
+    const footerHtml = '';
 
     const metaHtml = (page.tags && page.tags.length > 0)
       ? `<div class="meta"><span class="meta-item"><strong>Tags:</strong> ${page.tags.map(t => '#' + sanitizePlainText(t)).join(', ')}</span></div>`
@@ -644,4 +646,15 @@ export function buildNotebookExportHtml(
       </body>
     </html>
   `;
+}
+
+
+/**
+ * Chromium's print footer, drawn in the bottom margin of every printed page
+ * with the real page number. Puppeteer fills the pageNumber/totalPages spans.
+ */
+export function buildPdfFooterTemplate(notebookTitle: string): string {
+  return `<div style="width:100%;padding:0 2cm;font-family:Helvetica,Arial,sans-serif;font-size:8px;color:#6b7280;display:flex;justify-content:space-between;">`
+    + `<span>${sanitizePlainText(notebookTitle)}</span>`
+    + `<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`;
 }

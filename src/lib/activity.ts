@@ -188,3 +188,13 @@ export function summarize(days: DayActivity[]): ActivitySummary {
   }
   return { totalHours, daysWorked: worked.length, averagePerDayWorked, busiestMonth, longestWeekday, lines };
 }
+
+/**
+ * Where to centre a floating card of half-width `half` over a point at `x`
+ * so it stays inside a box `boxWidth` wide. When the box is narrower than
+ * the card it is centred in the box rather than pushed off one edge.
+ */
+export function clampCardCenter(x: number, half: number, boxWidth: number): number {
+  if (boxWidth <= 2 * half) return boxWidth / 2;
+  return Math.min(Math.max(x, half), boxWidth - half);
+}

@@ -200,9 +200,10 @@ export default function NotebookPage() {
   const saveInFlightRef = useRef<Promise<SavedSnapshot | null> | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Entry metadata rail (right panel): open by default on desktop, hidden
-  // on narrower viewports where it would crowd the editor.
-  const [showMetadataPanel, setShowMetadataPanel] = useState(true);
+  // Document details rail (right panel): closed until asked for, so the
+  // document gets the room; the choice is remembered like the sidebar's.
+  // Hidden below xl either way, where it would crowd the editor.
+  const [showMetadataPanel, setShowMetadataPanel] = useState(false);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
 
@@ -289,10 +290,23 @@ export default function NotebookPage() {
   // Who the open request went to, and whether they can still review it.
   const [reviewRequestedFrom, setReviewRequestedFrom] = useState<{ name: string; eligible: boolean } | null>(null);
 
-  // Split-panel resizer states
-  const [splitWidth, setSplitWidth] = useState(68);
+  // Split-panel resizer: the editor's share of the row, in percent. The two
+  // panes are sized as flex ratios of what's left after the gap and the
+  // handle (fixed percentage widths added those on top and pushed the
+  // preview past the card's border).
+  const [splitWidth, setSplitWidth] = useState(55);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  // Too narrow for two readable columns (tablet, phone, or a wide outline):
+  // Split stacks the source above the preview instead.
+  const [splitStacked, setSplitStacked] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = splitContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setSplitStacked(entry.contentRect.width < 720));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   const [previewTab, setPreviewTab] = useState<'live' | 'equations' | 'references'>('live');
 
@@ -339,14 +353,17 @@ export default function NotebookPage() {
     if (typeof window !== 'undefined') {
       const collapsed = localStorage.getItem('rune_notebook_sidebar_collapsed') === 'true';
       setIsSidebarCollapsed(collapsed);
+      setShowMetadataPanel(localStorage.getItem('rune_notebook_details_open') === 'true');
     }
   }, []);
 
-  // Responsive behavior: Automatically collapse sidebar on smaller viewports
+  // Responsive behavior: automatically collapse the outline on smaller
+  // viewports. Below lg the app's own navigation already takes ~256px, and
+  // the outline beside it left the document only ~190px on a tablet.
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const handleResize = () => {
-        if (window.innerWidth < 768) {
+        if (window.innerWidth < 1024) {
           setIsSidebarCollapsed(true);
         }
       };
@@ -365,7 +382,7 @@ export default function NotebookPage() {
       const rect = splitContainerRef.current.getBoundingClientRect();
       const relativeX = e.clientX - rect.left;
       const percentage = (relativeX / rect.width) * 100;
-      const bounded = Math.max(10, Math.min(90, percentage));
+      const bounded = Math.max(25, Math.min(75, percentage));
       setSplitWidth(bounded);
     };
 
@@ -826,6 +843,14 @@ export default function NotebookPage() {
   }, [isDirty, savingPage, pageContent, pageTags, saveError]);
 
 
+  const toggleDetails = () => {
+    setShowMetadataPanel((prev) => {
+      const next = !prev;
+      localStorage.setItem('rune_notebook_details_open', String(next));
+      return next;
+    });
+  };
+
   const toggleSidebar = () => {
     setIsSidebarCollapsed(prev => {
       const next = !prev;
@@ -1018,7 +1043,9 @@ export default function NotebookPage() {
           includeCover: exportIncludeCover,
           includeHeader: exportIncludeHeader,
           includeFooter: exportIncludeFooter,
-          includeSummary: exportIncludeSummary
+          includeSummary: exportIncludeSummary,
+          // Export what's on screen, unsaved edits included, without saving.
+          content: pageContent
         })
       });
       if (!res.ok) {
@@ -1027,8 +1054,14 @@ export default function NotebookPage() {
         return;
       }
       const blob = await res.blob();
+      const head = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+      if (!(res.headers.get('content-type') || '').includes('application/pdf') || String.fromCharCode(...head) !== '%PDF-') {
+        toast('Export failed', 'The server didn’t send back a PDF. Try again.', 'error');
+        return;
+      }
       downloadPdfBlob(blob, activeNotebook.title.replace(/[^a-z0-9\- ]/gi, '').trim().replace(/\s+/g, '_') || 'notebook-export');
       setIsPdfExportModalOpen(false);
+      toast('PDF exported', 'It’s in your downloads.', 'success');
     } catch (err) {
       console.error('Error exporting PDF:', err);
       toast('Export failed', 'The PDF couldn’t be generated. Try again.', 'error');
@@ -1486,8 +1519,10 @@ export default function NotebookPage() {
       {/* Main Panel: Library or Document Editor */}
       <div className="flex-1 min-w-0 flex flex-col h-full space-y-6">
         {screen === 'library' ? libraryContent : activeNotebook && activePage ? (
-          <div className="flex-1 bg-surface border border-border rounded-md p-6 flex flex-row gap-6 min-h-0 relative">
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <div className="flex-1 bg-surface border border-border rounded-md p-6 flex flex-col min-h-0 relative">
+            {/* The header and toolbar span the whole card, above both the
+                document and the details rail, so opening or closing Details
+                only changes the row below - the controls never move. */}
             {/* Header: sidebar toggle + breadcrumb/save-status, and an
                 actions row below it. */}
             <div className="flex flex-col gap-3 border-b border-border/60 pb-4 mb-4 shrink-0">
@@ -1661,7 +1696,8 @@ export default function NotebookPage() {
 
                 <button
                   type="button"
-                  onClick={() => setShowMetadataPanel((v) => !v)}
+                  onClick={toggleDetails}
+                  aria-expanded={showMetadataPanel}
                   className={`hidden xl:inline-flex h-8 px-2.5 text-[13px] font-medium rounded-[8px] items-center gap-1.5 transition-colors cursor-pointer ${showMetadataPanel ? 'bg-surface-sunken text-foreground' : 'text-ink-secondary hover:text-foreground hover:bg-surface-sunken'}`}
                   title={showMetadataPanel ? 'Hide entry details' : 'Show entry details'}
                 >
@@ -1671,6 +1707,8 @@ export default function NotebookPage() {
               </div>
             </div>
 
+          <div className="flex-1 flex flex-row gap-6 min-h-0 min-w-0">
+          <div className="flex-1 flex flex-col min-h-0 min-w-0">
             {/* Linked runs */}
             {linkedRuns.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-2 shrink-0">
@@ -1698,11 +1736,11 @@ export default function NotebookPage() {
             )}
 
             {/* Editor Text Area Panel */}
-            <div ref={splitContainerRef} className={`flex-1 flex min-h-0 relative gap-4 ${viewMode === 'split' || viewMode === 'preview' ? 'flex-row' : 'flex-col'}`}>
+            <div ref={splitContainerRef} className={`flex-1 flex min-h-0 min-w-0 relative gap-4 ${(viewMode === 'split' && !splitStacked) || viewMode === 'preview' ? 'flex-row' : 'flex-col'}`}>
               {(viewMode === 'edit' || viewMode === 'split') && (
                 <div
                   className={`flex flex-col min-h-0 bg-surface border border-border rounded-md overflow-hidden ${viewMode === 'split' ? '' : 'flex-1'}`}
-                  style={viewMode === 'split' ? { width: `${splitWidth}%`, flexGrow: 0, flexShrink: 0, flexBasis: 'auto' } : undefined}
+                  style={viewMode === 'split' ? (splitStacked ? { flex: '1 1 0%', minHeight: 0 } : { flex: `${splitWidth} 1 0%`, minWidth: 0 }) : undefined}
                 >
                   <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-2.5 py-2 bg-surface-raised/50 border-b border-border select-none shrink-0">
 
@@ -1890,10 +1928,10 @@ export default function NotebookPage() {
                 </div>
               )}
 
-              {viewMode === 'split' && (
+              {viewMode === 'split' && !splitStacked && (
                 <div
                   onMouseDown={handleSplitMouseDown}
-                  className="w-1.5 hover:w-2 bg-surface-sunken border-x border-border hover:bg-surface-sunken transition-colors cursor-col-resize flex-shrink-0 h-full relative group z-10"
+                  className="w-1.5 bg-surface-sunken border-x border-border hover:bg-surface-sunken transition-colors cursor-col-resize flex-shrink-0 h-full relative group z-10"
                   title="Drag to resize editor and preview panes"
                 >
                   <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-surface-sunken group-hover:bg-border-strong" />
@@ -1903,7 +1941,7 @@ export default function NotebookPage() {
               {(viewMode === 'preview' || viewMode === 'split') && (
                 <div
                   className={`flex flex-col min-h-0 bg-surface border border-border rounded-md overflow-hidden ${viewMode === 'split' ? '' : 'flex-1'}`}
-                  style={viewMode === 'split' ? { width: `${100 - splitWidth}%`, flexGrow: 0, flexShrink: 0, flexBasis: 'auto' } : undefined}
+                  style={viewMode === 'split' ? (splitStacked ? { flex: '1 1 0%', minHeight: 0 } : { flex: `${100 - splitWidth} 1 0%`, minWidth: 0 }) : undefined}
                 >
                   <div className="flex items-center justify-end px-3 py-2 bg-surface-raised/50 border-b border-border select-none shrink-0">
                     <div className="inline-flex border border-border rounded-md overflow-hidden">
@@ -1931,7 +1969,7 @@ export default function NotebookPage() {
                     role="region"
                     aria-label="Notebook preview"
                     onMouseUp={previewTab === 'live' && activeNotebook.project ? captureCommentSelection : undefined}
-                    className="flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 px-6 py-8 sm:px-10 prose prose-neutral max-w-none"
+                    className="notebook-preview flex-1 overflow-y-auto overflow-x-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 px-6 py-8 sm:px-10 prose prose-neutral max-w-none"
                   >
                     {previewTab === 'live' && !pageContent.trim() && (
                       <div className="not-prose flex flex-col items-center justify-center text-center py-16 gap-3">
@@ -2167,6 +2205,7 @@ export default function NotebookPage() {
               </div>
             </div>
           )}
+          </div>
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center border border-dashed border-border rounded-lg p-12">

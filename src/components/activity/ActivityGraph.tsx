@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { dailyActivity, dayOfWeek, firstActiveDay, formatHours, LEVEL_BOUNDS, mondayOf, rangeStart, recentWeeksStart, RECENT_WEEKS_DEFAULT, summarize, type DayActivity } from '@/lib/activity';
+import { clampCardCenter, dailyActivity, dayOfWeek, firstActiveDay, formatHours, LEVEL_BOUNDS, mondayOf, rangeStart, recentWeeksStart, RECENT_WEEKS_DEFAULT, summarize, type DayActivity } from '@/lib/activity';
 
 function addDaysYmd(ymd: string, n: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
@@ -125,8 +125,12 @@ export function ActivityGraph({
     if ((!prev || Number(prev.date.slice(5, 7)) - 1 !== m) && (!last || c - last.col >= 3)) monthLabels.push({ col: c, label: MONTHS_SHORT[m] });
   });
 
+  // `active` follows the pointer / keyboard; `pinned` is a clicked or tapped
+  // day (touch screens have no hover), shown whenever nothing is hovered.
   const [active, setActive] = useState<number | null>(null);
-  const activeDay = active != null ? days[active] : null;
+  const [pinned, setPinned] = useState<number | null>(null);
+  const shown = active ?? (pinned != null && pinned < days.length ? pinned : null);
+  const activeDay = shown != null ? days[shown] : null;
   const activeCol = activeDay ? weeks.findIndex((w) => w.includes(activeDay)) : -1;
   const activeRow = activeDay ? (dayOfWeek(activeDay.date) + 6) % 7 : -1;
 
@@ -140,6 +144,13 @@ export function ActivityGraph({
   const CELL = boxW ? Math.max(MIN_CELL, Math.min(compact ? 13 : 16, Math.floor((boxW - LABEL_W + GAP) / weeks.length - GAP))) : 11;
   const width = weeks.length * (CELL + GAP) - GAP;
   const trimmed = !compact && shownWeeks < wantWeeks;
+  // The full graph's floating card is ~224px wide and centred on its day;
+  // keep it inside the measured box (the old clamp used the grid's own width
+  // and inverted - pushing the card off to the left - when the grid was
+  // narrower than the card).
+  const CARD_HALF = 112;
+  const boxWidth = boxW || width + LABEL_W;
+  const cardLeft = clampCardCenter(LABEL_W + activeCol * (CELL + GAP) + CELL / 2, CARD_HALF, boxWidth);
 
   return (
     <div ref={boxRef} className="min-w-0">
@@ -151,7 +162,7 @@ export function ActivityGraph({
           </p>
           <label className="flex items-center gap-2 text-[13px] text-ink-secondary">
             <span className="sr-only">Period</span>
-            <select value={period} onChange={(e) => { setPeriod(e.target.value); setActive(null); }} className="h-8 rounded-[8px] border border-border-strong bg-surface px-2 text-[13px] text-foreground">
+            <select value={period} onChange={(e) => { setPeriod(e.target.value); setActive(null); setPinned(null); }} className="h-8 rounded-[8px] border border-border-strong bg-surface px-2 text-[13px] text-foreground">
               <option value="last">Last 12 months</option>
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -183,13 +194,15 @@ export function ActivityGraph({
                 {w.map((d, r) => {
                   if (!d) return <span key={r} style={{ width: CELL, height: CELL }} />;
                   const idx = days.indexOf(d);
-                  const on = idx === active;
+                  const on = idx === shown;
                   return (
                     <span
                       key={r}
                       role="gridcell"
                       aria-label={`${longDate(d.date)}: ${d.hours ? formatHours(d.hours) : 'no recorded work'}`}
+                      aria-selected={on}
                       onMouseEnter={() => setActive(idx)}
+                      onClick={() => setPinned(idx)}
                       className="rounded-[3px] transition-transform duration-100"
                       style={{ width: CELL, height: CELL, background: LEVEL_BG[d.level], outline: on ? '1.5px solid var(--text)' : undefined, outlineOffset: 1, transform: on ? 'scale(1.15)' : undefined, boxShadow: d.date === today ? 'inset 0 0 0 1px color-mix(in srgb, var(--text) 45%, transparent)' : undefined }}
                     />
@@ -199,11 +212,11 @@ export function ActivityGraph({
             ))}
           </div>
 
-          {activeDay && (
+          {!compact && activeDay && (
             <div
               role="status"
               className="pointer-events-none absolute z-10 w-max -translate-x-1/2 rounded-[10px] border border-border bg-surface px-3 py-2 text-[12.5px] shadow-[0_12px_28px_-14px_rgb(0_0_0/0.35)]"
-              style={{ left: Math.min(Math.max(LABEL_W + activeCol * (CELL + GAP) + CELL / 2, 112), LABEL_W + width - 112), top: 18 + (activeRow + 1) * (CELL + GAP) + 4 }}
+              style={{ left: cardLeft, top: 18 + (activeRow + 1) * (CELL + GAP) + 4 }}
             >
               <p className="font-semibold text-foreground">{longDate(activeDay.date)}</p>
               <p className="mt-0.5 text-foreground">{activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}</p>
@@ -213,6 +226,24 @@ export function ActivityGraph({
         </div>
       </div>
 
+      {compact && (
+        // Today's narrow column: the chosen day's details sit on a reserved
+        // line under the grid rather than floating over the page, so they
+        // can't be clipped by the column and nothing shifts as days change.
+        <div role="status" aria-live="polite" className="mt-2 h-[38px] min-w-0 text-[12.5px] leading-[19px]">
+          {activeDay ? (
+            <>
+              <p className="truncate font-semibold text-foreground">{longDate(activeDay.date)}</p>
+              <p className="truncate text-ink-secondary">
+                {activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}
+                {activeDay.completed > 0 ? ` · ${activeDay.completed} ${activeDay.completed === 1 ? 'task' : 'tasks'} completed` : ''}
+              </p>
+            </>
+          ) : (
+            <p className="text-ink-faint">Point at or tap a day to see its time.</p>
+          )}
+        </div>
+      )}
       {compact && summary.totalHours === 0 && (
         <p className="mt-2 text-[12.5px] text-ink-secondary">Nothing tracked yet. These weeks fill in as you complete tasks and calendar blocks.</p>
       )}
