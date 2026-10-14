@@ -46,6 +46,9 @@ async function inlineLocalImages(html: string): Promise<string> {
 // Puppeteer needs a real Node process (spawns a Chromium child process) — cannot run on the edge runtime.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// On serverless hosts a cold start unpacks Chromium (~65 MB) before rendering;
+// that plus a long document can exceed a 10-15 s default function limit.
+export const maxDuration = 60;
 
 let cachedKatexCssBlock: string | null = null;
 
@@ -157,12 +160,19 @@ function resolveLocalChromiumExecutablePath(): string | null {
  * - explicit override: PUPPETEER_EXECUTABLE_PATH (self-host/Docker/VPS)
  * - local dev / traditional server: common system Chrome/Chromium install paths
  */
-async function resolveLaunchOptions(): Promise<{ executablePath: string; args: string[] } | null> {
+type LaunchOptions = { executablePath: string; args: string[]; headless?: boolean | 'shell' };
+
+async function resolveLaunchOptions(): Promise<LaunchOptions | null> {
   if (isServerlessRuntime() && !process.env.PUPPETEER_EXECUTABLE_PATH) {
     try {
       const chromium = (await import('@sparticuz/chromium')).default;
+      // Unpacks bin/chromium.br into /tmp. Those files are read off disk, so
+      // next.config.ts must name them in outputFileTracingIncludes or they
+      // aren't deployed at all.
       const executablePath = await chromium.executablePath();
-      return { executablePath, args: chromium.args };
+      // The bundled browser is chrome-headless-shell, which only runs in the
+      // old "shell" headless mode - Puppeteer's default (new headless) fails.
+      return { executablePath, args: chromium.args, headless: 'shell' };
     } catch (err) {
       console.error('Failed to load @sparticuz/chromium on a serverless runtime', err);
       return null;
@@ -236,7 +246,9 @@ export async function POST(
     const launchOptions = await resolveLaunchOptions();
     if (!launchOptions) {
       return NextResponse.json({
-        error: 'No Chromium executable found on the server. Set PUPPETEER_EXECUTABLE_PATH to a Chromium/Chrome binary, or deploy with @sparticuz/chromium available on serverless.'
+        error: isServerlessRuntime()
+          ? 'The PDF renderer isn’t available in this deployment (the bundled Chromium couldn’t be loaded). See DEPLOY.md, “PDF export”.'
+          : 'No Chromium executable found on the server. Set PUPPETEER_EXECUTABLE_PATH to a Chromium/Chrome binary - see DEPLOY.md.'
       }, { status: 500 });
     }
 

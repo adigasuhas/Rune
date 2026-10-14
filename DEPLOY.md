@@ -116,6 +116,15 @@ There is no automated rollback, because `prisma migrate deploy` only moves forwa
 5. **Uploads and the audit log need a persistent disk, which Vercel doesn't provide.** Set the `S3_*` variables (any S3-compatible bucket, such as R2, B2, Supabase Storage, or MinIO) so uploads go to object storage. Without them, notebook image uploads fail on Vercel.
 6. Deploy, then open the site and register the address you put in `RUNE_ADMIN_EMAILS` - or sign in as the built-in developer account and change its password (see "The built-in developer account" above).
 
+### PDF export on Vercel
+
+Vercel has no system Chromium, so the export route uses the browser bundled in `@sparticuz/chromium` (unpacked into `/tmp` on first use, about 2 to 3 seconds). Nothing needs configuring, but two things must stay true:
+
+- `next.config.ts` lists `./node_modules/@sparticuz/chromium/bin/**` under `outputFileTracingIncludes` for the export route. The package finds its browser at run time, so without that line Vercel deploys it without the browser and every export fails with "The PDF renderer isn't available in this deployment".
+- The function needs time and memory for a full browser: the route sets `maxDuration = 60`; keep the project's function memory at 1 GB or more.
+
+Don't set `PUPPETEER_EXECUTABLE_PATH` on Vercel - it switches the route away from the bundled browser.
+
 ## 4b. Deploy with Docker (VPS, Fly, Render, Railway, a home server)
 
 ```bash

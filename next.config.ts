@@ -60,7 +60,10 @@ const nextConfig: NextConfig = {
     // Keys are globs: the brackets must be escaped, or "[id]" is a character
     // class and the rule never matches (katex.min.css was silently missing
     // from production PDF exports).
-    "/api/notebooks/\\[id\\]/export-pdf": ["./node_modules/katex/dist/**"],
+    // ...and @sparticuz/chromium's browser (bin/*.br), which it finds through
+    // import.meta.url at run time - without this, Vercel deploys the package
+    // without its browser and every export fails.
+    "/api/notebooks/\\[id\\]/export-pdf": ["./node_modules/katex/dist/**", "./node_modules/@sparticuz/chromium/bin/**"],
     // The whole package: transformers.js loads it by name at runtime, so the
     // tracer sees neither its JS entry point nor the native libraries.
     "/api/dictation/status": ["./node_modules/onnxruntime-node/**", "./node_modules/onnxruntime-common/**"],
