@@ -2087,7 +2087,7 @@ function DashboardPage() {
     let h = 0;
     for (let i = 0; i <= dow; i++) {
       const d = new Date(`${todayStr}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - i);
-      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone, undefined, i === 0 ? new Date() : undefined);
+      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone, undefined, new Date());
     }
     return h;
   })();
@@ -2116,7 +2116,8 @@ function DashboardPage() {
             <button onClick={dismissFreshStart} className="ml-3 text-ink-faint hover:text-foreground" aria-label="Dismiss the new-week note">Dismiss</button>
           </p>
         ) : null}
-        worked={formatHours(calculateOccupiedHoursForDay(getCurrentDateInTimezone(userTimezone), tasks, events, userTimezone, undefined, new Date()))}
+        worked={formatHours(calculateOccupiedHoursForDay(selectedDate, tasks, events, userTimezone, undefined, new Date()))}
+        dayLabel={selectedDate === getCurrentDateInTimezone(userTimezone) ? null : new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}
         actions={
           <>
             <Button variant="ghost" onClick={() => setShowReviewDay(true)}>

@@ -57,6 +57,20 @@ export function elapsedWithin(start: Date, end: Date, now: Date): number {
   return Math.min(now.getTime(), end.getTime()) - start.getTime();
 }
 
+/**
+ * The one rule for an UNFINISHED (not ticked-off) slot: it counts from its
+ * start up to now, capped at its end - all of it attributed to the day it
+ * STARTED, so a slot begun at 23:30 that runs past midnight stays on that
+ * day rather than being split. A slot that ended before the current local
+ * day began is past and counts nothing until it's marked done.
+ */
+export function openSlotElapsedMs(start: Date, end: Date, now: Date, timezone: string): number {
+  if (now <= start) return 0;
+  const todayStart = parseDateTimeInTimezone(getLocalDateString(now, timezone), '00:00', timezone);
+  if (end <= todayStart) return 0;
+  return elapsedWithin(start, end, now);
+}
+
 export function getTaskElapsed(task: TaskLike, events: SlotLike[], timezone: string, now: Date = new Date()): TaskElapsed {
   const intervals = getTaskSlotIntervals(task, events, timezone);
 
@@ -76,7 +90,7 @@ export function getTaskElapsed(task: TaskLike, events: SlotLike[], timezone: str
   let ms = 0;
   for (const i of intervals) {
     if (i.completed) ms += i.end.getTime() - i.start.getTime();
-    else if (task.status !== 'BLOCKED') ms += elapsedWithin(i.start, i.end, now);
+    else if (task.status !== 'BLOCKED') ms += openSlotElapsedMs(i.start, i.end, now, timezone);
   }
   const minutes = Math.floor(ms / 60000);
 

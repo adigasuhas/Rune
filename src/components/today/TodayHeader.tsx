@@ -49,6 +49,7 @@ export function TodayHeader({
   overdue,
   offDay,
   worked,
+  dayLabel,
   note,
   actions,
 }: {
@@ -59,6 +60,8 @@ export function TodayHeader({
   overdue: number;
   offDay: boolean;
   worked: string;
+  /** Set when a day other than today is selected: the figures are that day's. */
+  dayLabel?: string | null;
   note?: React.ReactNode;
   actions: React.ReactNode;
 }) {
@@ -94,8 +97,8 @@ export function TodayHeader({
       </div>
       <div className="flex flex-col items-start gap-4 lg:items-end">
         <dl className="flex items-end gap-7 lg:text-right">
-          <Figure value={`${done}/${done + open}`} label="done today" />
-          <Figure value={worked} label="worked" />
+          <Figure value={`${done}/${done + open}`} label={dayLabel ? `done · ${dayLabel}` : 'done today'} />
+          <Figure value={worked} label={dayLabel ? `worked · ${dayLabel}` : 'worked'} />
           {overdue > 0 && <Figure value={String(overdue)} label="overdue" tone="danger" />}
         </dl>
         <div className="flex items-center gap-2">{actions}</div>

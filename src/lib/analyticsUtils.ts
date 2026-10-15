@@ -3,6 +3,7 @@
  */
 import { getLocalDateString, convertWeekdaysToDates, parseDateTimeInTimezone } from './dateUtils';
 import { countPostponementsOnDays } from './postpone';
+import { openSlotElapsedMs } from './taskElapsed';
 
 /**
  * Parses a comma-separated string of working days and returns a Set of lowercase day names.
@@ -276,11 +277,14 @@ export function calculateOccupiedHoursFromItems(
   });
 
   // Opt-in (pass `now`): open work that has already started counts from its
-  // scheduled start up to now, capped at its scheduled end - so the day's
-  // "worked" figure moves while a slot is under way instead of waiting for
-  // the tick. Derived from the saved schedule each time, so it survives a
-  // refresh and follows schedule edits. Stored history (accomplishments,
-  // analytics) omits `now` and stays completed-only.
+  // scheduled start up to now, capped at its scheduled end (openSlotElapsedMs)
+  // - so the day's "worked" figure moves while a slot is under way instead of
+  // waiting for the tick. Every interval here belongs to the day it STARTS on
+  // (dayEvents are grouped by start, a task's own slot is on its date), so
+  // overnight work is never split at midnight. Derived from the saved
+  // schedule each time, so it survives a refresh and follows schedule edits.
+  // Stored history (accomplishments, analytics) omits `now` and stays
+  // completed-only.
   if (now) {
     (dayTasks || []).forEach(t => {
       if (t.status === 'COMPLETED' || t.status === 'BLOCKED') return;
@@ -291,7 +295,8 @@ export function calculateOccupiedHoursFromItems(
           if (e.completed) return; // already counted above
           const start = new Date(e.start);
           const end = new Date(e.end);
-          if (now > start && end > start) intervals.push({ start, end: now < end ? now : end });
+          const ms = end > start ? openSlotElapsedMs(start, end, now, timezone) : 0;
+          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms) });
         });
         return;
       }
@@ -300,7 +305,8 @@ export function calculateOccupiedHoursFromItems(
           const start = parseDateTimeInTimezone(dateStr, t.startTime, timezone);
           let end = parseDateTimeInTimezone(dateStr, t.endTime, timezone);
           if (end <= start) end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
-          if (now > start) intervals.push({ start, end: now < end ? now : end });
+          const ms = openSlotElapsedMs(start, end, now, timezone);
+          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms) });
         } catch {
           // ignore
         }

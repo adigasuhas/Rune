@@ -178,3 +178,94 @@ describe('formatElapsedMinutes', () => {
     expect(formatElapsedMinutes(-3)).toBe('0m');
   });
 });
+
+describe('daily worked time - attributed to the day work STARTS (overnight work)', () => {
+  // A task's slot (calendar event) is anchored on the task's date, so an
+  // overnight slot starts on that date and ends on the next.
+  const task16 = (over: Record<string, unknown> = {}) =>
+    task({ id: 't16', date: at('2026-10-16T00:00').toISOString(), sessionType: 'REGULAR', ...over });
+  const task17 = (over: Record<string, unknown> = {}) =>
+    task({ id: 't17', date: at('2026-10-17T00:00').toISOString(), sessionType: 'REGULAR', ...over });
+  const day = (d: string, tasks: unknown[], events: unknown[], now: Date) =>
+    calculateOccupiedHoursForDay(d, tasks as never[], events as never[], TZ, undefined, now);
+
+  it('starts 16 Oct 23:30, now 17 Oct 01:00 -> 1h30 on the 16th, nothing on the 17th', () => {
+    const events = [slot('t16', '2026-10-16T23:30', '2026-10-17T02:00')];
+    const now = at('2026-10-17T01:00');
+    expect(day('2026-10-16', [task16()], events, now)).toBeCloseTo(1.5);
+    expect(day('2026-10-17', [task16()], events, now)).toBe(0);
+    expect(getTaskElapsed(task16(), events, TZ, now)).toEqual({ state: 'ongoing', minutes: 90 });
+  });
+
+  it('starts 17 Oct 00:15, now 01:00 -> 45m on the 17th', () => {
+    const events = [slot('t17', '2026-10-17T00:15', '2026-10-17T02:00')];
+    const now = at('2026-10-17T01:00');
+    expect(day('2026-10-17', [task17()], events, now)).toBeCloseTo(0.75);
+    expect(day('2026-10-16', [task17()], events, now)).toBe(0);
+  });
+
+  it('starts 21:00 and finishes 22:00 on the 16th -> 1h on the 16th', () => {
+    const done = task16({ status: 'COMPLETED', actualTime: 1 });
+    const events = [slot('t16', '2026-10-16T21:00', '2026-10-16T22:00', true)];
+    expect(day('2026-10-16', [done], events, at('2026-10-17T09:00'))).toBeCloseTo(1);
+  });
+
+  it('completing an overnight task keeps it on its start day with its full duration', () => {
+    const done = task16({ status: 'COMPLETED', actualTime: 2 });
+    const events = [slot('t16', '2026-10-16T23:30', '2026-10-17T01:30', true)];
+    const later = at('2026-10-18T12:00');
+    expect(day('2026-10-16', [done], events, later)).toBeCloseTo(2);
+    expect(day('2026-10-17', [done], events, later)).toBe(0);
+    expect(getTaskElapsed(done, events, TZ, later)).toEqual({ state: 'completed', minutes: 120 });
+  });
+
+  it('a completed task with no slot but its own overnight start/end stays on its date', () => {
+    const done = task16({ status: 'COMPLETED', actualTime: 1.5, startTime: '23:30', endTime: '01:00' });
+    expect(day('2026-10-16', [done], [], at('2026-10-17T09:00'))).toBeCloseTo(1.5);
+    expect(day('2026-10-17', [done], [], at('2026-10-17T09:00'))).toBe(0);
+  });
+
+  it('an overnight slot that ended after midnight still counts on its start day once over', () => {
+    const events = [slot('t16', '2026-10-16T23:30', '2026-10-17T00:30')];
+    expect(day('2026-10-16', [task16()], events, at('2026-10-17T03:00'))).toBeCloseTo(1);
+  });
+
+  it('an unticked slot from an earlier day stays uncounted (no silent history)', () => {
+    const events = [slot('t16', '2026-10-16T10:00', '2026-10-16T11:00')];
+    expect(day('2026-10-16', [task16()], events, at('2026-10-17T09:00'))).toBe(0);
+    expect(getTaskElapsed(task16(), events, TZ, at('2026-10-17T09:00')).minutes).toBe(0);
+  });
+
+  it('switching between dates gives each date its own total, every time', () => {
+    const tasks = [task16(), task17({ status: 'COMPLETED', actualTime: 1 })];
+    const events = [
+      slot('t16', '2026-10-16T23:30', '2026-10-17T02:00'),
+      slot('t17', '2026-10-17T09:00', '2026-10-17T10:00', true),
+    ];
+    const now = at('2026-10-17T12:00');
+    const seq = ['2026-10-16', '2026-10-17', '2026-10-15', '2026-10-16', '2026-10-17'].map((d) => day(d, tasks, events, now));
+    expect(seq[0]).toBeCloseTo(2.5);
+    expect(seq[1]).toBeCloseTo(1);
+    expect(seq[2]).toBe(0);
+    expect(seq[3]).toBe(seq[0]);
+    expect(seq[4]).toBe(seq[1]);
+  });
+
+  it('a reload mid-overnight gives the same elapsed time (pure function of stored data + clock)', () => {
+    const events = [slot('t16', '2026-10-16T23:30', '2026-10-17T02:00')];
+    const now = at('2026-10-17T00:45');
+    const stored = JSON.parse(JSON.stringify({ t: task16(), events }));
+    expect(day('2026-10-16', [stored.t], stored.events, now)).toBeCloseTo(1.25);
+    expect(getTaskElapsed(stored.t, stored.events, TZ, now).minutes).toBe(75);
+  });
+
+  it('time-zone boundaries: the same instants attribute by the account zone', () => {
+    // 03:30 UTC on the 17th is 23:30 on the 16th in New York.
+    const ny = 'America/New_York';
+    const t = { id: 'n', status: 'PENDING', date: '2026-10-16T04:00:00.000Z', sessionType: 'REGULAR' };
+    const ev = [{ taskId: 'n', start: '2026-10-17T03:30:00.000Z', end: '2026-10-17T06:00:00.000Z', completed: false }];
+    const now = new Date('2026-10-17T05:00:00.000Z'); // 01:00 in New York
+    expect(calculateOccupiedHoursForDay('2026-10-16', [t], ev, ny, undefined, now)).toBeCloseTo(1.5);
+    expect(calculateOccupiedHoursForDay('2026-10-17', [t], ev, ny, undefined, now)).toBe(0);
+  });
+});
