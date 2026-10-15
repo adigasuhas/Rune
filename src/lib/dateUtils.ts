@@ -330,3 +330,20 @@ export function parseDateTimeInTimezone(dateStr: string, timeStr: string, timezo
 }
 
 
+
+/**
+ * A request's date as the YYYY-MM-DD day it means in `timezone`. A plain day
+ * ("2026-10-16") is taken as-is. A full timestamp with a zone
+ * ("2026-10-15T18:30:00.000Z" - how a stored task date round-trips, local
+ * midnight in UTC) is read in the account's zone; cutting it at the "T"
+ * instead gives the UTC date, one day early anywhere east of UTC. A local
+ * date-time with no zone keeps its own date.
+ */
+export function toLocalDayKey(value: string, timezone: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (/(Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
+    const key = getLocalDateString(value, timezone);
+    if (key) return key;
+  }
+  return value.split('T')[0];
+}

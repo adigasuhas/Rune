@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { parseDateInTimezone, parseDateTimeInTimezone, getLocalDateString } from '@/lib/dateUtils';
+import { parseDateInTimezone, parseDateTimeInTimezone, getLocalDateString, toLocalDayKey } from '@/lib/dateUtils';
 import { normalizeSessionType } from '@/lib/sessionType';
 import { canEditProject, canViewProject, usersShareATeam } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
@@ -110,7 +110,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (data.projectId !== undefined) updateData.projectId = data.projectId || null;
     if (data.linkedGoalId !== undefined) updateData.linkedGoalId = data.linkedGoalId || null;
     if (data.priority !== undefined) updateData.priority = data.priority;
-    if (data.date !== undefined) updateData.date = parseDateInTimezone(data.date.split('T')[0], tz);
+    if (data.date !== undefined) updateData.date = parseDateInTimezone(toLocalDayKey(data.date, tz), tz);
     if (data.sessionType !== undefined) updateData.sessionType = normalizeSessionType(data.sessionType);
     if (data.estimatedTime !== undefined) updateData.estimatedTime = Number(data.estimatedTime);
     if (data.context !== undefined) updateData.context = data.context;
@@ -121,7 +121,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (data.postponeHistory !== undefined) updateData.postponeHistory = data.postponeHistory;
     if (data.postpone && data.date !== undefined) {
       const fromDay = getLocalDateString(task.date, tz);
-      const toDay = data.date.split('T')[0];
+      const toDay = toLocalDayKey(data.date, tz);
       updateData.postponeHistory = appendPostponement(task.postponeHistory, fromDay, toDay, data.postpone.reason);
     }
 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { parseDateInTimezone, parseDateTimeInTimezone } from '@/lib/dateUtils';
+import { parseDateInTimezone, parseDateTimeInTimezone, toLocalDayKey } from '@/lib/dateUtils';
 import { normalizeSessionType } from '@/lib/sessionType';
 import { canEditProject, canViewProject } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       where: { id: taskOwnerId }
     });
     const tz = owner?.timezone || 'UTC';
-    const taskDate = parseDateInTimezone(date.split('T')[0], tz);
+    const taskDate = parseDateInTimezone(toLocalDayKey(date, tz), tz);
 
     const task = await db.task.create({
       data: {
@@ -167,7 +167,7 @@ export async function POST(req: Request) {
       ? slots.filter((s: any) => s.startTime && s.endTime)
       : (startTime && endTime ? [{ startTime, endTime }] : []);
 
-    const dateStr = date.split('T')[0];
+    const dateStr = toLocalDayKey(date, tz);
     for (const slot of slotsToCreate) {
       const startDateTime = parseDateTimeInTimezone(dateStr, slot.startTime as string, tz);
       let endDateTime = parseDateTimeInTimezone(dateStr, slot.endTime as string, tz);

@@ -157,6 +157,9 @@ export default function TasksPage() {
   const [movingTask, setMovingTask] = useState<Task | null>(null);
   const [moveDate, setMoveDate] = useState('');
   const [moveReason, setMoveReason] = useState('');
+  // The same date dialog serves "Move" and "Duplicate": a copy always asks
+  // for its date (starting empty), never inheriting or deriving one.
+  const [moveMode, setMoveMode] = useState<'move' | 'copy'>('move');
 
   const [dataLoading, setDataLoading] = useState(true);
 
@@ -241,6 +244,7 @@ export default function TasksPage() {
   }, [dataLoading, tasks]);
 
   const openMoveModal = (task: Task) => {
+    setMoveMode('move');
     setMovingTask(task);
     setMoveDate(task.date ? getLocalDateString(task.date, userTimezone) : getCurrentDateInTimezone(userTimezone));
     setMoveReason('');
@@ -250,6 +254,10 @@ export default function TasksPage() {
   const handleMoveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!movingTask || !moveDate) return;
+    if (moveMode === 'copy') {
+      await createCopy(movingTask, moveDate);
+      return;
+    }
 
     // The server logs the postponement (against the day the task is moved
     // FROM, read from its stored date) - see /api/tasks/[id] `postpone`.
@@ -636,7 +644,20 @@ export default function TasksPage() {
     }
   };
 
-  const handleDuplicate = async (task: Task) => {
+  // Duplicate asks for the copy's date first (the Move dialog, in copy
+  // mode). It used to post the original's stored timestamp, which the server
+  // cut to its UTC date - one day early anywhere east of UTC.
+  const handleDuplicate = (task: Task) => {
+    setMoveMode('copy');
+    setMovingTask(task);
+    setMoveDate('');
+    setMoveReason('');
+    setIsMoveModalOpen(true);
+  };
+
+  // A copy is a new task: the original's details, none of its history
+  // (status, time spent, postponements, slots, assignment), on the chosen day.
+  const createCopy = async (task: Task, date: string) => {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -646,7 +667,7 @@ export default function TasksPage() {
           detail: task.detail,
           projectId: task.projectId || undefined,
           priority: task.priority,
-          date: task.date,
+          date,
           sessionType: task.sessionType,
           estimatedTime: task.estimatedTime,
           context: task.context,
@@ -657,10 +678,15 @@ export default function TasksPage() {
         })
       });
       if (res.ok) {
+        setIsMoveModalOpen(false);
         setRefreshTrigger(prev => prev + 1);
+        toast('Task copied', `“${task.name} (Copy)” is on ${new Date(`${date}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}.`, 'success');
+      } else {
+        toast('Couldn’t copy the task', 'Try again.', 'error');
       }
     } catch (e) {
       console.error(e);
+      toast('Couldn’t copy the task', 'Try again.', 'error');
     }
   };
 
@@ -1474,7 +1500,9 @@ export default function TasksPage() {
           <div className="w-full max-w-md bg-card border border-border rounded-lg p-6 shadow-[var(--shadow-modal)] space-y-5">
             <div className="flex justify-between items-center pb-2 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                <CalendarIcon className="w-4.5 h-4.5 text-primary" /> Move task
+                {moveMode === 'copy'
+                  ? <><Copy className="w-4.5 h-4.5 text-primary" /> Duplicate task</>
+                  : <><CalendarIcon className="w-4.5 h-4.5 text-primary" /> Move task</>}
               </h3>
               <button 
                 onClick={() => setIsMoveModalOpen(false)}
@@ -1489,12 +1517,12 @@ export default function TasksPage() {
                   Task: <span className="font-semibold text-foreground">{movingTask.name}</span>
                 </p>
                 <p className="text-[10px] text-ink-faint mb-4">
-                  Currently planned for: <span className="font-mono">{new Date(`${getLocalDateString(movingTask.date, userTimezone)}T12:00:00Z`).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span>
+                  {moveMode === 'copy' ? 'Original is planned for:' : 'Currently planned for:'} <span className="font-mono">{new Date(`${getLocalDateString(movingTask.date, userTimezone)}T12:00:00Z`).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span>
                 </p>
               </div>
 
               <div>
-                <label htmlFor="page-new-date" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">New date</label>
+                <label htmlFor="page-new-date" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{moveMode === 'copy' ? 'Date for the copy' : 'New date'}</label>
                 <input id="page-new-date" 
                   type="date"
                   required
@@ -1504,7 +1532,11 @@ export default function TasksPage() {
                 />
               </div>
 
-              <div>
+              {moveMode === 'copy' && !moveDate && (
+                <p className="text-[12px] text-ink-secondary" role="status">Pick the day the copy should be on.</p>
+              )}
+
+              {moveMode === 'move' && <div>
                 <label htmlFor="page-reason-optional" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">Reason (optional)</label>
                 <input id="page-reason-optional" 
                   type="text"
@@ -1513,7 +1545,7 @@ export default function TasksPage() {
                   placeholder="e.g. waiting on results, needs a longer focus block"
                   className="w-full bg-surface-raised border border-border rounded-md px-3 py-2.5 text-foreground text-xs focus:outline-none focus:border-border-strong"
                 />
-              </div>
+              </div>}
 
               <div className="flex justify-end gap-2.5 pt-4 border-t border-border">
                 <button
@@ -1525,9 +1557,10 @@ export default function TasksPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4.5 py-2 bg-primary hover:bg-primary-hover text-primary-foreground font-bold rounded-full text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  disabled={!moveDate}
+                  className="px-4.5 py-2 bg-primary hover:bg-primary-hover text-primary-foreground font-bold rounded-full text-xs flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Move task
+                  {moveMode === 'copy' ? 'Create copy' : 'Move task'}
                 </button>
               </div>
             </form>

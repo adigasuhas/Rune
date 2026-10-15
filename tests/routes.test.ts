@@ -698,3 +698,27 @@ describe('notification preferences', () => {
     expect(db.notification.create).not.toHaveBeenCalled();
   });
 });
+
+describe('POST /api/tasks - the day a date means', () => {
+  // A stored task date is local midnight as a UTC timestamp: 16 Oct in IST is
+  // 2026-10-15T18:30Z. Posting that back (as Duplicate used to) must land on
+  // the 16th, not the UTC date.
+  const create = async (date: string) => {
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    db.user.findUnique.mockResolvedValue({ id: 'u1', timezone: 'Asia/Kolkata' });
+    db.task.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'new', ...data }));
+    db.task.findUnique.mockResolvedValue(null);
+    const { POST } = await import('@/app/api/tasks/route');
+    const res = await POST(req({ name: 'Copy', date }));
+    expect(res.status).toBeLessThan(300);
+    return (db.task.create.mock.calls[0][0] as { data: { date: Date } }).data.date.toISOString();
+  };
+
+  it('a plain day is that day in the account zone', async () => {
+    expect(await create('2026-10-16')).toBe('2026-10-15T18:30:00.000Z');
+  });
+
+  it('a full UTC timestamp is read in the account zone, not cut to its UTC date', async () => {
+    expect(await create('2026-10-15T18:30:00.000Z')).toBe('2026-10-15T18:30:00.000Z');
+  });
+});
