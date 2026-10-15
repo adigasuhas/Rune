@@ -36,6 +36,7 @@ import {
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
+import { getTaskElapsed, formatElapsedMinutes } from '@/lib/taskElapsed';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
@@ -1231,6 +1232,14 @@ export default function TasksPage() {
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-ink-faint tabular-nums">
                             <span>planned {task.formattedPlannedDate}</span>
                             {isCompleted && <span>actual {(task.actualTime || 0).toFixed(1)}h</span>}
+                            {!isCompleted && (() => {
+                              const el = getTaskElapsed(task, events, userTimezone);
+                              return el.minutes > 0 ? (
+                                <span className={el.state === 'ongoing' ? 'font-medium text-primary' : ''} title="Time elapsed since the scheduled start (counted until it's marked done)">
+                                  {formatElapsedMinutes(el.minutes)} {el.state === 'ongoing' ? 'so far' : 'elapsed'}
+                                </span>
+                              ) : null;
+                            })()}
                             {isCompleted && (
                               <span className={(task.timeDifference || 0) >= 0 ? 'text-warning' : 'text-success'}>
                                 {(task.timeDifference || 0) >= 0 ? '+' : ''}{(task.timeDifference || 0).toFixed(1)}h vs plan

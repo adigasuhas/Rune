@@ -126,6 +126,27 @@ describe('PUT /api/tasks/[id]', () => {
     expect(body.status).toBe('IN_PROGRESS');
   });
 
+  it('rescheduling replaces the old slot (no stale times) and leaves the status alone when none is sent', async () => {
+    users.push({ id: 'u1', timezone: 'UTC' });
+    const task = seedTask({ userId: 'u1', status: 'IN_PROGRESS', date: new Date('2026-10-15T00:00:00Z') });
+    calendarEvents.push({ id: 'old', taskId: task.id, userId: 'u1', start: new Date('2026-10-15T10:00:00Z'), end: new Date('2026-10-15T11:00:00Z'), completed: false });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { getTaskElapsed } = await import('@/lib/taskElapsed');
+    const now = new Date('2026-10-15T10:30:00Z');
+    expect(getTaskElapsed(tasks[0], calendarEvents, 'UTC', now).minutes).toBe(30);
+
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    const res = await PUT(req({ slots: [{ startTime: '13:00', endTime: '14:00' }] }), p({ id: task.id }));
+    expect(res.status).toBe(200);
+    expect(calendarEvents.map((e) => e.id)).not.toContain('old');
+    expect(calendarEvents).toHaveLength(1);
+    expect(new Date(calendarEvents[0].start).toISOString()).toBe('2026-10-15T13:00:00.000Z');
+    expect(tasks[0].status).toBe('IN_PROGRESS');
+    expect(tasks[0].startTime).toBe('13:00');
+    // Moved into the future: elapsed drops to zero instead of running on the old start.
+    expect(getTaskElapsed(tasks[0], calendarEvents, 'UTC', now)).toEqual({ state: 'not-started', minutes: 0 });
+  });
+
   it('a Team Leader with edit rights on the task\'s project can manage a teammate\'s assigned task', async () => {
     const team = { id: nextId(), name: 'Lab' };
     teamMemberships.push({ id: nextId(), teamId: team.id, userId: 'leader1', role: 'TEAM_LEADER' });

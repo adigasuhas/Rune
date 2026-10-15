@@ -29,6 +29,7 @@ import { Button, SectionHeader, StatusPill } from '@/components/ui';
 import { ActivityGraph } from '@/components/activity/ActivityGraph';
 import { formatHours } from '@/lib/activity';
 import { calculateOccupiedHoursForDay, getPostponeCount } from '@/lib/analyticsUtils';
+import { getTaskElapsed, formatElapsedMinutes, initialScheduleSlots, validateScheduleSlots } from '@/lib/taskElapsed';
 import { getLocalDateString, getCurrentDateInTimezone, parseDateInTimezone, getStartOfDayInTimezone, formatRelativeDeadline, daysUntil } from '@/lib/dateUtils';
 import { PROJECT_COLORS } from '@/lib/colors';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
@@ -1203,6 +1204,15 @@ function DashboardPage() {
     if (!newTaskName) return;
     setTaskFormError(null);
 
+    // A schedule is optional here, but a half-filled slot is an error rather
+    // than silently dropped.
+    if (newTaskSlots.some(s => s.startTime || s.endTime)) {
+      const slotError = validateScheduleSlots(newTaskSlots.filter(s => s.startTime || s.endTime));
+      if (slotError) {
+        setTaskFormError(slotError);
+        return;
+      }
+    }
     const validSlots = newTaskSlots.filter(s => s.startTime && s.endTime);
 
     const saveTask = async () => {
@@ -1382,6 +1392,26 @@ function DashboardPage() {
     setIsEventModalOpen(true);
   };
 
+  // Schedule a task from Up next. Every field is reset from THIS task alone:
+  // the modal's state is shared with the planner's event editor, so anything
+  // left from the last event or task opened (its slots, done-tick, even the
+  // event being edited - which saving would then delete) must not carry over.
+  // A task with its own saved schedule opens on that; otherwise it starts
+  // empty and the user has to pick a time.
+  const openScheduleTaskModal = (task: Task) => {
+    setEditingEvent(null);
+    setEventTitle(`[${sessionTypeLabel(task.sessionType)}] ${task.name}`);
+    setEventDate(getLocalDateString(task.date, userTimezone) || selectedDate);
+    setEventStart('');
+    setEventEnd('');
+    setEventDesc(task.detail || `Work session for ${task.name}`);
+    setEventSessionType(normalizeSessionType(task.sessionType));
+    setEventTaskId(task.id);
+    setEventCompleted(false);
+    setEventSlots(initialScheduleSlots(task, events, (d) => getTimeInTimezone(String(d))));
+    setIsEventModalOpen(true);
+  };
+
   // Populate form fields on task select in event modal
   const handleEventTaskLinkChange = (taskId: string) => {
     setEventTaskId(taskId);
@@ -1402,13 +1432,11 @@ function DashboardPage() {
         setEventCompleted(false);
       }
       
-      const linkedEvents = events.filter(e => e.taskId === taskId);
-      const initialSlots = linkedEvents.map(evt => {
-        const startTime = getTimeInTimezone(evt.start);
-        const endTime = getTimeInTimezone(evt.end);
-        return { startTime, endTime };
-      });
-      setEventSlots(initialSlots.length > 0 ? initialSlots : [{ startTime: eventStart, endTime: eventEnd }]);
+      // The task's own schedule if it has one; otherwise the time the user
+      // clicked on the planner (eventStart/End - empty when scheduling from
+      // Up next), never another task's slots.
+      const own = initialScheduleSlots(task, events, (d) => getTimeInTimezone(String(d)));
+      setEventSlots(own[0].startTime || own[0].endTime ? own : [{ startTime: eventStart, endTime: eventEnd }]);
     }
   };
 
@@ -1442,7 +1470,11 @@ function DashboardPage() {
               name: eventTitle,
               detail: eventDesc,
               sessionType: eventSessionType,
-              status: eventCompleted ? 'COMPLETED' : 'PENDING',
+              // Only touch status when the done-tick changes it - saving a
+              // schedule mustn't knock an in-progress task back to pending.
+              ...(eventCompleted
+                ? { status: 'COMPLETED' }
+                : tasks.find(t => t.id === eventTaskId)?.status === 'COMPLETED' ? { status: 'PENDING' } : {}),
               slots: validSlots
             })
           });
@@ -1503,11 +1535,12 @@ function DashboardPage() {
     };
 
     if (eventTaskId) {
-      const validSlots = eventSlots.filter(s => s.startTime && s.endTime);
-      if (validSlots.length === 0) {
-        toast('Add a time slot', 'Add at least one valid time slot before saving.', 'warning');
+      const scheduleError = validateScheduleSlots(eventSlots);
+      if (scheduleError) {
+        toast('Pick a time', scheduleError, 'warning');
         return;
       }
+      const validSlots = eventSlots.filter(s => s.startTime && s.endTime);
       const internalValidationError = validateInternalSlots(validSlots);
       if (internalValidationError) {
         toast('Check the form', internalValidationError, 'warning');
@@ -1931,6 +1964,7 @@ function DashboardPage() {
     const proj = task.projectId ? projects.find(p => p.id === task.projectId) : null;
     const linkedEvents = events.filter(e => e.taskId === task.id);
     const postponeCount = getPostponeCount(task);
+    const elapsed = getTaskElapsed(task, events, userTimezone);
     // Only priorities that should change what you do next get a word.
     const priority =
       task.priority === 'CRITICAL' ? { label: 'Critical', cls: 'text-danger' } :
@@ -1971,6 +2005,14 @@ function DashboardPage() {
             <span className="tabular-nums" title={durationLabel(task.sessionType)}>{task.estimatedTime}h</span>
             {priority && <span className={`font-medium ${priority.cls}`}>{priority.label}</span>}
             {postponeCount > 0 && <span>moved {postponeCount}×</span>}
+            {elapsed.minutes > 0 && (
+              <span
+                className={`tabular-nums ${elapsed.state === 'ongoing' ? 'font-medium text-primary' : ''}`}
+                title="Time elapsed since the scheduled start (counted until it's marked done)"
+              >
+                {formatElapsedMinutes(elapsed.minutes)} {elapsed.state === 'ongoing' ? 'so far' : 'elapsed'}
+              </span>
+            )}
             {linkedEvents.map((evt) => {
               const evtStart = new Date(evt.start);
               return (
@@ -1998,14 +2040,7 @@ function DashboardPage() {
           />
           <button
             type="button"
-            onClick={() => {
-              setEventTitle(`[${sessionTypeLabel(task.sessionType)}] ${task.name}`);
-              setEventDate(selectedDate);
-              setEventDesc(task.detail || `Work session for ${task.name}`);
-              setEventSessionType(normalizeSessionType(task.sessionType));
-              setEventTaskId(task.id);
-              setIsEventModalOpen(true);
-            }}
+            onClick={() => openScheduleTaskModal(task)}
             className="grid h-7 w-7 place-items-center rounded-[7px] text-ink-faint hover:bg-surface-sunken hover:text-foreground cursor-pointer"
             title="Give it a time on the planner"
             aria-label={`Schedule ${task.name}`}
@@ -2050,7 +2085,7 @@ function DashboardPage() {
     let h = 0;
     for (let i = 0; i <= dow; i++) {
       const d = new Date(`${todayStr}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - i);
-      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone);
+      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone, undefined, i === 0 ? new Date() : undefined);
     }
     return h;
   })();
@@ -2079,7 +2114,7 @@ function DashboardPage() {
             <button onClick={dismissFreshStart} className="ml-3 text-ink-faint hover:text-foreground" aria-label="Dismiss the new-week note">Dismiss</button>
           </p>
         ) : null}
-        worked={formatHours(calculateOccupiedHoursForDay(getCurrentDateInTimezone(userTimezone), tasks, events, userTimezone))}
+        worked={formatHours(calculateOccupiedHoursForDay(getCurrentDateInTimezone(userTimezone), tasks, events, userTimezone, undefined, new Date()))}
         actions={
           <>
             <Button variant="ghost" onClick={() => setShowReviewDay(true)}>
@@ -2828,7 +2863,7 @@ function DashboardPage() {
           <div className="w-full max-w-md bg-card border border-border rounded-lg p-6 shadow-[var(--shadow-modal)] overflow-y-auto max-h-[90vh]">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-foreground">
-                {editingEvent ? 'Edit event' : 'New event'}
+                {editingEvent ? 'Edit event' : eventTaskId ? 'Schedule task' : 'New event'}
               </h3>
               <button 
                 onClick={() => setIsEventModalOpen(false)}
@@ -2886,6 +2921,11 @@ function DashboardPage() {
                     <label className="block text-[12.5px] font-semibold text-muted-foreground mb-1">
                       Time slots
                     </label>
+                    {!eventSlots.some(s => s.startTime && s.endTime) && (
+                      <p className="text-[12.5px] text-ink-secondary" role="status">
+                        Not scheduled yet. Pick a start and end time to put it on the planner.
+                      </p>
+                    )}
                     {eventSlots.map((slot, index) => (
                       <div key={index} className="flex gap-2 items-center">
                         <div className="flex-1">
@@ -2997,7 +3037,7 @@ function DashboardPage() {
                   type="submit"
                   className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-bold rounded-full transition-colors"
                 >
-                  {editingEvent ? 'Save changes' : 'Create event'}
+                  {editingEvent ? 'Save changes' : eventTaskId ? 'Schedule' : 'Create event'}
                 </button>
               </div>
             </form>
@@ -3047,6 +3087,22 @@ function DashboardPage() {
                   </span>
                 </div>
               </div>
+
+              {viewingTask.status !== 'COMPLETED' && (() => {
+                const el = getTaskElapsed(viewingTask, events, userTimezone);
+                const label =
+                  el.state === 'unscheduled' ? 'Not scheduled' :
+                  el.state === 'not-started' ? 'Not started' :
+                  `${formatElapsedMinutes(el.minutes)}${el.state === 'ongoing' ? ' so far' : ''}`;
+                return (
+                  <div>
+                    <span className="text-[11.5px] font-mono text-muted-foreground block">Elapsed since scheduled start</span>
+                    <span className="inline-block mt-1 px-2.5 py-0.5 bg-surface-raised border border-border-strong rounded-lg text-xs font-semibold font-mono text-ink-secondary tabular-nums">
+                      {label}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {viewingTask.status === 'COMPLETED' && (
                 <div className="grid grid-cols-2 gap-4">

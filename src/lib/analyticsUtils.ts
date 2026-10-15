@@ -215,7 +215,8 @@ export function calculateOccupiedHoursFromItems(
   dayTasks: any[],
   dayEvents: any[],
   timezone: string,
-  sessionTypes?: string[]
+  sessionTypes?: string[],
+  now?: Date
 ): number {
   const intervals: Array<{ start: Date; end: Date }> = [];
 
@@ -273,6 +274,39 @@ export function calculateOccupiedHoursFromItems(
     }
   });
 
+  // Opt-in (pass `now`): open work that has already started counts from its
+  // scheduled start up to now, capped at its scheduled end - so the day's
+  // "worked" figure moves while a slot is under way instead of waiting for
+  // the tick. Derived from the saved schedule each time, so it survives a
+  // refresh and follows schedule edits. Stored history (accomplishments,
+  // analytics) omits `now` and stays completed-only.
+  if (now) {
+    (dayTasks || []).forEach(t => {
+      if (t.status === 'COMPLETED' || t.status === 'BLOCKED') return;
+      if (sessionTypes && !sessionTypes.includes(t.sessionType)) return;
+      const slots = (dayEvents || []).filter(e => e.taskId === t.id);
+      if (slots.length > 0) {
+        slots.forEach(e => {
+          if (e.completed) return; // already counted above
+          const start = new Date(e.start);
+          const end = new Date(e.end);
+          if (now > start && end > start) intervals.push({ start, end: now < end ? now : end });
+        });
+        return;
+      }
+      if (t.startTime && t.endTime) {
+        try {
+          const start = parseDateTimeInTimezone(dateStr, t.startTime, timezone);
+          let end = parseDateTimeInTimezone(dateStr, t.endTime, timezone);
+          if (end <= start) end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+          if (now > start) intervals.push({ start, end: now < end ? now : end });
+        } catch {
+          // ignore
+        }
+      }
+    });
+  }
+
   return getIntervalUnionDuration(intervals);
 }
 
@@ -281,7 +315,8 @@ export function calculateOccupiedHoursForDay(
   tasks: any[],
   calendarEvents: any[],
   timezone: string,
-  sessionTypes?: string[]
+  sessionTypes?: string[],
+  now?: Date
 ): number {
   const dayEvents = (calendarEvents || []).filter(e => {
     try {
@@ -299,7 +334,7 @@ export function calculateOccupiedHoursForDay(
     }
   });
 
-  return calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, sessionTypes);
+  return calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, sessionTypes, now);
 }
 
 function groupByLocalDate(items: any[], dateField: string, timezone: string): Map<string, any[]> {
