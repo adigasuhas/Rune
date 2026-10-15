@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { countByStatusTab, tasksOnDate } from '@/app/tasks/taskHelpers';
 import { parseDateInTimezone } from '@/lib/dateUtils';
+import { tasksPostponedFrom } from '@/lib/postpone';
 
 /**
  * The Tasks page's status tabs (All, To do, In progress, Blocked, Done,
@@ -9,10 +10,13 @@ import { parseDateInTimezone } from '@/lib/dateUtils';
  * raised today's "To do". These pin the counts to the selected day.
  */
 const TZ = 'Asia/Kolkata';
-type T = { id: string; status: string; date: string; createdAt?: string; deadline?: string; postponed?: number };
+type T = { id: string; status: string; date: string; createdAt?: string; deadline?: string; postponeHistory?: string };
 const on = (ymd: string) => parseDateInTimezone(ymd, TZ).toISOString();
-const postponeCount = (t: T) => t.postponed ?? 0;
-const counts = (tasks: T[], day: string | null) => countByStatusTab(tasksOnDate(tasks, day, TZ), postponeCount);
+/** History of moves, each from -> to (day keys). */
+const moved = (...moves: Array<[string, string]>) =>
+  JSON.stringify(moves.map(([originalDate, newDate]) => ({ originalDate, newDate, movedAt: '2026-10-15T09:00:00.000Z' })));
+const counts = (tasks: T[], day: string | null) =>
+  countByStatusTab(tasksOnDate(tasks, day, TZ), tasksPostponedFrom(tasks, day, TZ).length);
 
 const TODAY = '2026-10-15';
 const TOMORROW = '2026-10-16';
@@ -40,21 +44,23 @@ describe('task counts follow the selected date', () => {
       { id: '2', status: 'PENDING', date: on(TODAY) },
       { id: '3', status: 'IN_PROGRESS', date: on(TODAY) },
       { id: '4', status: 'BLOCKED', date: on(TODAY) },
-      { id: '5', status: 'COMPLETED', date: on(TODAY), postponed: 1 },
-      { id: '6', status: 'PENDING', date: on(TODAY), postponed: 2 },
-      { id: '7', status: 'BLOCKED', date: on(TOMORROW), postponed: 1 },
+      // moved here from yesterday: scheduled today, postponed off yesterday
+      { id: '5', status: 'COMPLETED', date: on(TODAY), postponeHistory: moved(['2026-10-14', TODAY]) },
+      { id: '6', status: 'PENDING', date: on(TODAY), postponeHistory: moved(['2026-10-13', '2026-10-14'], ['2026-10-14', TODAY]) },
+      // moved from today to tomorrow: postponed off today, scheduled tomorrow
+      { id: '7', status: 'BLOCKED', date: on(TOMORROW), postponeHistory: moved([TODAY, TOMORROW]) },
     ];
     const c = counts(tasks, TODAY);
-    expect(c).toEqual({ ALL: 6, PENDING: 3, IN_PROGRESS: 1, BLOCKED: 1, COMPLETED: 1, POSTPONED: 2 });
+    expect(c).toEqual({ ALL: 6, PENDING: 3, IN_PROGRESS: 1, BLOCKED: 1, COMPLETED: 1, POSTPONED: 1 });
     expect(c.PENDING + c.IN_PROGRESS + c.BLOCKED + c.COMPLETED).toBe(c.ALL);
   });
 
-  it('rescheduling a task moves it from the old date\'s counts to the new one\'s', () => {
+  it('postponing today -> tomorrow: Postponed counts on today, the task is scheduled on tomorrow', () => {
     const task: T = { id: 'a', status: 'PENDING', date: on(TODAY) };
-    expect(counts([task], TODAY).PENDING).toBe(1);
-    const moved = { ...task, date: on(TOMORROW), postponed: 1 };
-    expect(counts([moved], TODAY)).toMatchObject({ ALL: 0, PENDING: 0, POSTPONED: 0 });
-    expect(counts([moved], TOMORROW)).toMatchObject({ ALL: 1, PENDING: 1, POSTPONED: 1 });
+    expect(counts([task], TODAY)).toMatchObject({ ALL: 1, PENDING: 1, POSTPONED: 0 });
+    const after = { ...task, date: on(TOMORROW), postponeHistory: moved([TODAY, TOMORROW]) };
+    expect(counts([after], TODAY)).toMatchObject({ ALL: 0, PENDING: 0, POSTPONED: 1 });
+    expect(counts([after], TOMORROW)).toMatchObject({ ALL: 1, PENDING: 1, POSTPONED: 0 });
   });
 
   it('changing status moves the task between tabs without double-counting', () => {

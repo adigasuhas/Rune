@@ -2,6 +2,7 @@
  * Utility functions for calculating working-day aware analytics.
  */
 import { getLocalDateString, convertWeekdaysToDates, parseDateTimeInTimezone } from './dateUtils';
+import { countPostponementsOnDays } from './postpone';
 
 /**
  * Parses a comma-separated string of working days and returns a Set of lowercase day names.
@@ -461,7 +462,9 @@ export function calculateWorkingDayMetrics(
   const totalFocusTime = totalDeepWorkHours + totalFocusOnlyHours;
 
   // 6. Postponement Rate (tasks moved off their original date, per working day)
-  const totalPostponeCount = tasksOnWorkingDays.reduce((sum, t) => sum + getPostponeCount(t), 0);
+  // Each move is counted once, on the day it was postponed FROM - not on the
+  // task's current (new) date.
+  const totalPostponeCount = countPostponementsOnDays(tasks, workingDays, timezone);
   const postponementRate = workingDays.length > 0
     ? Math.round((totalPostponeCount / workingDays.length) * 100) / 100 // rounded to 2 decimals
     : 0;

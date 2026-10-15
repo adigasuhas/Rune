@@ -12,6 +12,7 @@ import { TaskFormModal } from '@/components/TaskFormModal';
 import { SessionType, normalizeSessionType } from '@/lib/sessionType';
 import { getPostponeCount } from '@/lib/analyticsUtils';
 import { generateTaskPdfReport } from '@/lib/taskReport';
+import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/lib/postpone';
 import {
   CheckSquare,
   Plus,
@@ -160,6 +161,10 @@ export default function TasksPage() {
   const [dataLoading, setDataLoading] = useState(true);
 
   const [loadFailed, setLoadFailed] = useState(false);
+  // The account's timezone re-anchors "today" once, on first load. Later
+  // refreshes (after a move, edit, delete...) must keep the day the user is
+  // looking at - re-anchoring then threw them back to today mid-task.
+  const tzAnchoredRef = useRef(false);
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -177,8 +182,11 @@ export default function TasksPage() {
           const s = await settingsRes.json();
           if (s.timezone) {
             setUserTimezone(s.timezone);
-            setSelectedDate(prev => prev ? getCurrentDateInTimezone(s.timezone) : null);
-            setCalendarCenter(anchorForToday(s.timezone));
+            if (!tzAnchoredRef.current) {
+              tzAnchoredRef.current = true;
+              setSelectedDate(prev => prev ? getCurrentDateInTimezone(s.timezone) : null);
+              setCalendarCenter(anchorForToday(s.timezone));
+            }
           }
           setAllowConcurrentTasks(s.allowConcurrentTasks === true);
           setTaskNotificationsEnabled(s.taskNotificationsEnabled !== false);
@@ -243,34 +251,15 @@ export default function TasksPage() {
     e.preventDefault();
     if (!movingTask || !moveDate) return;
 
-    let history: any[] = [];
-    if (movingTask.postponeHistory) {
-      try {
-        history = JSON.parse(movingTask.postponeHistory);
-      } catch (err) {
-        history = [];
-      }
-    }
-
-    const originalDate = movingTask.date;
-    const newDate = moveDate;
-
-    const newHistoryEntry = {
-      originalDate,
-      newDate,
-      reason: moveReason || undefined,
-      movedAt: new Date().toISOString()
-    };
-
-    history.push(newHistoryEntry);
-
+    // The server logs the postponement (against the day the task is moved
+    // FROM, read from its stored date) - see /api/tasks/[id] `postpone`.
     try {
       const res = await fetch(`/api/tasks/${movingTask.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          date: newDate,
-          postponeHistory: JSON.stringify(history)
+          date: moveDate,
+          postpone: { reason: moveReason || null }
         })
       });
 
@@ -740,8 +729,8 @@ export default function TasksPage() {
   // on this page - the list, the tab counts, the header summary - starts here.
   const dayTasks = React.useMemo(() => tasksOnDate(tasks, selectedDate, userTimezone), [tasks, selectedDate, userTimezone]);
 
-  const filteredTasks = React.useMemo(() => {
-    return dayTasks.filter(t => {
+  const matchesFilters = React.useCallback((t: Task) => {
+    {
       // Search filter
       if (searchQuery && !t.name.toLowerCase().includes(searchQuery.toLowerCase()) && !(t.detail && t.detail.toLowerCase().includes(searchQuery.toLowerCase()))) {
         return false;
@@ -756,12 +745,24 @@ export default function TasksPage() {
       if (projectFilter !== 'ALL' && t.projectId !== projectFilter) return false;
 
       return true;
-    });
-  }, [dayTasks, searchQuery, priorityFilter, contextFilter, projectFilter]);
+    }
+  }, [searchQuery, priorityFilter, contextFilter, projectFilter]);
+  const filteredTasks = React.useMemo(() => dayTasks.filter(matchesFilters), [dayTasks, matchesFilters]);
+
+  // Postponed is about where a task was moved FROM, not where it is now: the
+  // selected day's Postponed tab lists the tasks postponed off that day,
+  // wherever they're scheduled today (a task moved from today to tomorrow
+  // shows here under today, and in tomorrow's ordinary list - not tomorrow's
+  // Postponed).
+  const postponedTasks = React.useMemo(
+    () => tasksPostponedFrom(tasks, selectedDate, userTimezone).filter(matchesFilters),
+    [tasks, selectedDate, userTimezone, matchesFilters]
+  );
+  const postponedDayTasks = React.useMemo(() => tasksPostponedFrom(tasks, selectedDate, userTimezone), [tasks, selectedDate, userTimezone]);
 
   // Sort tasks
-  const sortedTasks = React.useMemo(() => {
-    return [...filteredTasks].sort((a, b) => {
+  const sortTasks = React.useCallback((list: Task[]) => {
+    return [...list].sort((a, b) => {
       if (sortBy === 'date') {
         return new Date(a.date).getTime() - new Date(b.date).getTime();
       }
@@ -780,47 +781,23 @@ export default function TasksPage() {
       }
       return 0;
     });
-  }, [filteredTasks, sortBy]);
+  }, [sortBy]);
 
   // Group by Date key (YYYY-MM-DD)
-  const formattedTasksList = React.useMemo(() => {
-    return sortedTasks.map(t => {
-      let datePart = '';
-      if (typeof t.date === 'string') {
-        datePart = t.date.split('T')[0];
-      } else if (t.date) {
-        try {
-          datePart = new Date(t.date).toISOString().split('T')[0];
-        } catch (e) {
-          datePart = '';
-        }
-      }
+  const formatTasks = React.useCallback((list: Task[]) => {
+    return list.map(t => {
+      // The task's day in the account's timezone (its stored timestamp is
+      // local midnight, which in UTC can fall on the previous date).
+      const datePart = t.date ? getLocalDateString(t.date, userTimezone) : '';
+      const formattedPlannedDate = datePart
+        ? new Date(`${datePart}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' })
+        : 'Invalid date';
 
-      let formattedPlannedDate = 'Invalid date';
-      if (datePart) {
-        const d = new Date(datePart + 'T12:00:00');
-        if (!isNaN(d.getTime())) {
-          formattedPlannedDate = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        }
-      }
-      
-      let parsedHistory: any[] = [];
-      if (t.postponeHistory) {
-        try {
-          const history = JSON.parse(t.postponeHistory);
-          if (Array.isArray(history)) {
-            parsedHistory = history.map((entry: any) => {
-              const entryOrig = new Date(entry.originalDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
-              const entryDest = new Date(entry.newDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
-              return {
-                ...entry,
-                entryOrig,
-                entryDest
-              };
-            });
-          }
-        } catch (e) {}
-      }
+      const parsedHistory = parsePostponeHistory(t.postponeHistory).map((entry) => ({
+        ...entry,
+        entryOrig: formatPostponeDay(entry.originalDate, userTimezone),
+        entryDest: formatPostponeDay(entry.newDate, userTimezone),
+      }));
 
       return {
         ...t,
@@ -828,7 +805,9 @@ export default function TasksPage() {
         parsedHistory
       };
     });
-  }, [sortedTasks]);
+  }, [userTimezone]);
+  const formattedTasksList = React.useMemo(() => formatTasks(sortTasks(filteredTasks)), [formatTasks, sortTasks, filteredTasks]);
+  const formattedPostponedList = React.useMemo(() => formatTasks(sortTasks(postponedTasks)), [formatTasks, sortTasks, postponedTasks]);
 
   // The mockup groups tasks by STATE (In progress / To do / Done), not by date.
   // The date rail narrows the set; this decides the sections shown within it.
@@ -840,20 +819,18 @@ export default function TasksPage() {
   ] as const;
 
   const groupedByState = React.useMemo(() => {
-    const base = statusFilter === 'POSTPONED'
-      ? formattedTasksList.filter(t => getPostponeCount(t) > 0)
-      : formattedTasksList;
+    const base = statusFilter === 'POSTPONED' ? formattedPostponedList : formattedTasksList;
     return STATE_GROUPS
       .map(g => ({ ...g, tasks: base.filter(t => t.status === g.key) }))
       .filter(g => {
         if (statusFilter === 'ALL' || statusFilter === 'POSTPONED') return g.tasks.length > 0;
         return g.key === statusFilter;
       });
-  }, [formattedTasksList, statusFilter]);
+  }, [formattedTasksList, formattedPostponedList, statusFilter]);
 
   const totalShown = groupedByState.reduce((n, g) => n + g.tasks.length, 0);
-  const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, getPostponeCount), [filteredTasks]);
-  const dayCounts = React.useMemo(() => countByStatusTab(dayTasks, getPostponeCount), [dayTasks]);
+  const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, postponedTasks.length), [filteredTasks, postponedTasks]);
+  const dayCounts = React.useMemo(() => countByStatusTab(dayTasks, postponedDayTasks.length), [dayTasks, postponedDayTasks]);
 
   // Pre-calculate task counts per day for the mini-calendar indicators
   const tasksByDateMap = React.useMemo(() => {
@@ -1142,6 +1119,11 @@ export default function TasksPage() {
                           {declined && (
                             <span className="shrink-0 text-[10px] font-semibold text-danger truncate max-w-[14rem]" title={task.declineReason || undefined}>
                               declined
+                            </span>
+                          )}
+                          {statusFilter === 'POSTPONED' && selectedDate && getLocalDateString(task.date, userTimezone) !== selectedDate && (
+                            <span className="shrink-0 text-[12px] text-ink-secondary" title="Postponed off this day; scheduled on its new date">
+                              moved to {task.formattedPlannedDate}
                             </span>
                           )}
                           {task.sessionType === 'DEEP_WORK' && <Flame className="w-3 h-3 shrink-0 text-ink-faint" />}
@@ -1507,7 +1489,7 @@ export default function TasksPage() {
                   Task: <span className="font-semibold text-foreground">{movingTask.name}</span>
                 </p>
                 <p className="text-[10px] text-ink-faint mb-4">
-                  Currently planned for: <span className="font-mono">{new Date(movingTask.date).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                  Currently planned for: <span className="font-mono">{new Date(`${getLocalDateString(movingTask.date, userTimezone)}T12:00:00Z`).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</span>
                 </p>
               </div>
 

@@ -126,6 +126,40 @@ describe('PUT /api/tasks/[id]', () => {
     expect(body.status).toBe('IN_PROGRESS');
   });
 
+  it('postpone logs the move against the STORED date it was moved from, and keeps earlier history', async () => {
+    users.push({ id: 'u1', timezone: 'Asia/Kolkata' });
+    // Local midnight 15 Oct IST = 18:30 UTC on the 14th.
+    const prior = JSON.stringify([{ originalDate: '2026-10-14', newDate: '2026-10-15', movedAt: '2026-10-14T10:00:00.000Z' }]);
+    const task = seedTask({ userId: 'u1', date: new Date('2026-10-14T18:30:00.000Z'), postponeHistory: prior });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    const res = await PUT(req({ date: '2026-10-16', postpone: { reason: 'Waiting on samples' }, postponeHistory: '[]' }), p({ id: task.id }));
+    expect(res.status).toBe(200);
+    const history = JSON.parse(tasks[0].postponeHistory);
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ originalDate: '2026-10-15', newDate: '2026-10-16', reason: 'Waiting on samples' });
+    expect(new Date(tasks[0].date).toISOString()).toBe('2026-10-15T18:30:00.000Z'); // scheduled on the 16th, IST
+  });
+
+  it('postpone to an earlier day is a plain reschedule - nothing logged', async () => {
+    users.push({ id: 'u1', timezone: 'UTC' });
+    const task = seedTask({ userId: 'u1', date: new Date('2026-10-16T00:00:00.000Z'), postponeHistory: '[]' });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    await PUT(req({ date: '2026-10-15', postpone: {} }), p({ id: task.id }));
+    expect(JSON.parse(tasks[0].postponeHistory)).toEqual([]);
+  });
+
+  it('an ordinary edit (no postpone flag) leaves the history alone', async () => {
+    users.push({ id: 'u1', timezone: 'UTC' });
+    const prior = JSON.stringify([{ originalDate: '2026-10-14', newDate: '2026-10-15' }]);
+    const task = seedTask({ userId: 'u1', date: new Date('2026-10-15T00:00:00.000Z'), postponeHistory: prior });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    await PUT(req({ name: 'Renamed', status: 'IN_PROGRESS' }), p({ id: task.id }));
+    expect(tasks[0].postponeHistory).toBe(prior);
+  });
+
   it('rescheduling replaces the old slot (no stale times) and leaves the status alone when none is sent', async () => {
     users.push({ id: 'u1', timezone: 'UTC' });
     const task = seedTask({ userId: 'u1', status: 'IN_PROGRESS', date: new Date('2026-10-15T00:00:00Z') });

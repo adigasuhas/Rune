@@ -1068,7 +1068,9 @@ function DashboardPage() {
       const res = await fetch(`/api/tasks/${task.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: dateStr }),
+        // Moving an overdue task forward is a postponement off its old day;
+        // the server logs it (and only when the move is to a later day).
+        body: JSON.stringify({ date: dateStr, postpone: {} }),
       });
       if (res.ok) {
         toast('Task moved', `“${task.name}” moved to ${target}.`, 'success');

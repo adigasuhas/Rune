@@ -172,15 +172,16 @@ export function tasksOnDate<T extends { date: string | Date | null }>(tasks: T[]
 
 /**
  * The number on each status tab, counted from the same set the list shows,
- * so a tab's number always equals the rows it reveals. "Postponed" counts
- * every task that was ever pushed back, in any state - the Postponed tab
- * lists them across all its sections.
+ * so a tab's number always equals the rows it reveals. All / To do / In
+ * progress / Blocked / Done count the tasks SCHEDULED on the day; Postponed
+ * is the number of tasks postponed OFF the day (tasksPostponedFrom in
+ * lib/postpone), which the caller passes in - those tasks are scheduled on
+ * their new date, so they aren't part of `tasks`.
  */
-export function countByStatusTab<T extends { status: string }>(tasks: T[], postponeCount: (t: T) => number): Record<StatusTab, number> {
-  const counts: Record<StatusTab, number> = { ALL: tasks.length, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 0, POSTPONED: 0 };
+export function countByStatusTab<T extends { status: string }>(tasks: T[], postponed: number): Record<StatusTab, number> {
+  const counts: Record<StatusTab, number> = { ALL: tasks.length, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 0, POSTPONED: postponed };
   for (const t of tasks) {
     if (t.status in counts && t.status !== 'ALL' && t.status !== 'POSTPONED') counts[t.status as StatusTab]++;
-    if (postponeCount(t) > 0) counts.POSTPONED++;
   }
   return counts;
 }

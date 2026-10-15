@@ -6,6 +6,7 @@ import { parseDateInTimezone, parseDateTimeInTimezone, getLocalDateString } from
 import { normalizeSessionType } from '@/lib/sessionType';
 import { canEditProject, canViewProject, usersShareATeam } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
+import { appendPostponement } from '@/lib/postpone';
 
 const slotSchema = z.object({ startTime: z.string().max(20).optional(), endTime: z.string().max(20).optional() });
 
@@ -24,6 +25,10 @@ const updateSchema = z.object({
   status: z.string().max(50).optional(),
   notes: z.string().max(10_000).nullable().optional(),
   postponeHistory: z.string().max(2_000_000).optional(),
+  // "Postpone": move to `date` and log it. The server writes the history
+  // entry from the task's STORED date, so the event is always attributed to
+  // the day it was really moved from (not a stale client copy).
+  postpone: z.object({ reason: z.string().max(500).nullable().optional() }).optional(),
   blockedReason: z.string().max(500).nullable().optional(),
   blockedOnUserId: z.string().max(200).nullable().optional(),
   slots: z.array(slotSchema).optional(),
@@ -114,6 +119,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (data.status !== undefined) updateData.status = data.status;
     if (data.notes !== undefined) updateData.notes = data.notes;
     if (data.postponeHistory !== undefined) updateData.postponeHistory = data.postponeHistory;
+    if (data.postpone && data.date !== undefined) {
+      const fromDay = getLocalDateString(task.date, tz);
+      const toDay = data.date.split('T')[0];
+      updateData.postponeHistory = appendPostponement(task.postponeHistory, fromDay, toDay, data.postpone.reason);
+    }
 
     // "Blocked / waiting on" — only meaningful while status is BLOCKED; any
     // move to another status clears both fields so a stale blocker can't

@@ -1,5 +1,5 @@
 import { getLocalDateString } from '@/lib/dateUtils';
-import { getPostponeCount } from '@/lib/analyticsUtils';
+import { parsePostponeHistory, postponeDayKey } from '@/lib/postpone';
 
 /**
  * Builds the printable task report and opens it in a new window that
@@ -52,7 +52,17 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
 
   const filtered = tasks.filter((t) => {
     const taskDateOnly = getLocalDateString(t.date, userTimezone);
-    if (taskDateOnly < startDate || taskDateOnly > endDate) return false;
+    if (status === 'POSTPONED') {
+      // Postponed in the range = moved OFF a day in the range, wherever the
+      // task is scheduled now.
+      const postponedInRange = parsePostponeHistory(t.postponeHistory).some((e) => {
+        const from = postponeDayKey(e.originalDate, userTimezone);
+        return from >= startDate && from <= endDate;
+      });
+      if (!postponedInRange) return false;
+    } else if (taskDateOnly < startDate || taskDateOnly > endDate) {
+      return false;
+    }
 
     if (t.projectId) {
       if (!projectIds[t.projectId]) return false;
@@ -63,7 +73,6 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
 
     if (status === 'COMPLETED' && t.status !== 'COMPLETED') return false;
     if (status === 'UNFINISHED' && t.status === 'COMPLETED') return false;
-    if (status === 'POSTPONED' && getPostponeCount(t) <= 0) return false;
 
     if (priority !== 'ALL' && t.priority !== priority) return false;
 

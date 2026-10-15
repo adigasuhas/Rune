@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Newsreader } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { SessionProvider } from "@/context/SessionContext";
 import { NotificationProvider } from "@/context/NotificationContext";
@@ -11,23 +11,30 @@ import ClientLayout from "@/components/ClientLayout";
 // type into). Newsreader - a serif drawn for long-form reading - is the
 // display face for marketing and documentation headlines only, giving the
 // public pages an editorial, notebook-like voice without touching the app.
-const geist = Geist({
+//
+// The font files are checked in (./fonts, latin variable fonts from
+// Fontsource, OFL) rather than loaded via next/font/google: that fetched
+// them from Google at build time, and a failed fetch broke CI builds.
+const geist = localFont({
   variable: "--font-geist",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  src: "./fonts/geist-latin-wght-normal.woff2",
+  weight: "100 900",
+  style: "normal",
 });
 
-const newsreader = Newsreader({
+const newsreader = localFont({
   variable: "--font-newsreader",
-  subsets: ["latin"],
-  style: ["normal", "italic"],
-  weight: ["400", "500", "600"],
+  src: [
+    { path: "./fonts/newsreader-latin-wght-normal.woff2", weight: "200 800", style: "normal" },
+    { path: "./fonts/newsreader-latin-wght-italic.woff2", weight: "200 800", style: "italic" },
+  ],
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
   variable: "--font-geist-mono",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  src: "./fonts/geist-mono-latin-wght-normal.woff2",
+  weight: "100 900",
+  style: "normal",
 });
 
 export const metadata: Metadata = {
