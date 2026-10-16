@@ -207,6 +207,14 @@ export default function TasksPage() {
     fetchData();
   }, [refreshTrigger]);
 
+  // A task changed outside this page (e.g. "Start task" on a reminder):
+  // reload so its new status shows here straight away.
+  useEffect(() => {
+    const onChanged = () => setRefreshTrigger(prev => prev + 1);
+    window.addEventListener('rune-tasks-changed', onChanged);
+    return () => window.removeEventListener('rune-tasks-changed', onChanged);
+  }, []);
+
   // "Create task" from the command palette (Cmd/Ctrl+K), which can fire from
   // any page. Already on /tasks: a direct window event opens the modal with
   // no navigation. From elsewhere: CommandPalette stashes a flag here and

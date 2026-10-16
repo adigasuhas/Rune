@@ -159,7 +159,7 @@ Rune notifies you about:
 
 * Tasks assigned to you, and accepted or declined by the person you assigned them to.
 * A teammate marking a task as blocked on you.
-* A task about to start (10 minutes before, for tasks with a start time, while Rune is open).
+* A to-do task reaching its scheduled start ("Time to get started", with **Start task** and **Dismiss**), while Rune is open. If Rune was closed at that moment, you see it when you come back, as long as the time slot is still running.
 * Runs: check-ins, almost finished, past projected end, and finished or ended.
 * Your weekly digest.
 * Notebook review requests and comments.

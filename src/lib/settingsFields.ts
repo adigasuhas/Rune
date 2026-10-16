@@ -72,7 +72,7 @@ export const SETTINGS_FIELDS: SettingFieldDescriptor[] = [
     defaultValue: true,
     section: 'notifications',
     label: 'Task reminders',
-    description: 'Get a reminder 10 minutes before a task with a start time begins.'
+    description: 'When a to-do task\'s scheduled time arrives, get a reminder with a button to start it. Works while Rune is open; one you missed shows when you come back, if the time slot is still running.'
   },
   {
     key: 'jobReminderDefaultMins',

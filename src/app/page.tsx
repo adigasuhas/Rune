@@ -548,6 +548,14 @@ function DashboardPage() {
     fetchData();
   }, [refreshTrigger]);
 
+  // A task changed outside this page (e.g. "Start task" on a reminder):
+  // reload so its new status shows here straight away.
+  useEffect(() => {
+    const onChanged = () => setRefreshTrigger(prev => prev + 1);
+    window.addEventListener('rune-tasks-changed', onChanged);
+    return () => window.removeEventListener('rune-tasks-changed', onChanged);
+  }, []);
+
   // Show the fresh-start prompt once per ISO week (per browser).
   useEffect(() => {
     if (!digest?.weekKey) return;

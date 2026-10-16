@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Bell, Check, CheckCheck, Inbox } from 'lucide-react';
 import { useNotifications, NotificationItem } from '@/context/NotificationContext';
 import { deepLinkFor, timeAgo, iconFor } from '@/lib/notificationDisplay';
+import { START_REMINDER_PREFIX } from '@/lib/taskStartReminders';
 
 export function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
-  const { notifications, dismiss, dismissAll } = useNotifications();
+  const { notifications, dismiss, dismissAll, startFromReminder, dismissReminder } = useNotifications();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -91,6 +92,24 @@ export function NotificationBell({ align = 'right' }: { align?: 'left' | 'right'
                       <p className="text-xs font-semibold text-foreground">{item.title}</p>
                       {item.body && <p className="text-[10px] text-muted-foreground mt-0.5 leading-normal">{item.body}</p>}
                       <p className="text-[9px] text-ink-faint font-mono mt-1">{timeAgo(item.createdAt)}</p>
+                      {item.dedupeKey?.startsWith(START_REMINDER_PREFIX) && (
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void startFromReminder(item.dedupeKey!); }}
+                            className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary-hover transition-colors"
+                          >
+                            Start task
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); void dismissReminder(item.dedupeKey!); }}
+                            className="rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-ink-secondary hover:text-foreground transition-colors"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
