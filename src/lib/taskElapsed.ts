@@ -103,6 +103,40 @@ export function getTaskElapsed(task: TaskLike, events: SlotLike[], timezone: str
   return { state, minutes };
 }
 
+/**
+ * What an IN_PROGRESS task's row shows: time elapsed on its schedule and,
+ * when it has an estimate, that time as a fraction of the estimate (capped
+ * at 1 - the label keeps the real figure past it). This is elapsed time,
+ * not "percent done".
+ *
+ * Rune has no separate start/stop clock: a task's start is its scheduled
+ * slot (getTaskElapsed). An in-progress task with no slot has no start to
+ * count from, so `minutes` is null - nothing is invented. A slot in the
+ * future reads 0. A blocked task (Rune's only "paused" state) isn't
+ * IN_PROGRESS, so it never gets an indicator.
+ */
+export interface ProgressIndicator {
+  minutes: number | null;
+  estimateMinutes: number | null;
+  ratio: number | null;
+  over: boolean;
+  state: ElapsedState;
+}
+
+export function inProgressIndicator(
+  task: TaskLike & { estimatedTime?: number | null },
+  events: SlotLike[],
+  timezone: string,
+  now: Date = new Date()
+): ProgressIndicator | null {
+  if (task.status !== 'IN_PROGRESS') return null;
+  const el = getTaskElapsed(task, events, timezone, now);
+  const estimateMinutes = task.estimatedTime && task.estimatedTime > 0 ? Math.round(task.estimatedTime * 60) : null;
+  if (el.state === 'unscheduled') return { minutes: null, estimateMinutes, ratio: null, over: false, state: el.state };
+  const ratio = estimateMinutes ? Math.min(1, el.minutes / estimateMinutes) : null;
+  return { minutes: el.minutes, estimateMinutes, ratio, over: !!estimateMinutes && el.minutes > estimateMinutes, state: el.state };
+}
+
 /** "45m", "1h05m". */
 export function formatElapsedMinutes(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));

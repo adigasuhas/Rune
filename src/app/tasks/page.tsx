@@ -13,6 +13,9 @@ import { SessionType, normalizeSessionType } from '@/lib/sessionType';
 import { getPostponeCount } from '@/lib/analyticsUtils';
 import { generateTaskPdfReport } from '@/lib/taskReport';
 import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/lib/postpone';
+import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
+import { ReorderableTaskList } from '@/components/tasks/ReorderableTaskList';
+import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
 import {
   CheckSquare,
   Plus,
@@ -847,12 +850,215 @@ export default function TasksPage() {
   const groupedByState = React.useMemo(() => {
     const base = statusFilter === 'POSTPONED' ? formattedPostponedList : formattedTasksList;
     return STATE_GROUPS
-      .map(g => ({ ...g, tasks: base.filter(t => t.status === g.key) }))
+      // To do is in the user's own order (drag to arrange); the other
+      // sections keep their existing order.
+      .map(g => ({ ...g, tasks: g.key === 'PENDING' ? sortByManualOrder(base.filter(t => t.status === g.key)) : base.filter(t => t.status === g.key) }))
       .filter(g => {
         if (statusFilter === 'ALL' || statusFilter === 'POSTPONED') return g.tasks.length > 0;
         return g.key === statusFilter;
       });
   }, [formattedTasksList, formattedPostponedList, statusFilter]);
+
+  // One task row, shared by every section. `dragHandle` is only passed in
+  // the To do section (ReorderableTaskList); it sits in the left gutter so
+  // rows line up the same in every section.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderTaskRow = (task: any, dragHandle: React.ReactNode = null) => {
+                  const isCompleted = task.status === 'COMPLETED';
+                  const isInProgress = task.status === 'IN_PROGRESS';
+                  const isBlocked = task.status === 'BLOCKED';
+                  const pendingAcceptance = task.assignmentStatus === 'PENDING_ACCEPTANCE';
+                  const declined = task.assignmentStatus === 'DECLINED';
+                  const linkedProject = projects.find(p => p.id === task.projectId);
+                  const postponeCount = getPostponeCount(task);
+                  const expanded = !!expandedPostponeTaskIds[task.id];
+                  const mins = Math.round((task.estimatedTime || 0) * 60);
+                  const durStr = mins <= 0 ? '–' : mins < 60 ? `${mins}m` : (mins % 60 ? `${Math.floor(mins / 60)}h${mins % 60}m` : `${Math.floor(mins / 60)}h`);
+                  return (
+                    <div key={task.id} id={`task-row-${task.id}`}>
+                      <div
+                        className="group relative flex items-center gap-3 rounded-[8px] px-2 py-3 -mx-2 transition-colors hover:bg-surface"
+                      >
+                        {dragHandle}
+                        <button
+                          onClick={() => toggleTaskStatus(task)}
+                          className="shrink-0 text-ink-faint hover:text-foreground transition-colors"
+                          title={isCompleted ? 'Reopen task' : isBlocked ? 'Unblock task' : 'Mark done'}
+                        >
+                          {isCompleted ? <CheckCircle2 className="w-[18px] h-[18px] text-primary" />
+                            : isBlocked ? <Ban className="w-[18px] h-[18px] text-[var(--color-data-slate)]" />
+                            : isInProgress ? <CircleDot className="w-[18px] h-[18px] text-primary" />
+                            : <Circle className="w-[18px] h-[18px]" strokeWidth={1.6} />}
+                        </button>
+
+                        <button
+                          onClick={() => setExpandedPostponeTaskIds(p => ({ ...p, [task.id]: !p[task.id] }))}
+                          className="flex-1 min-w-0 text-left flex items-center gap-2"
+                        >
+                          <span className={`text-[14.5px] truncate ${isCompleted ? 'line-through text-ink-faint' : 'text-foreground font-medium'}`}>
+                            {task.name}
+                          </span>
+                          {isBlocked && (task.blockedOnName || task.blockedReason) && (
+                            <span className="shrink-0 hidden sm:inline text-[12.5px] text-ink-secondary truncate max-w-[16rem]" title={task.blockedReason || undefined}>
+                              {task.blockedOnName ? `waiting on ${task.blockedOnName}` : task.blockedReason}
+                            </span>
+                          )}
+                          {pendingAcceptance && (
+                            <span className="shrink-0 text-[10px] font-semibold text-primary truncate max-w-[14rem]">
+                              {task.assignedByName ? `assigned by ${task.assignedByName}` : 'assigned to you'} · awaiting your response
+                            </span>
+                          )}
+                          {declined && (
+                            <span className="shrink-0 text-[10px] font-semibold text-danger truncate max-w-[14rem]" title={task.declineReason || undefined}>
+                              declined
+                            </span>
+                          )}
+                          {statusFilter === 'POSTPONED' && selectedDate && getLocalDateString(task.date, userTimezone) !== selectedDate && (
+                            <span className="shrink-0 text-[12px] text-ink-secondary" title="Postponed off this day; scheduled on its new date">
+                              moved to {task.formattedPlannedDate}
+                            </span>
+                          )}
+                          {task.sessionType === 'DEEP_WORK' && <Flame className="w-3 h-3 shrink-0 text-ink-faint" />}
+                          {task.sessionType === 'FOCUS' && <Brain className="w-3 h-3 shrink-0 text-ink-faint" />}
+                          {postponeCount > 0 && (
+                            <span className="shrink-0 text-[12px] text-ink-faint" title={`Postponed ${postponeCount}×`}>
+                              moved {postponeCount}×
+                            </span>
+                          )}
+                          {isInProgress && <InProgressLabel task={task} events={events} timezone={userTimezone} />}
+                        </button>
+
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          {pendingAcceptance && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => respondToAssignment(task, 'accept')}
+                                className="flex items-center gap-1 px-2 py-1 rounded-[3px] bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors"
+                              >
+                                <Check className="w-3 h-3" /> Accept
+                              </button>
+                              <button
+                                onClick={() => respondToAssignment(task, 'decline')}
+                                className="flex items-center gap-1 px-2 py-1 rounded-[3px] border border-border-strong hover:bg-surface-sunken text-ink-secondary text-[11px] font-semibold transition-colors"
+                              >
+                                <X className="w-3 h-3" /> Decline
+                              </button>
+                            </div>
+                          )}
+                          {linkedProject && (
+                            <span className="hidden sm:inline-flex items-center gap-1.5 text-[13px] text-ink-secondary whitespace-nowrap max-w-[12rem]" title={linkedProject.name}>
+                              <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: linkedProject.color || 'var(--border-strong)' }} aria-hidden="true" />
+                              <span className="truncate">{linkedProject.name}</span>
+                            </span>
+                          )}
+                          <span className={`hidden md:inline w-14 text-right text-[12.5px] font-medium ${task.priority === 'CRITICAL' ? 'text-danger' : task.priority === 'HIGH' ? 'text-warning' : 'text-ink-faint'}`} title={`${task.priority.toLowerCase()} priority · effort ${task.effort} · impact ${task.impact}`}>
+                            <span className="sr-only">Priority </span>{task.priority === 'CRITICAL' ? 'Critical' : task.priority === 'HIGH' ? 'High' : task.priority === 'MEDIUM' ? 'Medium' : 'Low'}
+                          </span>
+                          <span className="text-[13px] text-ink-secondary tabular-nums w-12 text-right">{durStr}</span>
+
+                          <div className="hidden group-hover:flex group-focus-within:flex items-center gap-0.5">
+                            {linkedProject?.teamId && (
+                              <button onClick={() => setDiscussingTask(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Discuss this task" aria-label="Discuss this task">
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {!isCompleted && (
+                              <button onClick={() => setBlockingTask(task)} className={`p-1 rounded-[3px] hover:bg-surface-sunken transition-colors ${isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint hover:text-foreground'}`} title={isBlocked ? 'Edit block' : 'Mark blocked'} aria-label={isBlocked ? 'Edit block' : 'Mark blocked'}>
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button onClick={() => openEditModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Edit" aria-label="Edit task">
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => openMoveModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Move" aria-label="Move task">
+                              <CalendarIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDuplicate(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Duplicate" aria-label="Duplicate task">
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDelete(task.id)} className="p-1 text-ink-faint hover:text-danger rounded-[3px] hover:bg-danger-soft transition-colors" title="Delete" aria-label="Delete task">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        {isInProgress && <InProgressStrip task={task} events={events} timezone={userTimezone} />}
+                      </div>
+
+                      {expanded && (
+                        <div className="pb-4 pl-8 pr-2 text-[13.5px] text-ink-secondary space-y-2">
+                          {isBlocked && (
+                            <p className="leading-relaxed text-[var(--color-data-slate)] flex items-start gap-1.5">
+                              <Ban className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <span>
+                                Blocked{task.blockedOnName ? ` · waiting on ${task.blockedOnName}` : ''}
+                                {task.blockedReason ? `: ${task.blockedReason}` : ''}.{' '}
+                                <button onClick={() => setBlockingTask(task)} className="underline hover:text-foreground">Edit</button>
+                              </span>
+                            </p>
+                          )}
+                          {declined && (
+                            <p className="leading-relaxed text-danger flex items-start gap-1.5">
+                              <X className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                              <span>
+                                You declined this task{task.declineReason ? `: ${task.declineReason}` : ''}.
+                              </span>
+                            </p>
+                          )}
+                          {task.detail && <p className="leading-relaxed whitespace-pre-wrap">{task.detail}</p>}
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-ink-faint tabular-nums">
+                            <span>planned {task.formattedPlannedDate}</span>
+                            {isCompleted && <span>actual {(task.actualTime || 0).toFixed(1)}h</span>}
+                            {!isCompleted && (() => {
+                              const el = getTaskElapsed(task, events, userTimezone);
+                              return el.minutes > 0 ? (
+                                <span className={el.state === 'ongoing' ? 'font-medium text-primary' : ''} title="Time elapsed since the scheduled start (counted until it's marked done)">
+                                  {formatElapsedMinutes(el.minutes)} {el.state === 'ongoing' ? 'so far' : 'elapsed'}
+                                </span>
+                              ) : null;
+                            })()}
+                            {isCompleted && (
+                              <span className={(task.timeDifference || 0) >= 0 ? 'text-warning' : 'text-success'}>
+                                {(task.timeDifference || 0) >= 0 ? '+' : ''}{(task.timeDifference || 0).toFixed(1)}h vs plan
+                              </span>
+                            )}
+                            <span>effort {task.effort}/10 · impact {task.impact}/10</span>
+                          </div>
+                          {task.parsedHistory && task.parsedHistory.length > 0 && (
+                            <div className="border-t border-border pt-2 space-y-1">
+                              <p className="font-mono text-[11.5px] text-ink-faint">Postpone history</p>
+                              {task.parsedHistory.map((entry: any, i: number) => (
+                                <p key={i} className="font-mono text-[10px] text-ink-faint">{entry.entryOrig} → {entry.entryDest}</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+  };
+
+  // Saves a To do drag: the moved task usually gets one new manualOrder
+  // between its neighbours (lib/taskOrder planReorder). Applied locally first
+  // so the list doesn't jump back while the save is in flight.
+  const commitTodoOrder = async (nextIds: string[], movedId: string) => {
+    const byId = new Map(tasks.map(t => [t.id, t]));
+    const next = nextIds.map(id => byId.get(id)).filter(Boolean) as Task[];
+    const writes = planReorder(next, movedId);
+    if (writes.length === 0) return;
+    const value = new Map(writes.map(w => [w.id, w.manualOrder]));
+    setTasks(prev => prev.map(t => (value.has(t.id) ? { ...t, manualOrder: value.get(t.id)! } : t)));
+    try {
+      const res = await fetch('/api/tasks/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orders: writes }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      toast('Couldn’t save the new order', 'Try again.', 'error');
+      setRefreshTrigger(prev => prev + 1);
+    }
+  };
 
   const totalShown = groupedByState.reduce((n, g) => n + g.tasks.length, 0);
   const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, postponedTasks.length), [filteredTasks, postponedTasks]);
@@ -1097,178 +1303,13 @@ export default function TasksPage() {
           {groupedByState.map(group => (
             <div key={group.key}>
               <SectionHeader title={group.label} meta={group.tasks.length} />
-              <div className="divide-y divide-border">
-                {group.tasks.map((task) => {
-                  const isCompleted = task.status === 'COMPLETED';
-                  const isInProgress = task.status === 'IN_PROGRESS';
-                  const isBlocked = task.status === 'BLOCKED';
-                  const pendingAcceptance = task.assignmentStatus === 'PENDING_ACCEPTANCE';
-                  const declined = task.assignmentStatus === 'DECLINED';
-                  const linkedProject = projects.find(p => p.id === task.projectId);
-                  const postponeCount = getPostponeCount(task);
-                  const expanded = !!expandedPostponeTaskIds[task.id];
-                  const mins = Math.round((task.estimatedTime || 0) * 60);
-                  const durStr = mins <= 0 ? '–' : mins < 60 ? `${mins}m` : (mins % 60 ? `${Math.floor(mins / 60)}h${mins % 60}m` : `${Math.floor(mins / 60)}h`);
-                  return (
-                    <div key={task.id} id={`task-row-${task.id}`}>
-                      <div
-                        className="group flex items-center gap-3 rounded-[8px] px-2 py-3 -mx-2 transition-colors hover:bg-surface"
-                      >
-                        <button
-                          onClick={() => toggleTaskStatus(task)}
-                          className="shrink-0 text-ink-faint hover:text-foreground transition-colors"
-                          title={isCompleted ? 'Reopen task' : isBlocked ? 'Unblock task' : 'Mark done'}
-                        >
-                          {isCompleted ? <CheckCircle2 className="w-[18px] h-[18px] text-primary" />
-                            : isBlocked ? <Ban className="w-[18px] h-[18px] text-[var(--color-data-slate)]" />
-                            : isInProgress ? <CircleDot className="w-[18px] h-[18px] text-primary" />
-                            : <Circle className="w-[18px] h-[18px]" strokeWidth={1.6} />}
-                        </button>
-
-                        <button
-                          onClick={() => setExpandedPostponeTaskIds(p => ({ ...p, [task.id]: !p[task.id] }))}
-                          className="flex-1 min-w-0 text-left flex items-center gap-2"
-                        >
-                          <span className={`text-[14.5px] truncate ${isCompleted ? 'line-through text-ink-faint' : 'text-foreground font-medium'}`}>
-                            {task.name}
-                          </span>
-                          {isBlocked && (task.blockedOnName || task.blockedReason) && (
-                            <span className="shrink-0 hidden sm:inline text-[12.5px] text-ink-secondary truncate max-w-[16rem]" title={task.blockedReason || undefined}>
-                              {task.blockedOnName ? `waiting on ${task.blockedOnName}` : task.blockedReason}
-                            </span>
-                          )}
-                          {pendingAcceptance && (
-                            <span className="shrink-0 text-[10px] font-semibold text-primary truncate max-w-[14rem]">
-                              {task.assignedByName ? `assigned by ${task.assignedByName}` : 'assigned to you'} · awaiting your response
-                            </span>
-                          )}
-                          {declined && (
-                            <span className="shrink-0 text-[10px] font-semibold text-danger truncate max-w-[14rem]" title={task.declineReason || undefined}>
-                              declined
-                            </span>
-                          )}
-                          {statusFilter === 'POSTPONED' && selectedDate && getLocalDateString(task.date, userTimezone) !== selectedDate && (
-                            <span className="shrink-0 text-[12px] text-ink-secondary" title="Postponed off this day; scheduled on its new date">
-                              moved to {task.formattedPlannedDate}
-                            </span>
-                          )}
-                          {task.sessionType === 'DEEP_WORK' && <Flame className="w-3 h-3 shrink-0 text-ink-faint" />}
-                          {task.sessionType === 'FOCUS' && <Brain className="w-3 h-3 shrink-0 text-ink-faint" />}
-                          {postponeCount > 0 && (
-                            <span className="shrink-0 text-[12px] text-ink-faint" title={`Postponed ${postponeCount}×`}>
-                              moved {postponeCount}×
-                            </span>
-                          )}
-                        </button>
-
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          {pendingAcceptance && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => respondToAssignment(task, 'accept')}
-                                className="flex items-center gap-1 px-2 py-1 rounded-[3px] bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors"
-                              >
-                                <Check className="w-3 h-3" /> Accept
-                              </button>
-                              <button
-                                onClick={() => respondToAssignment(task, 'decline')}
-                                className="flex items-center gap-1 px-2 py-1 rounded-[3px] border border-border-strong hover:bg-surface-sunken text-ink-secondary text-[11px] font-semibold transition-colors"
-                              >
-                                <X className="w-3 h-3" /> Decline
-                              </button>
-                            </div>
-                          )}
-                          {linkedProject && (
-                            <span className="hidden sm:inline-flex items-center gap-1.5 text-[13px] text-ink-secondary whitespace-nowrap max-w-[12rem]" title={linkedProject.name}>
-                              <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: linkedProject.color || 'var(--border-strong)' }} aria-hidden="true" />
-                              <span className="truncate">{linkedProject.name}</span>
-                            </span>
-                          )}
-                          <span className={`hidden md:inline w-14 text-right text-[12.5px] font-medium ${task.priority === 'CRITICAL' ? 'text-danger' : task.priority === 'HIGH' ? 'text-warning' : 'text-ink-faint'}`} title={`${task.priority.toLowerCase()} priority · effort ${task.effort} · impact ${task.impact}`}>
-                            <span className="sr-only">Priority </span>{task.priority === 'CRITICAL' ? 'Critical' : task.priority === 'HIGH' ? 'High' : task.priority === 'MEDIUM' ? 'Medium' : 'Low'}
-                          </span>
-                          <span className="text-[13px] text-ink-secondary tabular-nums w-12 text-right">{durStr}</span>
-
-                          <div className="hidden group-hover:flex group-focus-within:flex items-center gap-0.5">
-                            {linkedProject?.teamId && (
-                              <button onClick={() => setDiscussingTask(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Discuss this task" aria-label="Discuss this task">
-                                <MessageSquare className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {!isCompleted && (
-                              <button onClick={() => setBlockingTask(task)} className={`p-1 rounded-[3px] hover:bg-surface-sunken transition-colors ${isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint hover:text-foreground'}`} title={isBlocked ? 'Edit block' : 'Mark blocked'} aria-label={isBlocked ? 'Edit block' : 'Mark blocked'}>
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            <button onClick={() => openEditModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Edit" aria-label="Edit task">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => openMoveModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Move" aria-label="Move task">
-                              <CalendarIcon className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDuplicate(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Duplicate" aria-label="Duplicate task">
-                              <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => handleDelete(task.id)} className="p-1 text-ink-faint hover:text-danger rounded-[3px] hover:bg-danger-soft transition-colors" title="Delete" aria-label="Delete task">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {expanded && (
-                        <div className="pb-4 pl-8 pr-2 text-[13.5px] text-ink-secondary space-y-2">
-                          {isBlocked && (
-                            <p className="leading-relaxed text-[var(--color-data-slate)] flex items-start gap-1.5">
-                              <Ban className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                              <span>
-                                Blocked{task.blockedOnName ? ` · waiting on ${task.blockedOnName}` : ''}
-                                {task.blockedReason ? `: ${task.blockedReason}` : ''}.{' '}
-                                <button onClick={() => setBlockingTask(task)} className="underline hover:text-foreground">Edit</button>
-                              </span>
-                            </p>
-                          )}
-                          {declined && (
-                            <p className="leading-relaxed text-danger flex items-start gap-1.5">
-                              <X className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                              <span>
-                                You declined this task{task.declineReason ? `: ${task.declineReason}` : ''}.
-                              </span>
-                            </p>
-                          )}
-                          {task.detail && <p className="leading-relaxed whitespace-pre-wrap">{task.detail}</p>}
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-ink-faint tabular-nums">
-                            <span>planned {task.formattedPlannedDate}</span>
-                            {isCompleted && <span>actual {(task.actualTime || 0).toFixed(1)}h</span>}
-                            {!isCompleted && (() => {
-                              const el = getTaskElapsed(task, events, userTimezone);
-                              return el.minutes > 0 ? (
-                                <span className={el.state === 'ongoing' ? 'font-medium text-primary' : ''} title="Time elapsed since the scheduled start (counted until it's marked done)">
-                                  {formatElapsedMinutes(el.minutes)} {el.state === 'ongoing' ? 'so far' : 'elapsed'}
-                                </span>
-                              ) : null;
-                            })()}
-                            {isCompleted && (
-                              <span className={(task.timeDifference || 0) >= 0 ? 'text-warning' : 'text-success'}>
-                                {(task.timeDifference || 0) >= 0 ? '+' : ''}{(task.timeDifference || 0).toFixed(1)}h vs plan
-                              </span>
-                            )}
-                            <span>effort {task.effort}/10 · impact {task.impact}/10</span>
-                          </div>
-                          {task.parsedHistory && task.parsedHistory.length > 0 && (
-                            <div className="border-t border-border pt-2 space-y-1">
-                              <p className="font-mono text-[11.5px] text-ink-faint">Postpone history</p>
-                              {task.parsedHistory.map((entry: any, i: number) => (
-                                <p key={i} className="font-mono text-[10px] text-ink-faint">{entry.entryOrig} → {entry.entryDest}</p>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              {group.key === 'PENDING' && statusFilter !== 'POSTPONED' ? (
+                <ReorderableTaskList tasks={group.tasks} renderRow={renderTaskRow} onCommit={commitTodoOrder} />
+              ) : (
+                <div className="divide-y divide-border">
+                  {group.tasks.map((task) => renderTaskRow(task))}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { timezoneLabel } from '@/lib/timezoneLabel';
 import { todayLine } from '@/lib/todayLines';
+import { useMinute } from '@/lib/useMinute';
 
 /**
  * The top of Today: when (date, time, and *your* time zone - set in
@@ -11,19 +11,6 @@ import { todayLine } from '@/lib/todayLines';
  * that reads the room. The clock re-renders on the minute boundary, not on
  * a free-running interval, so it never lags the system clock by up to 59s.
  */
-function useMinute(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    let t: number;
-    const schedule = () => {
-      const d = new Date();
-      t = window.setTimeout(() => { setNow(new Date()); schedule(); }, 60_000 - (d.getSeconds() * 1000 + d.getMilliseconds()) + 50);
-    };
-    schedule();
-    return () => window.clearTimeout(t);
-  }, []);
-  return now;
-}
 
 function partsIn(tz: string, d: Date) {
   try {

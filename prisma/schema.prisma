@@ -337,6 +337,11 @@ model Task {
   blockedOnUserId   String?
   blockedOn         User?        @relation("TaskBlockedOn", fields: [blockedOnUserId], references: [id], onDelete: SetNull)
   postponeHistory   String?      @default("[]")
+  // The owner's own To do arrangement (drag to reorder) - display order
+  // only, never priority/schedule. Fractional so a move rewrites one row;
+  // null = not placed yet (listed after placed tasks, oldest first). Kept
+  // through status changes so a task returning to To do keeps its place.
+  manualOrder       Float?
   startTime         String?
   endTime           String?
   userId            String

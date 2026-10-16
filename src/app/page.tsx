@@ -30,6 +30,8 @@ import { ActivityGraph } from '@/components/activity/ActivityGraph';
 import { formatHours } from '@/lib/activity';
 import { calculateOccupiedHoursForDay, getPostponeCount } from '@/lib/analyticsUtils';
 import { getTaskElapsed, formatElapsedMinutes, initialScheduleSlots, validateScheduleSlots } from '@/lib/taskElapsed';
+import { compareManualOrder } from '@/lib/taskOrder';
+import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
 import { getLocalDateString, getCurrentDateInTimezone, parseDateInTimezone, getStartOfDayInTimezone, formatRelativeDeadline, daysUntil } from '@/lib/dateUtils';
 import { PROJECT_COLORS } from '@/lib/colors';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
@@ -1843,9 +1845,11 @@ function DashboardPage() {
   // Today's open work, in the order it should be picked up.
   const upNextTasks = useMemo(() => {
     const rank: Record<string, number> = { IN_PROGRESS: 0, PENDING: 1 };
+    // In progress first, then To do in the user's own arrangement (the
+    // order set by dragging on the Tasks page).
     return filteredTasksForDay
       .filter(t => t.status !== 'COMPLETED' && t.status !== 'BLOCKED')
-      .sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2));
+      .sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2) || compareManualOrder(a, b));
   }, [filteredTasksForDay]);
 
   // Active projects whose deadline is within a week or already past, and that
@@ -2007,7 +2011,8 @@ function DashboardPage() {
             <span className="tabular-nums" title={durationLabel(task.sessionType)}>{task.estimatedTime}h</span>
             {priority && <span className={`font-medium ${priority.cls}`}>{priority.label}</span>}
             {postponeCount > 0 && <span>moved {postponeCount}×</span>}
-            {elapsed.minutes > 0 && (
+            {task.status === 'IN_PROGRESS' && <InProgressLabel task={task} events={events} timezone={userTimezone} />}
+            {task.status !== 'IN_PROGRESS' && elapsed.minutes > 0 && (
               <span
                 className={`tabular-nums ${elapsed.state === 'ongoing' ? 'font-medium text-primary' : ''}`}
                 title="Time elapsed since the scheduled start (counted until it's marked done)"
@@ -2050,6 +2055,7 @@ function DashboardPage() {
             <Calendar className="w-3.5 h-3.5" />
           </button>
         </div>
+        {task.status === 'IN_PROGRESS' && <InProgressStrip task={task} events={events} timezone={userTimezone} />}
       </div>
     );
   };

@@ -722,3 +722,36 @@ describe('POST /api/tasks - the day a date means', () => {
     expect(await create('2026-10-15T18:30:00.000Z')).toBe('2026-10-15T18:30:00.000Z');
   });
 });
+
+describe('POST /api/tasks/reorder', () => {
+  const updateMany = vi.fn();
+  beforeEach(() => {
+    (db.task as Record<string, unknown>).updateMany = updateMany;
+    updateMany.mockReset();
+  });
+
+  it('401 signed out', async () => {
+    const { POST } = await import('@/app/api/tasks/reorder/route');
+    expect((await POST(req({ orders: [{ id: 't1', manualOrder: 1 }] }))).status).toBe(401);
+  });
+
+  it('writes only manualOrder, only on the caller\'s own tasks', async () => {
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const { POST } = await import('@/app/api/tasks/reorder/route');
+    const res = await POST(req({ orders: [{ id: 'mine', manualOrder: 1.5 }, { id: 'theirs', manualOrder: 2 }] }));
+    expect(await res.json()).toEqual({ updated: 1 });
+    expect(updateMany).toHaveBeenNthCalledWith(1, { where: { id: 'mine', userId: 'u1' }, data: { manualOrder: 1.5 } });
+    expect(updateMany).toHaveBeenNthCalledWith(2, { where: { id: 'theirs', userId: 'u1' }, data: { manualOrder: 2 } });
+  });
+
+  it('rejects anything but finite numbers', async () => {
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    updateMany.mockResolvedValue({ count: 1 });
+    const { POST } = await import('@/app/api/tasks/reorder/route');
+    expect((await POST(req({ orders: [{ id: 't', manualOrder: 'first' }] }))).status).toBe(400);
+    expect((await POST(req({ orders: [] }))).status).toBe(400);
+    expect((await POST(req({ orders: [{ id: 't', manualOrder: 1, priority: 'HIGH' }] }))).status).toBe(200);
+    expect(updateMany).toHaveBeenCalledWith({ where: { id: 't', userId: 'u1' }, data: { manualOrder: 1 } });
+  });
+});

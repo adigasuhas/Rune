@@ -40,6 +40,8 @@ export interface Task {
   blockedOnUserId?: string | null;
   blockedOnName?: string | null;
   postponeHistory?: string;
+  manualOrder?: number | null;
+  createdAt?: string;
   assignedById?: string | null;
   assignedByName?: string | null;
   assignmentStatus?: 'PENDING_ACCEPTANCE' | 'ACCEPTED' | 'DECLINED' | null;
