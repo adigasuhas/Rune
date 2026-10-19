@@ -97,6 +97,7 @@ model User {
   tasksAssignedByMe Task[]               @relation("TaskAssignedBy")
   tasksBlockedOnMe Task[]                @relation("TaskBlockedOn")
   accomplishments AccomplishmentRecord[]
+  firstFocusAcks  FirstFocusAck[]
   settings        Setting?
   calendarEvents  CalendarEvent[]
   notebooks       Notebook[]
@@ -386,8 +387,37 @@ model AccomplishmentRecord {
   keyAchievements    String?
   productivityScore  Int      @default(0) // 1-100
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
+
+  // Review the Day. `date` is the day being reviewed. The two answers are
+  // kept verbatim (null = not asked / pre-dates this field; '' = left
+  // blank). `firstFocusDate` is the working day the first focus is meant
+  // for - the next working day after `date` under Setting.workingDays,
+  // fixed when the review is saved (src/lib/dailyReview.ts). It is a
+  // reflection, not a task: `firstFocusTaskId` is set only when the user
+  // explicitly asked for a task as well.
+  reviewedAt         DateTime?
+  wentWell           String?
+  firstFocus         String?
+  firstFocusDate     String? // YYYY-MM-DD
+  firstFocusTaskId   String?
 
   @@unique([userId, date])
+  @@index([userId, firstFocusDate])
+}
+
+// "I've seen my first focus for this working day" - one row per user per
+// working day, kept apart from the review so dismissing the Today card can
+// never touch the reflection itself.
+model FirstFocusAck {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  focusDate      String // YYYY-MM-DD, the working day the reminder was for
+  reviewDate     String // YYYY-MM-DD, the review it came from
+  acknowledgedAt DateTime @default(now())
+
+  @@unique([userId, focusDate])
 }
 
 model Setting {

@@ -29,7 +29,9 @@ You can change all of this later in **Settings**, and run the setup again from *
 * **Needs attention:** overdue tasks, with quick actions to move them to today or tomorrow, and tasks that a teammate is waiting on you to unblock.
 * **Week ahead:** what you finished last week, what is due this week, and upcoming project deadlines. A short prompt at the start of each week offers to help you plan it.
 * **Runs:** your active runs at a glance.
-* **Review the day:** a short prompt at the end of the day. Note one thing that went well and, optionally, your first task for tomorrow. It becomes a high-priority deep work task.
+* **Review the day:** a short prompt at the end of the day. Note one thing that went well and, optionally, the first thing for your next working day (Friday's review points at Monday when weekends are off). Reviewing the same day again updates that review. Tick *Also add it as a task* if you want it on your task list too; otherwise it stays a note.
+* **Your first move:** as your next working day begins (from an hour before your working hours start until they end), Today shows the first thing you named, once. *Let's begin* dismisses it for the rest of that day; it never changes a task.
+* **Reflections:** Analytics → Reflections lists every review, newest first, with both answers in full.
 * **Day status:** the label next to the date (Working day, Off day, or Leave) can be changed for that day. A reason is required for off days and leave. The change affects your analytics for the week.
 * **Sync task status:** when on, marking a calendar event done also marks its linked task done. When off, Rune asks first.
 

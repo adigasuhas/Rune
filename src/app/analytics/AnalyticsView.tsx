@@ -30,6 +30,7 @@ import {
 import { getCurrentDateInTimezone, getLocalDateString, isDefaultWorking, parseDateTimeInTimezone } from '@/lib/dateUtils';
 import { Button, PageHeader, SectionHeader } from '@/components/ui';
 import { ActivityGraph } from '@/components/activity/ActivityGraph';
+import { ReviewHistory } from './ReviewHistory';
 import { useSpotlightCards } from '@/hooks/useSpotlightCards';
 interface Goal {
   id: string;
@@ -49,7 +50,11 @@ export default function AnalyticsPage() {
   const [notebooks, setNotebooks] = useState<any[]>([]);
   const [selectedAnalyticsProjectId, setSelectedAnalyticsProjectId] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'completion' | 'focus' | 'hours' | 'projects'>('overview');
+  // ?tab=reviews (linked from Today's first-focus card) opens Reflections.
+  // Client-only view (page.tsx loads it with ssr: false), so window is there.
+  const [activeTab, setActiveTab] = useState<'overview' | 'completion' | 'focus' | 'hours' | 'projects' | 'reviews'>(
+    () => (new URLSearchParams(window.location.search).get('tab') === 'reviews' ? 'reviews' : 'overview')
+  );
 
   // AI Insights States
 
@@ -868,6 +873,7 @@ export default function AnalyticsPage() {
             ['focus', 'Deep work'],
             ['hours', 'Hours'],
             ['projects', 'Projects'],
+            ['reviews', 'Reflections'],
           ] as const).map(([val, label]) => (
             <button
               key={val}
@@ -1010,6 +1016,8 @@ export default function AnalyticsPage() {
         </>
       )}
     </div>
+
+      {activeTab === 'reviews' && <ReviewHistory timezone={settings?.timezone || 'UTC'} />}
 
       {/* 2. COMPLETION METRICS */}
       {activeTab === 'completion' && (

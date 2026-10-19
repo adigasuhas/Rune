@@ -38,6 +38,7 @@ import { ClockTimePicker } from '@/components/ClockTimePicker';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { TaskFormModal } from '@/components/TaskFormModal';
 import { ReviewDayModal } from '@/components/ReviewDayModal';
+import { FirstFocusCard } from '@/components/today/FirstFocusCard';
 import { MarketingLanding } from '@/components/MarketingLanding';
 import { TodayHeader } from '@/components/today/TodayHeader';
 
@@ -2145,6 +2146,9 @@ function DashboardPage() {
       />
       {loadFailed && <LoadError what="today’s plan" onRetry={() => setRefreshTrigger((n) => n + 1)} />}
 
+      {/* The first focus from the last review, as its working day begins. */}
+      <FirstFocusCard timezone={userTimezone} />
+
       {/* Main Grid: Daily Planner (2/3) and Sidebar Tasks (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px] gap-6 lg:gap-8 lg:flex-1 lg:min-h-0">
 
@@ -2728,6 +2732,7 @@ function DashboardPage() {
       {showReviewDay && (
         <ReviewDayModal
           date={selectedDate}
+          workingDays={workingDays}
           completedTaskNames={completedToday.map(t => t.name)}
           deepWorkHours={Math.round(deepWorkHoursToday * 10) / 10}
           plannedCount={filteredTasksForDay.length}

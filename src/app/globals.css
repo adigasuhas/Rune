@@ -652,3 +652,34 @@ body {
 .notebook-preview table { display: block; max-width: 100%; overflow-x: auto; }
 .notebook-preview pre { max-width: 100%; overflow-x: auto; }
 .notebook-preview img { max-width: 100%; height: auto; }
+
+/* Today: "Your first move" (components/today/FirstFocusCard.tsx). One
+   entrance, one reveal of the words, one margin rule drawn - and a slow
+   ledger tape that the reader can stop. The first focus itself never moves. */
+.first-focus {
+  animation: ff-enter var(--duration-modal) var(--ease-standard) both;
+  transition: opacity 220ms var(--ease-standard), transform 220ms var(--ease-standard);
+}
+.first-focus.is-leaving { opacity: 0; transform: translateY(-4px); }
+@keyframes ff-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.ff-reveal { animation: ff-wipe 900ms 160ms var(--ease-standard) both; }
+@keyframes ff-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+
+.ff-rule { transform-origin: top; animation: ff-rule 700ms 80ms var(--ease-standard) both; }
+@keyframes ff-rule { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+.ff-tape-track {
+  mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+.ff-tape-run { animation: ff-tape var(--ff-tape-duration, 40s) linear infinite; }
+.ff-tape:hover .ff-tape-run,
+.ff-tape:focus-within .ff-tape-run,
+.ff-tape-run[data-paused="true"] { animation-play-state: paused; }
+@keyframes ff-tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .first-focus, .ff-reveal, .ff-rule, .ff-tape-run { animation: none; }
+  .first-focus { transition: none; }
+  .ff-tape-track { overflow-x: auto; mask-image: none; }
+}

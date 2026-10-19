@@ -114,7 +114,7 @@ const DOCS_DATA: DocSection[] = [
           'Morning: open Today, check the schedule, and add anything new.',
           'During the day: mark tasks done as you finish them.',
           'If a task won’t get done today, use Move to pick a new date. Rune records each move so you can see which tasks keep slipping.',
-          'End of day: Review the day is a short prompt to note what went well and set your first task for tomorrow.'
+          'End of day: Review the day is a short prompt to note what went well and name the first thing for your next working day. Today shows it back as that day starts, and Analytics → Reflections keeps every review.'
         ]
       }
     ],

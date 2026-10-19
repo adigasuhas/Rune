@@ -157,6 +157,7 @@ export const db = {
   user: passthrough(() => prisma.user),
   project: passthrough(() => prisma.project),
   accomplishmentRecord: passthrough(() => prisma.accomplishmentRecord),
+  firstFocusAck: passthrough(() => prisma.firstFocusAck),
   setting: passthrough(() => prisma.setting),
   notebookPage: passthrough(() => prisma.notebookPage),
   instrument: passthrough(() => prisma.instrument),
