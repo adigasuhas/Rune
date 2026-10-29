@@ -24,6 +24,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "db:copy": "node scripts/migrate-db.mjs",
     "dev:db": "node scripts/dev-db.mjs"
   },
   "dependencies": {

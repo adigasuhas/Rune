@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Send, MessageSquare } from 'lucide-react';
 import { UserAvatar } from '@/components/UserAvatar';
+import { startVisiblePolling } from '@/lib/visiblePolling';
 
 interface ChatMessage {
   id: string;
@@ -53,7 +54,7 @@ export function ObjectChat({
 
   useEffect(() => {
     let cancelled = false;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let stopPolling: (() => void) | null = null;
     let pusherChannel: { unbind_all: () => void; unsubscribe: () => void } | null = null;
     let pusherClient: { disconnect: () => void } | null = null;
 
@@ -88,16 +89,16 @@ export function ObjectChat({
         setRealtimeActive(true);
       }).catch((err) => {
         console.error('Failed to load Pusher client, falling back to polling:', err);
-        if (!cancelled) pollTimer = setInterval(fetchMessages, POLL_INTERVAL_MS);
+        if (!cancelled) stopPolling = startVisiblePolling(fetchMessages, POLL_INTERVAL_MS);
       });
     } else {
       setRealtimeActive(false);
-      pollTimer = setInterval(fetchMessages, POLL_INTERVAL_MS);
+      stopPolling = startVisiblePolling(fetchMessages, POLL_INTERVAL_MS);
     }
 
     return () => {
       cancelled = true;
-      if (pollTimer) clearInterval(pollTimer);
+      stopPolling?.();
       if (pusherChannel) {
         pusherChannel.unbind_all();
         pusherChannel.unsubscribe();

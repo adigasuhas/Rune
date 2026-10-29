@@ -110,11 +110,22 @@ There is no automated rollback, because `prisma migrate deploy` only moves forwa
 ## 4a. Deploy on Vercel
 
 1. Import the repo. Framework preset: **Next.js**. Root directory: this folder.
-2. Add a Postgres database (Vercel Postgres, Neon, Supabase…) and set `DATABASE_URL`.
+2. Add a Postgres database (Vercel Postgres, Neon, Supabase…) and set `DATABASE_URL`. On Neon, set `DATABASE_URL` to the pooled connection string and `DIRECT_DATABASE_URL` to the direct one (without `-pooler`), which migrations use.
+   To move an existing install to a new database, see "Moving to a different database" below.
 3. In Project > Settings > Environment Variables, add `JWT_SECRET`, `RUNE_BASE_URL` (your production URL), `RUNE_SIGNUP_MODE`, and `RUNE_ADMIN_EMAILS` (so you can register the first admin in the browser). `npm run setup` writes all of these to `.env.vercel` for you to copy. Add `SMTP_*` only if you want password-reset emails.
 4. Set the **Build Command** to `prisma migrate deploy && next build`.
 5. **Uploads and the audit log need a persistent disk, which Vercel doesn't provide.** Set the `S3_*` variables (any S3-compatible bucket, such as R2, B2, Supabase Storage, or MinIO) so uploads go to object storage. Without them, notebook image uploads fail on Vercel.
 6. Deploy, then open the site and register the address you put in `RUNE_ADMIN_EMAILS` - or sign in as the built-in developer account and change its password (see "The built-in developer account" above).
+
+### Moving to a different database
+
+`npm run db:copy` copies every row from one Postgres to another (e.g. Prisma Postgres to Neon) and proves the copy is exact. It only reads the old database.
+
+```bash
+SOURCE_DATABASE_URL=<old> TARGET_DATABASE_URL=<new, direct connection> npm run db:copy
+```
+
+It creates the tables on the new database with `prisma migrate deploy`, refuses to write into a database that already has data, copies everything in one transaction, then compares each table's row count and a checksum of its contents. After pointing `DATABASE_URL` at the new database and redeploying, run it again with `-- --verify` to confirm nothing was written to the old one in between.
 
 ### PDF export on Vercel
 

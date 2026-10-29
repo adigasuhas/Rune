@@ -19,7 +19,10 @@ export default defineConfig({
   datasource: {
     // Empty string when unset so `prisma validate` / `prisma generate` work
     // in dev and CI without a database. Migrate/Studio need a real URL.
-    url: process.env.DATABASE_URL ?? '',
+    // DIRECT_DATABASE_URL, when set, is a connection that bypasses the host's
+    // connection pooler (e.g. Neon's "-pooler" endpoint), which migrations
+    // need; the app itself keeps using the pooled DATABASE_URL.
+    url: process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL || '',
     // Only needed for `prisma migrate dev` (authoring new migrations locally).
     // `prisma migrate deploy` in production does not use it.
     shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,

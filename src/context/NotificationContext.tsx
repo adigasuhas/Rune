@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/context/SessionContext';
+import { startVisiblePolling } from '@/lib/visiblePolling';
 import { dueStartReminders, isStartReminderCurrent, nextStartAt, parseStartReminderKey, START_REMINDER_PREFIX } from '@/lib/taskStartReminders';
 
 export type ToastType = 'success' | 'info' | 'error' | 'warning';
@@ -234,8 +235,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!user) return;
     refresh();
-    const interval = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return startVisiblePolling(refresh, POLL_INTERVAL_MS);
   }, [user, refresh]);
 
   // --- "Time to get started": start reminders ---------------------------
