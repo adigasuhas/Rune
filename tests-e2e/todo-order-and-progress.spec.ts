@@ -43,8 +43,13 @@ test('To do can be arranged by dragging or with the keyboard, and the order stic
   const c = await make(page, { name: uniqueName('E2E order C'), date: today, priority: 'CRITICAL' });
   const ours = [a.id, b.id, c.id];
   const before = await (await page.request.get('/api/tasks')).json();
+  // Sorted by id: /api/tasks has no ORDER BY, and the reorder's UPDATEs can
+  // change the order Postgres happens to return rows in.
   const snapshot = (list: Array<Record<string, unknown>>) =>
-    list.filter((t) => ours.includes(t.id as string)).map(({ id, priority, status, date, name }) => ({ id, priority, status, date, name }));
+    list
+      .filter((t) => ours.includes(t.id as string))
+      .map(({ id, priority, status, date, name }) => ({ id, priority, status, date, name }))
+      .sort((x, y) => String(x.id).localeCompare(String(y.id)));
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/tasks');
