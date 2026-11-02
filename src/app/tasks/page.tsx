@@ -27,6 +27,7 @@ import {
   Circle,
   CircleDot,
   Calendar as CalendarIcon,
+  List as ListIcon,
   Flame,
   Brain,
   X,
@@ -41,6 +42,8 @@ import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
 import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow } from '@/lib/taskElapsed';
+import { TaskCalendar } from '@/components/tasks/TaskCalendar';
+import { groupTasksByDay, monthOf } from './taskCalendar';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
@@ -72,6 +75,20 @@ export default function TasksPage() {
   const [projectFilter, setProjectFilter] = useState<string>('ALL');
   const sortBy: 'date' | 'priority' | 'estimatedTime' | 'impact' | 'effort' = 'date';
   const [expandedPostponeTaskIds, setExpandedPostponeTaskIds] = useState<Record<string, boolean>>({});
+
+  // List (the week strip) or a month calendar. Remembered per browser; the
+  // page always renders as a list first so the server and client agree.
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem('rune-tasks-view') === 'calendar') setView('calendar');
+    } catch { /* storage blocked: stay on the list */ }
+  }, []);
+  const chooseView = (next: 'list' | 'calendar') => {
+    setView(next);
+    try { window.localStorage.setItem('rune-tasks-view', next); } catch { /* not remembered, still switches */ }
+  };
 
   // Mini Calendar States
   const [selectedDate, setSelectedDate] = useState<string | null>(() => {
@@ -1091,6 +1108,26 @@ export default function TasksPage() {
 
   const todayStr = React.useMemo(() => getCurrentDateInTimezone(userTimezone), [userTimezone]);
 
+  // The calendar shows every task the project / priority / search filters
+  // let through, on its scheduled day. (Status tabs act on the list below.)
+  const calendarEntries = React.useMemo(
+    () => (view === 'calendar' ? groupTasksByDay(tasks.filter(matchesFilters), events, userTimezone) : {}),
+    [view, tasks, matchesFilters, events, userTimezone]
+  );
+  const shownMonth = calendarMonth ?? monthOf(selectedDate ?? todayStr);
+
+  // A task picked on the calendar: show its day below, open its row and
+  // bring it into view.
+  const openTaskFromCalendar = (task: Task, dayKey: string) => {
+    setSelectedDate(dayKey);
+    setStatusFilter('ALL');
+    setExpandedPostponeTaskIds(p => ({ ...p, [task.id]: true }));
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    window.setTimeout(() => {
+      document.getElementById(`task-row-${task.id}`)?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    }, 60);
+  };
+
   const isToday = (dateString: string) => {
     return dateString === todayStr;
   };
@@ -1148,8 +1185,25 @@ export default function TasksPage() {
       />
       {loadFailed && <LoadError what="your tasks" onRetry={() => setRefreshTrigger((n) => n + 1)} />}
 
-      {/* Date rail + project / priority filters */}
+      {/* View switch + date rail + project / priority filters */}
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+        <div role="group" aria-label="View" className="inline-flex rounded-[10px] bg-surface-sunken p-0.5">
+          {(['list', 'calendar'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => chooseView(v)}
+              aria-pressed={view === v}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] transition-colors ${
+                view === v ? 'bg-surface text-foreground font-medium shadow-[0_0_0_1px_var(--color-border)]' : 'text-ink-secondary hover:text-foreground'
+              }`}
+            >
+              {v === 'list' ? <ListIcon className="w-3.5 h-3.5" /> : <CalendarIcon className="w-3.5 h-3.5" />}
+              {v === 'list' ? 'List' : 'Calendar'}
+            </button>
+          ))}
+        </div>
+        {view === 'list' && (
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => shiftCalendar(-7)}
@@ -1215,6 +1269,13 @@ export default function TasksPage() {
             </button>
           )}
         </div>
+        )}
+        {view === 'calendar' && selectedDate && (
+          <button onClick={() => setSelectedDate(null)} className="text-[13px] text-ink-secondary hover:text-foreground transition-colors">
+            Show all days
+          </button>
+        )}
+        </div>
 
         <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
           <select
@@ -1240,6 +1301,19 @@ export default function TasksPage() {
           </select>
         </div>
       </div>
+
+      {view === 'calendar' && (
+        <TaskCalendar
+          month={shownMonth}
+          onMonthChange={setCalendarMonth}
+          entriesByDay={calendarEntries}
+          timezone={userTimezone}
+          todayKey={todayStr}
+          selectedDate={selectedDate}
+          onSelectDate={(key) => { setCalendarMonth(monthOf(key)); setSelectedDate(key === selectedDate ? null : key); }}
+          onOpenTask={openTaskFromCalendar}
+        />
+      )}
 
       {/* Segmented state bar + search */}
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -5,6 +5,7 @@
  */
 import { parseLatexToHtml } from './latex/renderer';
 import { sanitizeNotebookHtml, sanitizePlainText } from './sanitizeHtml';
+import { nestedListCss } from './latex/listStyles';
 
 export interface ExportPage {
   id: string;
@@ -156,6 +157,7 @@ export function getPdfStyles(
     .page-break-inside-avoid {
       page-break-inside: avoid;
     }
+    ${nestedListCss()}
   `;
 
   let customStyles = '';

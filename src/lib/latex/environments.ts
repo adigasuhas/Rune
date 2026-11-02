@@ -306,42 +306,52 @@ interface ListItem {
   text: string;
 }
 
+/**
+ * Offsets of this list's own `\item`s: those outside any nested
+ * \begin{...}...\end{...} (an itemize inside an enumerate keeps its items),
+ * and not the start of a longer command such as `\itemsep`.
+ */
+function topLevelItemOffsets(content: string): number[] {
+  const offsets: number[] = [];
+  const re = /\\(begin|end)\s*\{[^}]*\}|\\item(?![a-zA-Z])|\\\\|\\./g;
+  let depth = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (m[1] === 'begin') depth++;
+    else if (m[1] === 'end') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && m[0] === '\\item') offsets.push(m.index);
+  }
+  return offsets;
+}
+
 function splitListItems(content: string): ListItem[] {
-  const items: ListItem[] = [];
-  
-  // Find all \item tokens
-  let ptr = 0;
-  while (ptr < content.length) {
-    const idx = content.indexOf('\\item', ptr);
-    if (idx === -1) break;
-    
+  const offsets = topLevelItemOffsets(content);
+
+  return offsets.map((idx, i) => {
     let itemStart = idx + 5; // Skip '\item'
-    
-    // Check if there is an optional label like \item[label]
+    const itemEnd = i + 1 < offsets.length ? offsets[i + 1] : content.length;
+
+    // Optional label: \item[label], skipping brackets inside braces (\item[{[a]}]).
     let label: string | undefined;
-    if (content[itemStart] === '[') {
-      const bracketEnd = content.indexOf(']', itemStart);
-      if (bracketEnd !== -1) {
-        label = content.substring(itemStart + 1, bracketEnd);
-        itemStart = bracketEnd + 1;
+    let p = itemStart;
+    while (p < itemEnd && (content[p] === ' ' || content[p] === '\t')) p++;
+    if (content[p] === '[') {
+      let braces = 0;
+      for (let j = p + 1; j < itemEnd; j++) {
+        const ch = content[j];
+        if (ch === '\\') { j++; continue; }
+        if (ch === '{') braces++;
+        else if (ch === '}') braces = Math.max(0, braces - 1);
+        else if (ch === ']' && braces === 0) {
+          label = content.substring(p + 1, j);
+          itemStart = j + 1;
+          break;
+        }
       }
     }
-    
-    // Scan until next \item or end of environment
-    const nextIdx = content.indexOf('\\item', itemStart);
-    const itemText = nextIdx === -1 
-      ? content.substring(itemStart) 
-      : content.substring(itemStart, nextIdx);
-    
-    items.push({
-      label,
-      text: itemText.trim()
-    });
-    
-    ptr = itemStart;
-  }
-  
-  return items;
+
+    return { label, text: content.substring(itemStart, itemEnd).trim() };
+  });
 }
 
 function escapeAttr(text: string): string {

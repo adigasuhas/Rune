@@ -14,6 +14,7 @@ import { latexExcerpt } from '@/lib/notebookExcerpt';
 import { ReviewerPicker } from '@/components/ReviewerPicker';
 import { useLatexPreview } from '@/lib/latex/useLatexPreview';
 import { latexToPlainText, renderInlineLatex } from '@/lib/latex/inline';
+import { nestedListCss } from '@/lib/latex/listStyles';
 import { extractBibliographyContent, parseBibtex } from '@/lib/latex/bibliography';
 import { buildLabelMap } from '@/lib/latex/crossref';
 import { LatexEditor, LatexEditorHandle, SpecialKey } from '@/components/LatexEditor';
@@ -2012,6 +2013,7 @@ export default function NotebookPage() {
                           .notebook-preview-styled pre {
                             font-family: var(--font-mono), ui-monospace, monospace !important; font-size: .86em;
                           }
+                          ${nestedListCss('.notebook-preview-styled')}
                         `}</style>
                         {previewProblem && (
                           <p role="status" className="not-prose mb-4 rounded-[8px] bg-warning-soft px-3 py-2 text-[12.5px] text-foreground">
