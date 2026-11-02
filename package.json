@@ -35,6 +35,7 @@
     "@sparticuz/chromium": "^149.0.0",
     "countries-and-timezones": "^3.10.0",
     "dotenv": "^17.4.2",
+    "fflate": "^0.8.3",
     "ffmpeg-static": "^5.2.0",
     "framer-motion": "^13.4.0",
     "isomorphic-dompurify": "^3.19.0",
@@ -80,6 +81,9 @@
   },
   "overrides": {
     "mysql2": "^3.24.4",
-    "deepmerge-ts": "^8.0.2"
+    "deepmerge-ts": "^8.0.2",
+    "isomorphic-dompurify": {
+      "jsdom": "26.1.0"
+    }
   }
 }

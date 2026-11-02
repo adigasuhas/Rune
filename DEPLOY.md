@@ -136,6 +136,12 @@ Vercel has no system Chromium, so the export route uses the browser bundled in `
 
 Don't set `PUPPETEER_EXECUTABLE_PATH` on Vercel - it switches the route away from the bundled browser.
 
+The HTML sanitizer (`isomorphic-dompurify`) runs on `jsdom`, which `package.json` pins to 26.x through `overrides`. Newer `jsdom` releases pull in packages that are ES modules only (`@exodus/bytes`, `html-encoding-sniffer` 6), and Vercel's Node runtime can't `require()` them: notebook export, comments and the review page then fail with `ERR_REQUIRE_ESM`. Keep the pin until that changes.
+
+### Scheduled backups on Vercel
+
+`vercel.json` runs `/api/cron/backups` once a day (03:00 UTC). Set `CRON_SECRET` in the project's environment variables (any long random string); Vercel sends it with each call, and the route refuses to run without it. Backups are stored in the database, so they need no disk or bucket. Without `CRON_SECRET`, or on a host with no scheduler, due backups are made when their owner next opens Rune instead; another host can call the route itself with `Authorization: Bearer <CRON_SECRET>`.
+
 ## 4b. Deploy with Docker (VPS, Fly, Render, Railway, a home server)
 
 ```bash
@@ -190,6 +196,7 @@ Chromium: install `chromium` (or Chrome) and set `PUPPETEER_EXECUTABLE_PATH`, or
 | `RUNE_UPLOAD_DIR` | none | Overrides just the uploads folder (default `<RUNE_DATA_DIR>/uploads`). |
 | `S3_BUCKET` / `S3_ENDPOINT` / `S3_REGION` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` / `S3_PUBLIC_URL_BASE` | serverless | Object storage for uploads instead of local disk. |
 | `PUPPETEER_EXECUTABLE_PATH` | none | Chromium binary for PDF export. |
+| `CRON_SECRET` | recommended on Vercel | Lets the daily job (`/api/cron/backups`) make scheduled backups on time (§4a). Without it they're made when their owner next opens Rune. |
 | `PUSHER_APP_ID` / `PUSHER_KEY` / `PUSHER_SECRET` / `PUSHER_CLUSTER` / `NEXT_PUBLIC_PUSHER_KEY` / `NEXT_PUBLIC_PUSHER_CLUSTER` | none | Real-time team chat. Without them, chat still works and refreshes every few seconds. |
 
 ---

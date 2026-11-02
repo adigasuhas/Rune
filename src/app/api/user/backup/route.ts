@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { validateBackup, BackupError, type BackupPayload } from '@/lib/backup';
 import { sanitizeBackupLinks } from '@/lib/backupLinks';
+import { buildAccountExport } from '@/lib/accountExport';
 
 
 export async function GET() {
@@ -12,49 +13,7 @@ export async function GET() {
   }
 
   try {
-    const userId = session.userId;
-
-    // Fetch all user-scoped data
-    const settings = await db.setting.findUnique({ where: { userId } });
-    const projects = await db.project.findMany({ where: { userId } });
-    const notebooks = await db.notebook.findMany({
-      where: { userId }
-    });
-    const tasks = await db.task.findMany({ where: { userId } });
-    const accomplishments = await db.accomplishmentRecord.findMany({ where: { userId } });
-    const calendarEvents = await db.calendarEvent.findMany({ where: { userId } });
-    const instruments = await db.instrument.findMany({ where: { userId } });
-    const jobs = await db.job.findMany({ where: { userId } });
-    const notifications = await db.notification.findMany({ where: { userId } });
-
-    // Reference-only summary of team standing. Team membership, chat
-    // history, and notebook comments/revisions belong to the team, not to
-    // any one member's account, and are never written back by POST below -
-    // restoring another member's data into a shared team on their behalf
-    // would risk corrupting what the rest of the team sees. This block
-    // exists so the export file at least documents what it doesn't cover,
-    // rather than silently omitting it (see Settings > Data & Export copy).
-    const teamMemberships = await db.teamMembership.findMany({
-      where: { userId },
-      select: { teamId: true, role: true, joinedAt: true, team: { select: { name: true, ownerId: true } } },
-    });
-
-    return NextResponse.json({
-      version: '1.0',
-      username: session.name,
-      exportedAt: new Date().toISOString(),
-      settings,
-      projects,
-      notebooks, // each notebook carries its single `page` embedded
-      tasks,
-      accomplishments,
-      calendarEvents,
-      instruments,
-      jobs,
-      notifications,
-      // Not restored by POST - see note above.
-      teamMembershipsReference: teamMemberships,
-    });
+    return NextResponse.json(await buildAccountExport(session.userId, session.name));
   } catch (err) {
     console.error('Failed to export user data:', err);
     return NextResponse.json({ error: 'Something went wrong on our side. Try again.' }, { status: 500 });

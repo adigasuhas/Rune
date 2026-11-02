@@ -27,6 +27,7 @@ const PUBLIC_PREFIXES = [
   '/features',
   '/api/auth/', // signup, password-login, forgot/reset password, logout, me
   '/api/health',
+  '/api/cron/', // checks its own CRON_SECRET
   '/_next/',
   '/favicon',
   '/robots.txt',

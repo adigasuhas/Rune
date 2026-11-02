@@ -29,6 +29,7 @@ import { SETTINGS_FIELDS } from '@/lib/settingsFields';
 import { Modal } from '@/components/Modal';
 import { TimezonePicker } from '@/components/TimezonePicker';
 import { ApiTokensPanel } from '@/components/ApiTokensPanel';
+import { AccountBackupSettings, readBackupFile } from '@/components/backups/BackupPanels';
 import { PageHeader } from '@/components/ui';
 import { UserAvatar } from '@/components/UserAvatar';
 import { AvatarPicker } from '@/components/avatars/AvatarPicker';
@@ -693,29 +694,31 @@ export default function SettingsPage() {
     }
   };
 
-  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    
+
     setImportError(null);
     setImportSuccess(false);
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (!json || json.version !== '1.0') {
-          setImportError('This isn’t a valid Rune backup file.');
-          return;
-        }
-        setPendingImportData(json);
-        setImportConfirmOpen(true);
-      } catch (err) {
-        setImportError('Couldn’t read the file. Choose a Rune backup (.json).');
+
+    try {
+      // A backup .zip carries the restorable copy as rune-backup.json.
+      const text = await readBackupFile(file);
+      if (text === null) {
+        setImportError('This .zip has no restorable copy (rune-backup.json). Turn on “Restorable copy” for account backups, or choose a Rune .json backup.');
+        return;
       }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+      const json = JSON.parse(text);
+      if (!json || json.version !== '1.0') {
+        setImportError('This isn’t a valid Rune backup file.');
+        return;
+      }
+      setPendingImportData(json);
+      setImportConfirmOpen(true);
+    } catch {
+      setImportError('Couldn’t read the file. Choose a Rune backup (.zip or .json).');
+    }
   };
 
   const handleConfirmImport = async () => {
@@ -756,7 +759,7 @@ export default function SettingsPage() {
     { key: 'calendar', label: 'Working hours', description: 'Your working hours and days, days off and leave. Today and Analytics are built on these.', group: 'Your work', saves: true },
     { key: 'taskPrefs', label: 'Tasks and planner', description: 'How tasks and calendar events stay in sync, and whether time slots can overlap.', group: 'Your work', saves: true },
     { key: 'integrations', label: 'Integrations', description: 'Access tokens for the Rune MCP server and the chat bots built on it.', group: 'Data and connections' },
-    { key: 'dataExport', label: 'Backups', description: 'Download a backup of your workspace, or restore one after data loss or a move.', group: 'Data and connections' },
+    { key: 'dataExport', label: 'Backups', description: 'Automatic .zip backups of your notebooks and tasks, a one-off download, and restoring after data loss or a move.', group: 'Data and connections' },
     { key: 'advanced', label: 'Sign-in and security', description: 'Your password and recovery question, and running the setup steps again.', group: 'Account' },
     ...(!isDeveloperAccount ? [{ key: 'dangerZone', label: 'Delete account', description: 'Permanently delete your account and everything in it.', group: 'Account' }] : []),
   ];
@@ -1298,10 +1301,12 @@ export default function SettingsPage() {
           <div className={activeSection === 'dataExport' ? '' : 'hidden'}>
             {activeSection === 'dataExport' && (
               <div className="space-y-6">
+                <AccountBackupSettings />
+
                 {/* Export Data */}
                 <div className="p-4 bg-surface-sunken/40 border border-border rounded-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <span className="text-[13.5px] font-semibold text-foreground block">Export all data</span>
+                    <span className="text-[13.5px] font-semibold text-foreground block">Download everything now</span>
                     <span className="text-[12.5px] text-muted-foreground block leading-normal">
                       Download a JSON backup of your personal workspace: projects, tasks, calendar events, notebooks, runs, and settings. Keep it as a backup, or use it to move to another account by signing in there and restoring this file.
                       <br />
@@ -1330,7 +1335,7 @@ export default function SettingsPage() {
                   <div className="space-y-0.5">
                     <span className="text-[13.5px] font-semibold text-foreground block font-sans">Restore backup</span>
                     <span className="text-[12.5px] text-muted-foreground block leading-normal font-sans">
-                      Load a backup into this account, either your own or one from another account. This replaces your entire personal workspace (projects, tasks, calendar, notebooks, runs, and settings) with what’s in the file. Team membership and teams you own aren’t affected.
+                      Load a backup (.zip or .json) into this account, either your own or one from another account. This replaces your entire personal workspace (projects, tasks, calendar, notebooks, runs, and settings) with what’s in the file. Team membership and teams you own aren’t affected.
                     </span>
                   </div>
                   <div className="flex flex-col sm:items-end gap-2">
@@ -1339,7 +1344,7 @@ export default function SettingsPage() {
                       <span>Choose backup file</span>
                       <input
                         type="file"
-                        accept=".json"
+                        accept=".json,.zip,application/json,application/zip"
                         onChange={handleImportFileChange}
                         disabled={importing}
                         className="hidden"

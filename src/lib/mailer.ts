@@ -1,5 +1,5 @@
 /**
- * Optional outbound email (currently just password-reset links). If the
+ * Optional outbound email: password-reset links and emailed backups. If the
  * operator configures SMTP_HOST/SMTP_PORT/SMTP_FROM, reset links are emailed;
  * if not, the caller (src/app/api/auth/forgot-password/route.ts) logs the
  * link to the server console instead, so the feature never silently does
@@ -28,7 +28,12 @@ function getTransporter(): Transporter {
 }
 
 /** Best-effort send. Never throws - returns false on any failure (including "SMTP isn't configured") so the caller can fall back. */
-export async function sendMail(opts: { to: string; subject: string; text: string }): Promise<boolean> {
+export async function sendMail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
+}): Promise<boolean> {
   if (!isSmtpConfigured()) return false;
   try {
     await getTransporter().sendMail({
@@ -36,6 +41,7 @@ export async function sendMail(opts: { to: string; subject: string; text: string
       to: opts.to,
       subject: opts.subject,
       text: opts.text,
+      ...(opts.attachments ? { attachments: opts.attachments } : {}),
     });
     return true;
   } catch (err) {

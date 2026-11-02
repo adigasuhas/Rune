@@ -235,6 +235,18 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     fetch('/api/digest/weekly').catch(() => {});
   }, [user, loading]);
 
+  // Once per browser session, make any scheduled backups that are due - the
+  // fallback for hosts without the daily job (src/lib/backups). A no-op
+  // when nothing is due.
+  useEffect(() => {
+    if (!user || loading) return;
+    try {
+      if (window.sessionStorage.getItem('rune-backups-checked')) return;
+      window.sessionStorage.setItem('rune-backups-checked', '1');
+    } catch { /* storage blocked: check anyway */ }
+    fetch('/api/backups/run-due', { method: 'POST' }).catch(() => {});
+  }, [user, loading]);
+
   // Keyboard Shortcuts Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

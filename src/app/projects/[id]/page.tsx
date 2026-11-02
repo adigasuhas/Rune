@@ -21,6 +21,7 @@ import {
   X as XIcon
 } from 'lucide-react';
 import { SectionHeader } from '@/components/ui';
+import { ProjectBackups } from '@/components/backups/BackupPanels';
 
 interface Task {
   id: string;
@@ -711,6 +712,8 @@ export default function ProjectDetailPage({ params }: PageProps) {
                   </span>
                 </div>
               </div>
+
+              {canEdit && <ProjectBackups projectId={project.id} />}
 
               {/* People — team projects only */}
               {project.teamId && (

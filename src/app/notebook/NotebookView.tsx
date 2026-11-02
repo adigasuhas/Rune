@@ -142,9 +142,10 @@ function relDate(iso: string | null): string {
 }
 
 /**
- * A notebook drawn as a notebook: a coloured spine, a paper cover with the
- * title set in the serif, and the first line of what's inside. Used for
- * the few most recently edited documents at the top of the library.
+ * A notebook drawn as a notebook: a coloured spine and a paper cover with
+ * the title set in the serif - like a real cover, it doesn't show what's
+ * inside. Used for the few most recently edited documents at the top of
+ * the library.
  */
 function NotebookBook({ notebook, color, onOpen }: { notebook: Notebook; color: string; onOpen: (nb: Notebook) => void }) {
   return (
@@ -158,8 +159,7 @@ function NotebookBook({ notebook, color, onOpen }: { notebook: Notebook; color: 
       <span className="absolute inset-y-0 left-3 w-px bg-black/10" aria-hidden="true" />
       <span className="flex flex-1 flex-col p-4 pl-3">
         <span className="text-[12px] text-ink-faint">{notebook.project?.name || 'Personal'}</span>
-        <span className="mt-1.5 line-clamp-2 font-serif text-[20px] font-medium leading-tight tracking-[-0.01em] text-foreground">{notebook.title}</span>
-        <span className="mt-3 line-clamp-3 text-[13px] leading-relaxed text-ink-secondary">{notebook.summary?.excerpt || 'Empty so far.'}</span>
+        <span className="mt-1.5 line-clamp-4 font-serif text-[20px] font-medium leading-tight tracking-[-0.01em] text-foreground">{notebook.title}</span>
         <span className="mt-auto pt-3 text-[12px] text-ink-faint">{relDate(editedAt(notebook))}</span>
       </span>
     </button>
@@ -1257,13 +1257,14 @@ export default function NotebookPage() {
   const matchesQuery = (nb: Notebook) => !q || [nb.title, nb.project?.name, nb.summary?.excerpt, ...(nb.summary?.tags || [])].some((t) => t?.toLowerCase().includes(q));
   const recent = [...notebooks].filter(n => editedAt(n)).sort((x, y) => new Date(editedAt(y)!).getTime() - new Date(editedAt(x)!).getTime()).slice(0, 4);
 
-  // A row in the full list: title in the serif, a glimpse of the text, when.
+  // A row in the full list: title in the serif, and when it was last edited
+  // (beside it, or under it on a phone). Search still looks inside the text.
   const notebookRow = (nb: Notebook) => (
     <li key={nb.id} className="group flex items-center gap-4 py-3">
       <span className="h-8 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: getNotebookColor(nb) }} aria-hidden="true" />
       <button type="button" onClick={() => openNotebook(nb)} className="min-w-0 flex-1 text-left">
         <span className="block truncate font-serif text-[17px] font-medium text-foreground group-hover:text-primary">{nb.title}</span>
-        <span className="block truncate text-[13px] text-ink-secondary">{nb.summary?.excerpt || 'Empty so far.'}</span>
+        <span className="block text-[12.5px] text-ink-faint sm:hidden">{relDate(editedAt(nb))}</span>
       </button>
       <span className="hidden shrink-0 text-[12.5px] text-ink-faint sm:block">{relDate(editedAt(nb))}</span>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">

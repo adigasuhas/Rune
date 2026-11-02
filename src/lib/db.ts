@@ -173,6 +173,7 @@ export const db = {
   apiToken: passthrough(() => prisma.apiToken),
   notebookComment: passthrough(() => prisma.notebookComment),
   notebookAttachment: passthrough(() => prisma.notebookAttachment),
+  backup: passthrough(() => prisma.backup),
   notebookRevision: passthrough(() => prisma.notebookRevision),
 
   // Notebooks always come with their pages + sub-notebooks embedded (the UI
