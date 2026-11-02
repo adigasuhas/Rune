@@ -40,7 +40,7 @@ import {
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
-import { getTaskElapsed, formatElapsedMinutes } from '@/lib/taskElapsed';
+import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow } from '@/lib/taskElapsed';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
@@ -933,7 +933,7 @@ export default function TasksPage() {
                               moved {postponeCount}×
                             </span>
                           )}
-                          {isInProgress && <InProgressLabel task={task} events={events} timezone={userTimezone} />}
+                          {isInProgress && <InProgressLabel task={task} events={events} timezone={userTimezone} showSlot />}
                         </button>
 
                         <div className="flex items-center gap-2.5 shrink-0">
@@ -1015,6 +1015,10 @@ export default function TasksPage() {
                           {task.detail && <p className="leading-relaxed whitespace-pre-wrap">{task.detail}</p>}
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-ink-faint tabular-nums">
                             <span>planned {task.formattedPlannedDate}</span>
+                            {isInProgress && (() => {
+                              const slot = currentSlot(getTaskSlotIntervals(task, events, userTimezone), new Date());
+                              return slot ? <span>scheduled {formatSlotWindow(slot, userTimezone)}</span> : null;
+                            })()}
                             {isCompleted && <span>actual {(task.actualTime || 0).toFixed(1)}h</span>}
                             {!isCompleted && (() => {
                               const el = getTaskElapsed(task, events, userTimezone);

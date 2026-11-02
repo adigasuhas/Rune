@@ -1,7 +1,7 @@
 'use client';
 
 import { useMinute } from '@/lib/useMinute';
-import { inProgressIndicator, formatElapsedMinutes } from '@/lib/taskElapsed';
+import { inProgressIndicator, formatElapsedMinutes, formatSlotWindow } from '@/lib/taskElapsed';
 
 type Task = Parameters<typeof inProgressIndicator>[0];
 type Slot = Parameters<typeof inProgressIndicator>[1][number];
@@ -23,17 +23,30 @@ export function useInProgress(task: Task, events: Slot[], timezone: string) {
   return inProgressIndicator(task, events, timezone, now);
 }
 
-export function InProgressLabel({ task, events, timezone }: { task: Task; events: Slot[]; timezone: string }) {
+/**
+ * `showSlot` adds the scheduled window ("10:00 – 11:30") after the elapsed
+ * time - for rows that don't already list the task's slot times.
+ */
+export function InProgressLabel({ task, events, timezone, showSlot = false }: { task: Task; events: Slot[]; timezone: string; showSlot?: boolean }) {
   const ind = useInProgress(task, events, timezone);
   if (!ind) return null;
+  const startLabel = ind.slot ? ind.slot.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone }) : null;
   const text =
     ind.minutes === null ? 'In progress'
-    : ind.state === 'not-started' ? 'In progress · starts later'
+    : ind.state === 'not-started' ? `In progress · starts ${startLabel ?? 'later'}`
     : <>{formatElapsedMinutes(ind.minutes)} elapsed{ind.estimateMinutes ? <span className="hidden sm:inline"> of {formatElapsedMinutes(ind.estimateMinutes)}</span> : null}</>;
+  const slotWindow = showSlot && ind.slot && ind.state !== 'not-started' ? formatSlotWindow(ind.slot, timezone) : null;
   return (
     <span className={`shrink-0 inline-flex items-center gap-1.5 text-[12px] tabular-nums ${ind.over ? 'text-warning' : 'text-primary'}`}>
       <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />
       <span>{text}</span>
+      {slotWindow && (
+        // Phones hide it (like "of 1h") so the task name keeps its room; the
+        // row's details show it there.
+        <span className="hidden sm:inline text-ink-secondary" title="Scheduled time">
+          <span aria-hidden="true">· </span><span className="sr-only">scheduled </span>{slotWindow}
+        </span>
+      )}
     </span>
   );
 }

@@ -13,6 +13,7 @@ import { stripPageMetadata } from '@/lib/notebookExport';
 import { latexExcerpt } from '@/lib/notebookExcerpt';
 import { ReviewerPicker } from '@/components/ReviewerPicker';
 import { useLatexPreview } from '@/lib/latex/useLatexPreview';
+import { latexToPlainText, renderInlineLatex } from '@/lib/latex/inline';
 import { extractBibliographyContent, parseBibtex } from '@/lib/latex/bibliography';
 import { buildLabelMap } from '@/lib/latex/crossref';
 import { LatexEditor, LatexEditorHandle, SpecialKey } from '@/components/LatexEditor';
@@ -1080,7 +1081,7 @@ export default function NotebookPage() {
   const filteredOutline = useMemo(() => {
     const q = outlineFilter.trim().toLowerCase();
     if (!q) return outline;
-    return outline.filter(o => o.text.toLowerCase().includes(q));
+    return outline.filter(o => o.text.toLowerCase().includes(q) || latexToPlainText(o.text).toLowerCase().includes(q));
   }, [outline, outlineFilter]);
 
   // Retries briefly if the Monaco instance isn't mounted yet (e.g. jumping
@@ -1189,7 +1190,7 @@ export default function NotebookPage() {
       items.push({ id: `nb-${nb.id}`, group: 'Switch notebook', label: nb.title, action: () => openNotebook(nb) });
     });
     outline.forEach((h, i) => {
-      items.push({ id: `outline-${i}`, group: 'Jump to section', label: h.text, sublabel: `Line ${h.line}`, action: () => jumpToOutlineEntry(h) });
+      items.push({ id: `outline-${i}`, group: 'Jump to section', label: latexToPlainText(h.text), sublabel: `Line ${h.line}`, action: () => jumpToOutlineEntry(h) });
     });
     if (activeNotebook && activePage) {
       DEFAULT_PROJECT_SECTIONS.forEach(name => {
@@ -1486,9 +1487,13 @@ export default function NotebookPage() {
                   onClick={() => jumpToOutlineEntry(h)}
                   className={`w-full flex items-center gap-1.5 pl-[${8 + h.level * 10}px] pr-1.5 py-[5px] rounded-[3px] text-left cursor-pointer transition-colors text-ink-secondary hover:text-foreground hover:bg-surface-sunken/60`}
                   style={{ paddingLeft: `${8 + (h.level - 1) * 12}px` }}
-                  title={h.text}
+                  title={latexToPlainText(h.text)}
                 >
-                  <span className={`text-[12.5px] truncate flex-1 ${h.level === 1 ? 'font-semibold' : ''}`}>{h.text}</span>
+                  {/* Escaped text plus KaTeX output only (see renderInlineLatex). */}
+                  <span
+                    className={`text-[12.5px] truncate flex-1 ${h.level === 1 ? 'font-semibold' : ''}`}
+                    dangerouslySetInnerHTML={{ __html: renderInlineLatex(h.text) }}
+                  />
                 </button>
               ))
             )}

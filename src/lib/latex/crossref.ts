@@ -43,7 +43,8 @@ export function buildLabelMap(pages: any[]): LabelMap {
 
     // A. LaTeX \section / \subsection / \subsubsection labels
     // Matches \section{Title}\label{sec:title} or \section{Title} \label{sec:title}
-    const sectionLabelRegex = /\\(section|subsection|subsubsection)\*?\{([^}]+)\}(?:\s*\\label\{([^}]+)\})/g;
+    // (titles may hold braces, e.g. $\text{Cs}_3$, up to three levels deep)
+    const sectionLabelRegex = /\\(section|subsection|subsubsection)\*?\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})+)\}(?:\s*\\label\{([^}]+)\})/g;
     let match;
     while ((match = sectionLabelRegex.exec(content)) !== null) {
       sectionGlobal++;

@@ -1,4 +1,5 @@
 import { stripPageMetadata } from '@/lib/notebookExport';
+import { readBraced } from '@/lib/latex/inline';
 import type { Notebook, OutlineEntry } from './types';
 
 /** A notebook's display color: its own override, else its parent project's color, else the neutral default. */
@@ -36,15 +37,18 @@ export function downloadPdfBlob(blob: Blob, fileNameBase: string): void {
 /** In-document outline: every \section/\subsection/\subsubsection heading, in document order, with its nesting level and line number for the jump-to-heading sidebar. */
 export function computeOutline(pageContent: string): OutlineEntry[] {
   const entries: OutlineEntry[] = [];
-  const re = /^[ \t]*\\(section|subsection|subsubsection)\*?\{([^}]*)\}/gm;
+  const re = /^[ \t]*\\(section|subsection|subsubsection)\*?\s*(?=\{)/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(pageContent)) !== null) {
+    // Brace-balanced, so "Growth of $\text{Cs}_3$" isn't cut at the first "}".
+    const title = readBraced(pageContent, m.index + m[0].length);
+    if (!title) continue;
     const level = m[1] === 'section' ? 1 : m[1] === 'subsection' ? 2 : 3;
     entries.push({
       offset: m.index,
       line: pageContent.slice(0, m.index).split('\n').length,
       level,
-      text: m[2].trim() || 'Untitled section'
+      text: title.content.trim() || 'Untitled section'
     });
   }
   return entries;

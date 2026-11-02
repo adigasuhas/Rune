@@ -1,5 +1,6 @@
 import { renderMathCached } from './katexCache';
 import { parseLatex } from './parser';
+import { commandArg, latexToPlainText } from './inline';
 
 /**
  * Finds the first \label{...} in `content`, looks up its number in `labelMap`,
@@ -27,6 +28,9 @@ export function renderEnvironment(
   renderNodes: (nodes: any[]) => string
 ): string {
   const nameClean = name.toLowerCase().trim();
+  // Captions, list labels and table cells are LaTeX too: math and
+  // formatting inside them typeset like anywhere else.
+  const inline = (src: string) => renderNodes(parseLatex(src));
 
   // 1. Math Environments
   const mathEnvs = ['equation', 'align', 'gather', 'cases', 'matrix', 'pmatrix', 'align*', 'gather*', 'equation*'];
@@ -78,10 +82,10 @@ export function renderEnvironment(
     const imgMatch = content.match(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/);
     const imgUrl = imgMatch ? imgMatch[1] : '';
     
-    // Extract caption
-    const captionMatch = content.match(/\\caption\{([^}]+)\}/);
-    const captionText = captionMatch ? captionMatch[1] : '';
-    
+    // Brace-balanced, so a caption like "Crystal of $\text{Cs}_3$" isn't cut short.
+    const captionText = commandArg(content, 'caption');
+    const altText = escapeAttr(latexToPlainText(captionText));
+
     // Extract label
     const { tagValue } = extractLabelTag(content, labelMap);
 
@@ -97,10 +101,10 @@ export function renderEnvironment(
 
     return `
       <div class="my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
-        ${imgUrl ? `<img src="${imgUrl}" alt="${captionText}" class="max-h-96 w-auto object-contain rounded-md" />` : '<div class="text-ink-secondary text-xs italic">[No Image Specified]</div>'}
+        ${imgUrl ? `<img src="${imgUrl}" alt="${altText}" class="max-h-96 w-auto object-contain rounded-md" />` : '<div class="text-ink-secondary text-xs italic">[No Image Specified]</div>'}
         ${captionText ? `
           <div class="text-center ${capClass} max-w-lg leading-relaxed">
-            <span class="${tagClass}">Figure ${tagValue || ''}:</span> ${captionText}
+            <span class="${tagClass}">Figure ${tagValue || ''}:</span> ${inline(captionText)}
           </div>
         ` : ''}
       </div>
@@ -109,9 +113,7 @@ export function renderEnvironment(
 
   // 3. Table Environment
   if (nameClean === 'table' || nameClean === 'table*') {
-    // Extract caption
-    const captionMatch = content.match(/\\caption\{([^}]+)\}/);
-    const captionText = captionMatch ? captionMatch[1] : '';
+    const captionText = commandArg(content, 'caption');
 
     // Extract label
     const { tagValue } = extractLabelTag(content, labelMap);
@@ -121,7 +123,7 @@ export function renderEnvironment(
     const tabularCols = tabularMatch ? tabularMatch[1] : '';
     const tabularBody = tabularMatch ? tabularMatch[2] : content;
 
-    const renderedTable = renderTabular(tabularBody, tabularCols, isPdfExport);
+    const renderedTable = renderTabular(tabularBody, tabularCols, isPdfExport, inline);
 
     const borderClass = isPdfExport ? 'border border-[#e5e7eb]' : 'border border-border bg-surface-sunken/40';
     const capClass = isPdfExport ? 'text-[9.5pt] text-gray-600 font-sans' : 'text-xs text-ink-secondary font-light';
@@ -131,7 +133,7 @@ export function renderEnvironment(
       <div class="my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
         ${captionText ? `
           <div class="text-center ${capClass} max-w-lg leading-relaxed">
-            <span class="${tagClass}">Table ${tagValue || ''}:</span> ${captionText}
+            <span class="${tagClass}">Table ${tagValue || ''}:</span> ${inline(captionText)}
           </div>
         ` : ''}
         <div class="w-full overflow-x-auto flex justify-center">${renderedTable}</div>
@@ -152,7 +154,7 @@ export function renderEnvironment(
         const label = item.label || '';
         return `
           <div class="mb-3">
-            <dt class="font-bold text-foreground">${label}</dt>
+            <dt class="font-bold text-foreground">${inline(label)}</dt>
             <dd class="pl-4 text-ink-secondary">${renderedInner}</dd>
           </div>
         `;
@@ -240,7 +242,7 @@ function splitTableCells(row: string): string[] {
   return cells;
 }
 
-function renderTabular(body: string, cols: string, isPdfExport: boolean): string {
+function renderTabular(body: string, cols: string, isPdfExport: boolean, inline: (src: string) => string): string {
   const rows = body.split('\\\\');
   const columnAligns = parseColumnAlignments(cols);
 
@@ -284,9 +286,9 @@ function renderTabular(body: string, cols: string, isPdfExport: boolean): string
       const colspanAttr = colspan > 1 ? ` colspan="${colspan}"` : '';
 
       if (isFirstRow) {
-        html += `<th class="${thClass} p-3"${styleAttr}${colspanAttr}>${cellContent}</th>`;
+        html += `<th class="${thClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</th>`;
       } else {
-        html += `<td class="${tdClass} p-3"${styleAttr}${colspanAttr}>${cellContent}</td>`;
+        html += `<td class="${tdClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</td>`;
       }
       colIndex += colspan;
     });
@@ -340,4 +342,8 @@ function splitListItems(content: string): ListItem[] {
   }
   
   return items;
+}
+
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

@@ -121,6 +121,19 @@ export interface ProgressIndicator {
   ratio: number | null;
   over: boolean;
   state: ElapsedState;
+  /** The scheduled slot to show beside the time: the one under way, else the next, else the last. Null when unscheduled. */
+  slot: { start: Date; end: Date } | null;
+}
+
+/** The slot that best describes "when" right now: the one under way, else the next open one, else the latest. */
+export function currentSlot(intervals: Array<{ start: Date; end: Date; completed: boolean }>, now: Date): { start: Date; end: Date } | null {
+  if (intervals.length === 0) return null;
+  const byStart = [...intervals].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const pick =
+    byStart.find(i => now >= i.start && now < i.end) ??
+    byStart.find(i => !i.completed && now < i.start) ??
+    byStart[byStart.length - 1];
+  return { start: pick.start, end: pick.end };
 }
 
 export function inProgressIndicator(
@@ -132,9 +145,16 @@ export function inProgressIndicator(
   if (task.status !== 'IN_PROGRESS') return null;
   const el = getTaskElapsed(task, events, timezone, now);
   const estimateMinutes = task.estimatedTime && task.estimatedTime > 0 ? Math.round(task.estimatedTime * 60) : null;
-  if (el.state === 'unscheduled') return { minutes: null, estimateMinutes, ratio: null, over: false, state: el.state };
+  if (el.state === 'unscheduled') return { minutes: null, estimateMinutes, ratio: null, over: false, state: el.state, slot: null };
   const ratio = estimateMinutes ? Math.min(1, el.minutes / estimateMinutes) : null;
-  return { minutes: el.minutes, estimateMinutes, ratio, over: !!estimateMinutes && el.minutes > estimateMinutes, state: el.state };
+  const slot = currentSlot(getTaskSlotIntervals(task, events, timezone), now);
+  return { minutes: el.minutes, estimateMinutes, ratio, over: !!estimateMinutes && el.minutes > estimateMinutes, state: el.state, slot };
+}
+
+/** A slot as the user reads it on the clock, e.g. "10:00 – 11:30" (or "10:00 AM – 11:30 AM"), in their time zone. */
+export function formatSlotWindow(slot: { start: Date; end: Date }, timezone: string): string {
+  const fmt = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone });
+  return `${fmt(slot.start)} – ${fmt(slot.end)}`;
 }
 
 /** "45m", "1h05m". */

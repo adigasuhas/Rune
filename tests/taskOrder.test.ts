@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compareManualOrder, moveItem, planReorder, sortByManualOrder } from '@/lib/taskOrder';
-import { inProgressIndicator } from '@/lib/taskElapsed';
+import { inProgressIndicator, formatSlotWindow } from '@/lib/taskElapsed';
 
 type T = { id: string; manualOrder?: number | null; createdAt?: string; priority?: string; date?: string; status?: string };
 const ids = (l: { id: string }[]) => l.map((t) => t.id);
@@ -130,6 +130,19 @@ describe('inProgressIndicator', () => {
     const b = inProgressIndicator(t({ estimatedTime: 2 }), ev, TZ, now)!;
     expect(a.minutes).toBe(b.minutes);
     expect([a.ratio, b.ratio]).toEqual([0.5, 0.25]);
+  });
+
+  it('carries the scheduled slot: the one under way, else the next, else the last', () => {
+    const ev = [slot('2026-10-16T08:00:00Z', '2026-10-16T09:00:00Z', true), slot('2026-10-16T10:00:00Z', '2026-10-16T12:00:00Z'), slot('2026-10-16T15:00:00Z', '2026-10-16T16:00:00Z')];
+    const at = (iso: string) => inProgressIndicator(t(), ev, TZ, new Date(iso))!.slot;
+    expect(at('2026-10-16T10:30:00Z')).toEqual({ start: new Date('2026-10-16T10:00:00Z'), end: new Date('2026-10-16T12:00:00Z') });
+    expect(at('2026-10-16T13:00:00Z')).toEqual({ start: new Date('2026-10-16T15:00:00Z'), end: new Date('2026-10-16T16:00:00Z') });
+    expect(at('2026-10-16T17:00:00Z')).toEqual({ start: new Date('2026-10-16T15:00:00Z'), end: new Date('2026-10-16T16:00:00Z') });
+  });
+
+  it('uses the task\'s own start/end when it has no calendar slots', () => {
+    const r = inProgressIndicator(t({ startTime: '10:00', endTime: '11:30' }), [], TZ, now)!;
+    expect(formatSlotWindow(r.slot!, TZ)).toMatch(/^10:00(\sAM)?\s–\s11:30(\sAM)?$/);
   });
 
   it('same answer after a reload (stored data + clock only)', () => {

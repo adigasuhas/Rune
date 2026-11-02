@@ -41,6 +41,12 @@ export function parseLatexToHtml(
     return escapeHtml(url);
   }
 
+  // A command's argument (a section title, link text) is LaTeX too, so
+  // math and formatting inside it typeset like anywhere else.
+  function renderInline(src: string): string {
+    return renderNodes(parseLatex(src));
+  }
+
   function renderNodes(nodes: LatexNode[]): string {
     let html = '';
 
@@ -92,14 +98,14 @@ export function parseLatexToHtml(
         
         // A. Section commands
         if (cmdName === 'section') {
-          const title = escapeHtml(node.args[0] || 'Section');
+          const title = node.args[0] ? renderInline(node.args[0]) : 'Section';
           // Sections sit one level below the document title (the page's h1).
           html += `<h2 class="ltx-1 text-2xl font-bold font-sans mt-8 mb-4 border-b border-border pb-2 text-foreground">${title}</h2>`;
         } else if (cmdName === 'subsection') {
-          const title = escapeHtml(node.args[0] || 'Subsection');
+          const title = node.args[0] ? renderInline(node.args[0]) : 'Subsection';
           html += `<h3 class="ltx-2 text-xl font-semibold font-sans mt-6 mb-3 border-b border-border pb-1 text-foreground">${title}</h3>`;
         } else if (cmdName === 'subsubsection') {
-          const title = escapeHtml(node.args[0] || 'Subsubsection');
+          const title = node.args[0] ? renderInline(node.args[0]) : 'Subsubsection';
           html += `<h4 class="ltx-3 text-lg font-semibold font-sans mt-4 mb-2 text-foreground">${title}</h4>`;
         }
         
@@ -214,7 +220,7 @@ export function parseLatexToHtml(
         // E. Hyperlinks
         else if (cmdName === 'href') {
           const rawUrl = node.args[0] || '';
-          const text = escapeHtml(node.args[1] || rawUrl);
+          const text = node.args[1] ? renderInline(node.args[1]) : escapeHtml(rawUrl);
           const url = safeUrl(rawUrl);
           
           if (rawUrl.startsWith('page://')) {

@@ -114,6 +114,12 @@ test('in-progress tasks show elapsed time; a strip only when there is an estimat
   await expect(bar).toHaveAttribute('aria-valuemax', '60');
   expect(Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(29);
 
+  // The scheduled window sits beside the elapsed time, on the user's clock.
+  const hm = (t: string) => { const [h, m] = t.split(':').map(Number); return new RegExp(`(${String(h).padStart(2, '0')}|${h % 12 || 12}):${String(m).padStart(2, '0')}`); };
+  const label = row(withEst.id).getByTitle('Scheduled time');
+  await expect(label).toContainText(hm(start.time));
+  await expect(label).toContainText(hm(end.time));
+
   await expect(row(noEst.id)).toContainText(/(29|30|31)m elapsed/);
   await expect(row(noEst.id)).not.toContainText(' of ');
   await expect(row(noEst.id).getByRole('progressbar')).toHaveCount(0);
