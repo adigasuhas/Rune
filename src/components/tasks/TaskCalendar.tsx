@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { addDays, monthGrid, monthOf, plannedHours, shiftMonth, type CalendarEntry } from '@/app/tasks/taskCalendar';
 import type { Task } from '@/app/tasks/types';
+import { DAY_KIND_LABEL, DAY_KIND_SHORT, formatHours, intensityLevel, isWeekend, type DayKind } from '@/lib/timeOff';
 
 /**
  * Month view of the Tasks page: every planned task on its day, in the same
@@ -14,6 +15,12 @@ import type { Task } from '@/app/tasks/types';
  * (time, then name) with a priority tick, then "+N more"; phones get dots.
  * The top-right figure is the day's planned hours, so a heavy day reads at
  * a glance.
+ *
+ * Each day of the month is tinted by its kind (working, weekly off, leave,
+ * sick leave, other, not available) and the tint deepens with the hours
+ * worked that day, against the length of the working day - so the month
+ * reads as a heat map of where the time went. Leave, sick and other days
+ * also say so in words, so colour is never the only cue.
  *
  * Keyboard: one tab stop (the focused day); arrow keys move a day or a
  * week, Page Up/Down a month, Home/End the week's ends, Enter picks.
@@ -42,9 +49,14 @@ function chipTextClass(task: Task): string {
   return 'text-foreground';
 }
 
-function formatHours(h: number): string {
-  return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+export interface DayInfo {
+  kind: DayKind;
+  reason: string;
+  /** Hours worked that day (Analytics' "hours worked": slots and tasks marked done). */
+  worked: number;
 }
+
+const KIND_ORDER: DayKind[] = ['working', 'weeklyOff', 'leave', 'sick', 'other', 'unavailable'];
 
 interface Props {
   month: string; // YYYY-MM
@@ -55,9 +67,13 @@ interface Props {
   selectedDate: string | null;
   onSelectDate: (key: string) => void;
   onOpenTask: (task: Task, dayKey: string) => void;
+  /** Kind and hours worked per day; days missing here read as ordinary working days. */
+  dayInfo?: Record<string, DayInfo>;
+  /** Length of the working day in hours, the scale for the shading. */
+  dayHours?: number;
 }
 
-export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, todayKey, selectedDate, onSelectDate, onOpenTask }: Props) {
+export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, todayKey, selectedDate, onSelectDate, onOpenTask, dayInfo = {}, dayHours = 8 }: Props) {
   const weeks = React.useMemo(() => monthGrid(month), [month]);
   const gridRef = React.useRef<HTMLDivElement>(null);
   const [lastFocus, setFocusKey] = React.useState<string | null>(null);
@@ -152,16 +168,31 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
               const isSelected = day.key === selectedDate;
               const extra = entries.length - MAX_CHIPS;
               const dayLabel = labelDate(day.key, { weekday: 'long', month: 'long', day: 'numeric' });
-              const summary = entries.length === 0
-                ? 'no tasks'
-                : `${entries.length} ${entries.length === 1 ? 'task' : 'tasks'}${entries.length - open ? `, ${entries.length - open} done` : ''}${hours ? `, ${formatHours(hours)} planned` : ''}`;
+              const info = dayInfo[day.key];
+              const kind: DayKind = info?.kind ?? (isWeekend(day.key) ? 'weeklyOff' : 'working');
+              const worked = info?.worked ?? 0;
+              const level = intensityLevel(worked, dayHours);
+              // A weekend that's simply the weekend needs no label; anything
+              // set on purpose (or not a working day midweek) says what it is.
+              const showKind = kind !== 'working' && !(kind === 'weeklyOff' && isWeekend(day.key) && !info?.reason);
+              const kindText = `${DAY_KIND_LABEL[kind]}${info?.reason ? ` (${info.reason})` : ''}`;
+              const summary = [
+                kindText,
+                entries.length === 0
+                  ? 'no tasks'
+                  : `${entries.length} ${entries.length === 1 ? 'task' : 'tasks'}${entries.length - open ? `, ${entries.length - open} done` : ''}${hours ? `, ${formatHours(hours)} planned` : ''}`,
+                ...(worked > 0 ? [`${formatHours(worked)} worked`] : []),
+              ].join(', ');
               return (
                 <div
                   key={day.key}
                   role="gridcell"
                   aria-selected={isSelected}
-                  className={`group/cell relative flex min-h-[56px] flex-col gap-0.5 p-1 sm:min-h-[118px] sm:p-1.5 transition-colors ${
-                    isSelected ? 'bg-surface-raised' : day.inMonth ? 'bg-surface hover:bg-surface-raised/60' : 'bg-surface-sunken/60'
+                  data-day-kind={day.inMonth ? kind : undefined}
+                  data-level={day.inMonth ? level : undefined}
+                  title={day.inMonth ? `${kindText}${worked > 0 ? ` · ${formatHours(worked)} worked` : ''}` : undefined}
+                  className={`group/cell relative flex min-h-[56px] flex-col gap-0.5 p-1 sm:min-h-[118px] sm:p-1.5 ${
+                    day.inMonth ? 'day-tint day-tint-hover' : 'bg-surface-sunken/60'
                   }`}
                 >
                   {isSelected && <span aria-hidden="true" className="pointer-events-none absolute inset-0 shadow-[inset_0_0_0_1.5px_var(--color-foreground)]" />}
@@ -183,11 +214,18 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
                       {day.day}
                     </button>
                     {hours > 0 && (
-                      <span aria-hidden="true" className={`hidden pt-1 pr-0.5 text-[11px] tabular-nums sm:inline ${open ? 'text-ink-secondary' : 'text-ink-faint'}`}>
+                      <span aria-hidden="true" className={`hidden pt-1 pr-0.5 text-[11px] tabular-nums sm:inline ${open || level >= 2 ? 'text-ink-secondary' : 'text-ink-faint'}`}>
                         {formatHours(hours)}
                       </span>
                     )}
                   </div>
+                  {day.inMonth && showKind && (
+                    <span aria-hidden="true" className="day-text flex min-w-0 items-center gap-1 px-1 text-[10px] font-semibold leading-none sm:text-[11px]">
+                      <span className="day-ink hidden h-1.5 w-1.5 shrink-0 rounded-full sm:inline-block" />
+                      <span className="shrink-0">{DAY_KIND_SHORT[kind]}</span>
+                      {info?.reason && <span className="hidden min-w-0 truncate font-normal sm:inline">· {info.reason}</span>}
+                    </span>
+                  )}
 
                   {/* Wide screens: the first few tasks by name. Mouse shortcuts
                       only - the day button (and the list it opens) is the
@@ -202,7 +240,7 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
                           className="flex w-full min-w-0 items-center gap-1.5 rounded-[4px] py-[2px] pl-1 pr-1 text-left text-[12px] leading-[1.35] hover:bg-surface-sunken"
                         >
                           <span className={`h-3 w-[2.5px] shrink-0 rounded-full ${tickClass(task)}`} />
-                          {start && <span className="shrink-0 text-[11px] text-ink-faint tabular-nums">{timeLabel(start)}</span>}
+                          {start && <span className={`shrink-0 text-[11px] tabular-nums ${level >= 2 ? 'text-ink-secondary' : 'text-ink-faint'}`}>{timeLabel(start)}</span>}
                           <span className={`truncate ${chipTextClass(task)}`}>{task.name}</span>
                         </button>
                       </li>
@@ -217,6 +255,12 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
                     >
                       +{extra} more
                     </button>
+                  )}
+
+                  {day.inMonth && worked > 0 && (
+                    <span aria-hidden="true" className="mt-auto hidden self-end pr-0.5 text-[11px] font-medium tabular-nums text-ink-secondary sm:block">
+                      {formatHours(worked)} worked
+                    </span>
                   )}
 
                   {/* Phones: a dot per task (up to four), in the same colours. */}
@@ -234,13 +278,33 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
         ))}
       </div>
 
+      <div aria-hidden="true" className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[10px] border border-border bg-surface px-3 py-2.5 text-[12px] text-ink-secondary">
+        <span className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5">
+          {KIND_ORDER.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1.5">
+              <span data-day-kind={k} data-level={k === 'unavailable' ? undefined : 1} className="day-tint h-3.5 w-3.5 rounded-[4px] shadow-[inset_0_0_0_1px_var(--border-c)]" />
+              {DAY_KIND_LABEL[k]}
+            </span>
+          ))}
+        </span>
+        <span className="inline-flex items-center gap-1.5 sm:ml-auto">
+          <span>Hours worked</span>
+          <span className="text-ink-faint">less</span>
+          {[0, 1, 2, 3, 4].map((l) => (
+            <span key={l} data-day-kind="working" data-level={l} className="day-tint h-3.5 w-3.5 rounded-[4px] shadow-[inset_0_0_0_1px_var(--border-c)]" />
+          ))}
+          <span className="text-ink-faint">more</span>
+          <span className="text-ink-faint">· full at {formatHours(dayHours * 0.75)}+</span>
+        </span>
+      </div>
+
       <p className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-ink-faint sm:flex" aria-hidden="true">
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-danger" />Critical</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-warning" />High</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-primary" />In progress</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-[var(--color-data-slate)]" />Blocked</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-border" />Done</span>
-        <span className="ml-auto">Hours are the day&rsquo;s planned estimates. Pick a day to see and edit its tasks below.</span>
+        <span className="ml-auto">Top right: hours planned. Pick a day to see and edit its tasks below.</span>
       </p>
     </section>
   );

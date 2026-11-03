@@ -441,6 +441,14 @@ model Setting {
   jobReminderDefaultMins   Int             @default(15) // minutes after a job starts running before the first check-in reminder
   jobReminderRecurringMins Int             @default(10) // minutes between subsequent check-in reminders
   showOffDayWork           Boolean         @default(false) // include work logged on non-working days in analytics instead of shifting it to the nearest working day
+  // Time off: leave days allowed (null = not tracked), counted per calendar
+  // year (YEAR) or across the availability dates (PERIOD); and the dates the
+  // user is available at all (YYYY-MM-DD, either end open). See src/lib/timeOff.ts.
+  leaveAllowance           Int?
+  sickLeaveAllowance       Int?
+  leaveAllowancePer        String          @default("YEAR")
+  availableFrom            String?
+  availableUntil           String?
   // Per-NotificationType opt-out, e.g. {"WEEKLY_DIGEST": false}. Null/absent
   // key = enabled (so existing accounts see no behavior change until they
   // actively turn something off) - checked by notify.ts's isNotificationTypeEnabled.

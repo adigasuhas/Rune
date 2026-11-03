@@ -158,13 +158,14 @@ const DOCS_DATA: DocSection[] = [
         title: 'Off days and leave',
         description: 'Change how a single day counts without changing your default week.',
         details: [
-          'On Today, select the status next to the date (Working day, Off day, or Leave).',
-          'A reason is required for off days and leave.',
+          'On Today, select the status next to the date (Working day, Weekly off, Leave, Sick leave or Other).',
+          'A reason is required for any day that isn’t a working day.',
+          'On Tasks → Calendar, each day is coloured by its kind and gets deeper the more hours you worked.',
           'The change affects your weekly analytics and is saved to your settings.'
         ]
       }
     ],
-    keywords: ['calendar', 'events', 'linking tasks', 'rescheduling', 'snap', 'resize', 'drag and drop', 'timeline', 'off day', 'leave']
+    keywords: ['calendar', 'events', 'linking tasks', 'rescheduling', 'snap', 'resize', 'drag and drop', 'timeline', 'off day', 'leave', 'sick leave', 'availability']
   },
   {
     id: 'daily-tasks',
@@ -385,11 +386,13 @@ const DOCS_DATA: DocSection[] = [
         ]
       },
       {
-        title: 'Working hours and days',
-        description: 'In Settings, under Calendar and scheduling. These affect your calendar grid, planning defaults, and analytics.',
+        title: 'Schedule and time off',
+        description: 'In Settings, under Schedule and time off. These affect your calendar grid, planning defaults, the Tasks calendar and analytics.',
         details: [
-          'Set when your workday starts and ends.',
-          'Change individual days to off day, leave, or other for holidays and travel, without changing your default week.',
+          'Set when your workday starts and ends, and your deep work window. A 24-hour rule shows both.',
+          'Set the dates you are available (a contract or placement, say). Days outside them show as away on your calendars; leave either end empty to keep it open.',
+          'Enter how many days of leave and sick leave you have, per calendar year or across your available dates. Rune shows how many are left as you mark days.',
+          'Mark days as working, weekly off, leave, sick leave or other. Pick one day, or shift-click a second day to mark a whole stretch; weekends can be left as they are.',
           'Deep work window and session length record when and for how long you prefer to do deep work. They are saved with your profile and don’t restrict scheduling.'
         ]
       },

@@ -36,7 +36,7 @@ function isWorkingDay(dateStr: string, workingDaysConfig: string): boolean {
   if (entry) {
     const parts = entry.split(':');
     const type = parts[1] || 'working';
-    return type === 'working' || !['off', 'leave', 'other'].includes(type);
+    return type === 'working' || !['off', 'leave', 'sick', 'other'].includes(type);
   }
   try {
     const d = new Date(dateStr + 'T00:00:00Z');

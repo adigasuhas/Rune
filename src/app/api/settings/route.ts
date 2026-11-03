@@ -4,7 +4,8 @@ import { NotificationType } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { convertWeekdaysToDates } from '@/lib/dateUtils';
-import { buildSettingsDefaults, buildSettingsPayload } from '@/lib/settingsFields';
+import { buildSettingsDefaults, buildSettingsPayload, buildSettingsUpdate } from '@/lib/settingsFields';
+import { isDateKey } from '@/lib/timeOff';
 
 const NOTIFICATION_TYPES = new Set(Object.values(NotificationType) as string[]);
 
@@ -20,7 +21,19 @@ const settingsSchema = z.object({
   isOnboarded: z.boolean().optional(),
   workingDays: z.string().max(2_000_000).optional(),
   notificationPreferences: z.record(z.string(), z.unknown()).optional(),
-}).catchall(z.union([z.string().max(2_000_000), z.number(), z.boolean()]));
+  // Time off (src/lib/timeOff.ts). null clears a value.
+  leaveAllowance: z.number().int().min(0).max(366).nullable().optional(),
+  sickLeaveAllowance: z.number().int().min(0).max(366).nullable().optional(),
+  leaveAllowancePer: z.enum(['YEAR', 'PERIOD']).optional(),
+  availableFrom: z.string().refine(isDateKey, 'Use YYYY-MM-DD').nullable().optional(),
+  availableUntil: z.string().refine(isDateKey, 'Use YYYY-MM-DD').nullable().optional(),
+}).catchall(z.union([z.string().max(2_000_000), z.number(), z.boolean()]))
+  .refine((b) => !b.availableFrom || !b.availableUntil || b.availableFrom <= b.availableUntil, {
+    message: 'The last available day must be on or after the first.',
+    path: ['availableUntil'],
+  });
+
+const TIME_OFF_KEYS = ['leaveAllowance', 'sickLeaveAllowance', 'leaveAllowancePer', 'availableFrom', 'availableUntil'] as const;
 
 /** Keeps only recognized NotificationType keys mapped to a strict boolean - never trust the client's object shape as-is. */
 function sanitizeNotificationPreferences(input: unknown): Record<string, boolean> | undefined {
@@ -75,6 +88,11 @@ export async function GET() {
   return NextResponse.json({
     ...defaults,
     workingDays,
+    leaveAllowance: settings?.leaveAllowance ?? null,
+    sickLeaveAllowance: settings?.sickLeaveAllowance ?? null,
+    leaveAllowancePer: settings?.leaveAllowancePer ?? 'YEAR',
+    availableFrom: settings?.availableFrom ?? null,
+    availableUntil: settings?.availableUntil ?? null,
     notificationPreferences: (settings?.notificationPreferences as Record<string, boolean> | null) || {},
     name: user?.name || '',
     timezone: user?.timezone || 'UTC',
@@ -108,15 +126,20 @@ export async function POST(req: Request) {
     }
 
     const { notificationPreferences: rawNotificationPreferences, ...restBody } = body;
-    const payload = buildSettingsPayload({ ...restBody, ...(targetWorkingDays !== undefined ? { workingDays: targetWorkingDays } : {}) });
+    const fields = { ...restBody, ...(targetWorkingDays !== undefined ? { workingDays: targetWorkingDays } : {}) } as Record<string, never>;
     const notificationPreferences = sanitizeNotificationPreferences(rawNotificationPreferences);
+    const timeOff = Object.fromEntries(TIME_OFF_KEYS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
 
+    // Only the fields sent change: a caller saving just the theme (the
+    // sidebar toggle) or one day's status must not reset everything else.
+    // A new row starts from the defaults.
     const settings = await db.setting.upsert({
       where: { userId: session.userId },
-      update: { ...payload, ...(notificationPreferences ? { notificationPreferences } : {}) },
+      update: { ...buildSettingsUpdate(fields), ...timeOff, ...(notificationPreferences ? { notificationPreferences } : {}) },
       create: {
         userId: session.userId,
-        ...payload,
+        ...buildSettingsPayload(fields),
+        ...timeOff,
         ...(notificationPreferences ? { notificationPreferences } : {})
       }
     });

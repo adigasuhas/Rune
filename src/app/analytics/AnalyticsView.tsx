@@ -756,7 +756,7 @@ export default function AnalyticsPage() {
       let isWorking = false;
       
       if (config) {
-        isWorking = config.type === 'working' || !['off', 'leave', 'other'].includes(config.type);
+        isWorking = config.type === 'working' || !['off', 'leave', 'sick', 'other'].includes(config.type);
       } else {
         isWorking = isDefaultWorking(dateStr, accountCreationDateStr);
       }

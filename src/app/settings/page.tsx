@@ -18,13 +18,13 @@ import {
   Clock,
   HelpCircle,
   Monitor,
-  ChevronLeft,
-  ChevronRight,
   AlertTriangle,
   Trash2,
   KeyRound
 } from 'lucide-react';
-import { getLocalDateString, isDefaultWorking } from '@/lib/dateUtils';
+import { getLocalDateString } from '@/lib/dateUtils';
+import { ScheduleSettings } from '@/components/settings/ScheduleSettings';
+import type { LeavePeriod } from '@/lib/timeOff';
 import { SETTINGS_FIELDS } from '@/lib/settingsFields';
 import { Modal } from '@/components/Modal';
 import { TimezonePicker } from '@/components/TimezonePicker';
@@ -251,17 +251,13 @@ export default function SettingsPage() {
   const [jobReminderDefaultMins, setJobReminderDefaultMins] = useState(15);
   const [jobReminderRecurringMins, setJobReminderRecurringMins] = useState(10);
   const [showOffDayWork, setShowOffDayWork] = useState(false);
-  const [createdAt, setCreatedAt] = useState('');
   
-  // Work Calendar State
-  const [currentCalendarMonth, setCurrentCalendarMonth] = useState<Date>(() => new Date());
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  
-  // Selected Day configuration local state
-  const [localDayType, setLocalDayType] = useState('working');
-  const [localDayComment, setLocalDayComment] = useState('');
-  const [daySaveSuccess, setDaySaveSuccess] = useState(false);
-  const [isSavingDay, setIsSavingDay] = useState(false);
+  // Time off (Settings -> Schedule and time off)
+  const [leaveAllowance, setLeaveAllowance] = useState<number | null>(null);
+  const [sickLeaveAllowance, setSickLeaveAllowance] = useState<number | null>(null);
+  const [leaveAllowancePer, setLeaveAllowancePer] = useState<LeavePeriod>('YEAR');
+  const [availableFrom, setAvailableFrom] = useState<string | null>(null);
+  const [availableUntil, setAvailableUntil] = useState<string | null>(null);
 
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -280,226 +276,6 @@ export default function SettingsPage() {
     try { window.history.replaceState(null, '', `/settings?section=${key}`); } catch {}
   };
 
-  const getDaysInMonth = (year: number, month: number) => {
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getLocalDateStringUTC = (year: number, month: number, day: number) => {
-    const y = String(year);
-    const m = String(month + 1).padStart(2, '0');
-    const d = String(day).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  // Helper to parse workingDays entries
-  const getDayConfig = (dateStr: string) => {
-    const entry = workingDays.find(d => d.startsWith(dateStr));
-    if (!entry) return null;
-    const parts = entry.split(':');
-    return {
-      dateStr: parts[0],
-      type: parts[1] || 'working', // 'working', 'off', 'leave', 'other'
-      comment: parts[2] || ''
-    };
-  };
-
-  const handleDayConfigChange = (dateStr: string, newType: string, newComment: string) => {
-    const parts = dateStr.split('-');
-    const monthKey = `${parts[0]}-${parts[1]}`;
-    const marker = `cfg:${monthKey}`;
-    
-    // Remove existing config for this day
-    const newWorking = workingDays.filter(d => !d.startsWith(dateStr) && d !== marker);
-    
-    let suffix = '';
-    if (newType !== 'working' || newComment) {
-      suffix = `:${newType}${newComment ? `:${newComment}` : ''}`;
-    }
-    
-    newWorking.push(`${dateStr}${suffix}`);
-    newWorking.push(marker); // Keep month marked as configured
-    
-    setWorkingDays(newWorking);
-  };
-
-  const handleClearDayConfig = (dateStr: string) => {
-    setWorkingDays(prev => prev.filter(d => !d.startsWith(dateStr)));
-  };
-
-  const handleSaveDayConfig = async () => {
-    if (settingsLoadFailed) { toast('Settings not loaded', 'Your saved settings couldn’t be loaded, so saving now could overwrite them. Try again first.', 'error'); return; }
-    if (!selectedDay) return;
-    setIsSavingDay(true);
-    setDaySaveSuccess(false);
-    
-    const parts = selectedDay.split('-');
-    const monthKey = `${parts[0]}-${parts[1]}`;
-    const marker = `cfg:${monthKey}`;
-    
-    const newWorking = workingDays.filter(d => !d.startsWith(selectedDay) && d !== marker);
-    
-    let suffix = '';
-    if (localDayType !== 'working' || localDayComment) {
-      suffix = `:${localDayType}${localDayComment ? `:${localDayComment}` : ''}`;
-    }
-    
-    newWorking.push(`${selectedDay}${suffix}`);
-    newWorking.push(marker);
-    
-    setWorkingDays(newWorking);
-    
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workStart,
-          workEnd,
-          workingDays: newWorking.join(','),
-          deepWorkStart,
-          deepWorkEnd,
-          deepWorkMaxSession,
-          jobReminderDefaultMins,
-          jobReminderRecurringMins,
-          allowConcurrentTasks,
-          taskNotificationsEnabled,
-          showOffDayWork,
-          name: profileName,
-          timezone,
-          theme
-        })
-      });
-      if (res.ok) {
-        setDaySaveSuccess(true);
-        window.dispatchEvent(new CustomEvent('rune-settings-updated'));
-        await refreshSession();
-        setTimeout(() => setDaySaveSuccess(false), 3000);
-      }
-    } catch (err) {
-      console.error('Failed to save day config:', err);
-    } finally {
-      setIsSavingDay(false);
-    }
-  };
-
-  const handleResetDayConfig = async () => {
-    if (settingsLoadFailed) { toast('Settings not loaded', 'Your saved settings couldn’t be loaded, so saving now could overwrite them. Try again first.', 'error'); return; }
-    if (!selectedDay) return;
-    setIsSavingDay(true);
-    
-    const newWorking = workingDays.filter(d => !d.startsWith(selectedDay));
-    setWorkingDays(newWorking);
-    
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workStart,
-          workEnd,
-          workingDays: newWorking.join(','),
-          deepWorkStart,
-          deepWorkEnd,
-          deepWorkMaxSession,
-          jobReminderDefaultMins,
-          jobReminderRecurringMins,
-          allowConcurrentTasks,
-          taskNotificationsEnabled,
-          showOffDayWork,
-          name: profileName,
-          timezone,
-          theme
-        })
-      });
-      if (res.ok) {
-        window.dispatchEvent(new CustomEvent('rune-settings-updated'));
-        await refreshSession();
-        setSelectedDay(null);
-      }
-    } catch (err) {
-      console.error('Failed to reset day config:', err);
-    } finally {
-      setIsSavingDay(false);
-    }
-  };
-
-  const handlePrevMonth = () => {
-    setCurrentCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-  };
-
-  const renderCalendarDays = () => {
-    const year = currentCalendarMonth.getFullYear();
-    const month = currentCalendarMonth.getMonth();
-    const daysInMonth = getDaysInMonth(year, month);
-    
-    const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
-    
-    const cells = [];
-    for (let i = 0; i < startOffset; i++) {
-      cells.push(<div key={`empty-${i}`} className="h-12 bg-transparent rounded-lg"></div>);
-    }
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = getLocalDateStringUTC(year, month, day);
-      const config = getDayConfig(dateStr);
-      
-      let type = 'unconfigured';
-      let comment = '';
-      let isWorking = false;
-      
-      if (config) {
-        type = config.type;
-        comment = config.comment;
-        isWorking = type === 'working' || !['off', 'leave', 'other'].includes(type);
-      } else {
-        isWorking = isDefaultWorking(dateStr, createdAt);
-      }
-      
-      const todayStr = getLocalDateString(new Date(), timezone);
-      const isToday = dateStr === todayStr;
-      const isSelected = dateStr === selectedDay;
-      
-      let btnStyles = 'bg-surface-sunken text-ink-faint border-border hover:border-border-strong hover:text-foreground';
-      if (isWorking) {
-        btnStyles = 'bg-primary-soft text-primary border-primary hover:bg-primary-soft';
-      } else if (type === 'off') {
-        btnStyles = 'bg-surface-sunken text-ink-faint border-border hover:border-border-strong';
-      } else if (type === 'leave') {
-        btnStyles = 'bg-danger-soft text-danger border-danger hover:bg-danger-soft';
-      } else if (type === 'other') {
-        btnStyles = 'bg-warning-soft text-warning border-warning hover:bg-warning-soft';
-      }
-      
-      if (isSelected) {
-        btnStyles += ' ring-2 ring-primary ring-offset-1 ring-offset-background';
-      } else if (isToday) {
-        btnStyles += ' ring-1 ring-border-strong ring-offset-1 ring-offset-background';
-      }
-      
-      cells.push(
-        <button
-          key={`day-${day}`}
-          type="button"
-          onClick={() => setSelectedDay(dateStr)}
-          className={`h-12 text-[13.5px] font-semibold rounded-md border transition-colors flex flex-col items-center justify-center relative cursor-pointer p-1 ${btnStyles}`}
-        >
-          <span>{day}</span>
-          <div className="flex gap-0.5 mt-0.5">
-            {type === 'leave' && <span className="w-1 h-1 bg-danger rounded-full" />}
-            {type === 'other' && <span className="w-1 h-1 bg-warning rounded-full" />}
-            {type === 'off' && <span className="w-1 h-1 bg-ink-faint rounded-full" />}
-            {comment && <span className="w-1.5 h-1.5 bg-primary rounded-full" title={comment} />}
-          </div>
-        </button>
-      );
-    }
-    return cells;
-  };
-
   // Profile Settings
   const [profileName, setProfileName] = useState('');
   const [timezone, setTimezone] = useState('UTC');
@@ -510,16 +286,6 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  useEffect(() => {
-    if (selectedDay) {
-      const config = getDayConfig(selectedDay);
-      const defaultWorking = isDefaultWorking(selectedDay, createdAt);
-      setLocalDayType(config?.type || (defaultWorking ? 'working' : 'off'));
-      setLocalDayComment(config?.comment || '');
-      setDaySaveSuccess(false);
-    }
-  }, [selectedDay]);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -545,7 +311,11 @@ export default function SettingsPage() {
           setProfileName(data.name || '');
           setTimezone(data.timezone || 'UTC');
           setTheme(data.theme || 'dark');
-          setCreatedAt(data.createdAt || '');
+          setLeaveAllowance(typeof data.leaveAllowance === 'number' ? data.leaveAllowance : null);
+          setSickLeaveAllowance(typeof data.sickLeaveAllowance === 'number' ? data.sickLeaveAllowance : null);
+          setLeaveAllowancePer(data.leaveAllowancePer === 'PERIOD' ? 'PERIOD' : 'YEAR');
+          setAvailableFrom(data.availableFrom || null);
+          setAvailableUntil(data.availableUntil || null);
           
           const syncVal = localStorage.getItem('rune_auto_sync_task_status');
           if (syncVal !== null) {
@@ -583,11 +353,35 @@ export default function SettingsPage() {
     taskNotificationsEnabled,
     notificationPreferences,
     showOffDayWork,
+    leaveAllowance,
+    sickLeaveAllowance,
+    leaveAllowancePer,
+    availableFrom,
+    availableUntil,
     name: profileName,
     timezone,
     theme,
     ...overrides
   });
+
+  // A day (or a stretch of days) set in Schedule and time off: saved at
+  // once, on its own - the API changes only the fields it's sent.
+  const handleApplyDays = async (next: string): Promise<boolean> => {
+    if (settingsLoadFailed) { toast('Settings not loaded', 'Your saved settings couldn’t be loaded, so saving now could overwrite them. Try again first.', 'error'); return false; }
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workingDays: next })
+      });
+      if (!res.ok) return false;
+      setWorkingDays(next.split(','));
+      window.dispatchEvent(new CustomEvent('rune-settings-updated'));
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   // Theme applies instantly (localStorage + a live event ClientLayout
   // listens for) and persists to the account right away — a toggle like
@@ -620,6 +414,11 @@ export default function SettingsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (settingsLoadFailed) { toast('Settings not loaded', 'Your saved settings couldn’t be loaded, so saving now could overwrite them. Try again first.', 'error'); return; }
+    if (availableFrom && availableUntil && availableFrom > availableUntil) {
+      chooseSection('calendar');
+      toast('Check your available dates', 'The last available day must be on or after the first.', 'error');
+      return;
+    }
     setSaving(true);
     setSaveSuccess(false);
 
@@ -756,7 +555,7 @@ export default function SettingsPage() {
   const SECTIONS: { key: string; label: string; description: string; group: string; saves?: boolean }[] = [
     { key: 'general', label: 'Profile and appearance', description: 'Your name, photo and time zone, and how Rune looks.', group: 'You', saves: true },
     { key: 'notifications', label: 'Notifications', description: 'What Rune tells you about, and when.', group: 'You', saves: true },
-    { key: 'calendar', label: 'Working hours', description: 'Your working hours and days, days off and leave. Today and Analytics are built on these.', group: 'Your work', saves: true },
+    { key: 'calendar', label: 'Schedule and time off', description: 'Your working day, when you’re available, your leave allowance, and which days are leave, sick leave or off. Today, Tasks and Analytics are built on these.', group: 'Your work', saves: true },
     { key: 'taskPrefs', label: 'Tasks and planner', description: 'How tasks and calendar events stay in sync, and whether time slots can overlap.', group: 'Your work', saves: true },
     { key: 'integrations', label: 'Integrations', description: 'Access tokens for the Rune MCP server and the chat bots built on it.', group: 'Data and connections' },
     { key: 'dataExport', label: 'Backups', description: 'Automatic .zip backups of your notebooks and tasks, a one-off download, and restoring after data loss or a move.', group: 'Data and connections' },
@@ -1081,187 +880,34 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* SECTION 5: CALENDAR & SCHEDULING */}
+          {/* SECTION 5: SCHEDULE AND TIME OFF */}
           <div className={activeSection === 'calendar' ? '' : 'hidden'}>
             {activeSection === 'calendar' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="page-field-3" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{fieldMeta('workStart').label}</label>
-                    <input id="page-field-3"
-                      type="time"
-                      value={workStart}
-                      aria-label={fieldMeta('workStart').label}
-                      onChange={(e) => setWorkStart(e.target.value)}
-                      className="w-full bg-surface border border-border-strong rounded-[9px] px-3 h-9 text-foreground text-[13.5px] focus:outline-none focus:border-border-strong font-mono"
-                    />
-                    <p className="text-[12.5px] text-ink-faint leading-normal mt-1">{fieldMeta('workStart').description}</p>
-                  </div>
-                  <div>
-                    <label htmlFor="page-field-4" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{fieldMeta('workEnd').label}</label>
-                    <input id="page-field-4"
-                      type="time"
-                      value={workEnd}
-                      aria-label={fieldMeta('workEnd').label}
-                      onChange={(e) => setWorkEnd(e.target.value)}
-                      className="w-full bg-surface border border-border-strong rounded-[9px] px-3 h-9 text-foreground text-[13.5px] focus:outline-none focus:border-border-strong font-mono"
-                    />
-                    <p className="text-[12.5px] text-ink-faint leading-normal mt-1">{fieldMeta('workEnd').description}</p>
-                  </div>
-                </div>
-
-                <div className="border-t border-border/50 pt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label htmlFor="page-field-5" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{fieldMeta('deepWorkStart').label}</label>
-                    <input id="page-field-5"
-                      type="time"
-                      value={deepWorkStart}
-                      aria-label={fieldMeta('deepWorkStart').label}
-                      onChange={(e) => setDeepWorkStart(e.target.value)}
-                      className="w-full bg-surface border border-border-strong rounded-[9px] px-3 h-9 text-foreground text-[13.5px] focus:outline-none focus:border-border-strong font-mono"
-                    />
-                    <p className="text-[12.5px] text-ink-faint leading-normal mt-1">{fieldMeta('deepWorkStart').description}</p>
-                  </div>
-                  <div>
-                    <label htmlFor="page-field-6" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{fieldMeta('deepWorkEnd').label}</label>
-                    <input id="page-field-6"
-                      type="time"
-                      value={deepWorkEnd}
-                      aria-label={fieldMeta('deepWorkEnd').label}
-                      onChange={(e) => setDeepWorkEnd(e.target.value)}
-                      className="w-full bg-surface border border-border-strong rounded-[9px] px-3 h-9 text-foreground text-[13.5px] focus:outline-none focus:border-border-strong font-mono"
-                    />
-                    <p className="text-[12.5px] text-ink-faint leading-normal mt-1">{fieldMeta('deepWorkEnd').description}</p>
-                  </div>
-                  <div>
-                    <label htmlFor="page-field-7" className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">{fieldMeta('deepWorkMaxSession').label}</label>
-                    <input id="page-field-7"
-                      type="number"
-                      min="1"
-                      value={deepWorkMaxSession}
-                      aria-label={fieldMeta('deepWorkMaxSession').label}
-                      onChange={(e) => setDeepWorkMaxSession(Number(e.target.value))}
-                      className="w-full bg-surface border border-border-strong rounded-[9px] px-3 h-9 text-foreground text-[13.5px] focus:outline-none focus:border-border-strong font-mono"
-                    />
-                    <p className="text-[12.5px] text-ink-faint leading-normal mt-1">{fieldMeta('deepWorkMaxSession').description}</p>
-                  </div>
-                </div>
-
-                <div className="border-t border-border/50 pt-5 space-y-4">
-                  <h4 className="text-[13.5px] font-semibold text-foreground">Working days and off days</h4>
-                  <p className="text-[12.5px] text-ink-faint leading-relaxed font-light">
-                    {fieldMeta('workingDays').description} Select a date to change its status. Muted dates are weekly days off.
-                  </p>
-
-                  <div className="flex items-center justify-between pb-2">
-                    <button type="button" onClick={handlePrevMonth} aria-label="Previous month" className="p-1.5 bg-surface-raised border border-border hover:border-border-strong text-muted-foreground rounded-lg transition-colors cursor-pointer">
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-[12.5px] font-semibold text-foreground">
-                      {currentCalendarMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })}
-                    </span>
-                    <button type="button" onClick={handleNextMonth} aria-label="Next month" className="p-1.5 bg-surface-raised border border-border hover:border-border-strong text-muted-foreground rounded-lg transition-colors cursor-pointer">
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 text-center text-[11.5px] font-semibold text-muted-foreground">
-                    <div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 pt-1">
-                    {renderCalendarDays()}
-                  </div>
-
-                  {selectedDay && (() => {
-                    const config = getDayConfig(selectedDay);
-                    const defaultWorking = isDefaultWorking(selectedDay, createdAt);
-                    
-                    const dateObj = new Date(selectedDay + 'T00:00:00Z');
-                    const formattedDate = dateObj.toLocaleDateString([], { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'short', 
-                      day: 'numeric',
-                      timeZone: 'UTC'
-                    });
-
-                    return (
-                      <div className="p-4 bg-surface-raised border border-border-strong rounded-md space-y-4">
-                        <div className="flex justify-between items-center pb-2 border-b border-border">
-                          <div className="flex items-center space-x-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                            <span className="text-[11.5px] font-semibold text-foreground">
-                              Day settings: {formattedDate}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDay(null)}
-                            className="text-muted-foreground hover:text-foreground text-[11.5px] font-semibold"
-                          >
-                            Close
-                          </button>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label htmlFor="page-status" className="block text-[11.5px] text-muted-foreground mb-1 font-semibold">Status</label>
-                            <select id="page-status"
-                              value={localDayType}
-                              onChange={(e) => setLocalDayType(e.target.value)}
-                              className="w-full bg-card border border-border rounded-md px-3 py-2 text-foreground text-[13.5px] focus:outline-none"
-                            >
-                              <option value="working">Working day</option>
-                              <option value="off">Weekly day off</option>
-                              <option value="leave">Leave</option>
-                              <option value="other">Other</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label htmlFor="page-reason" className="block text-[11.5px] text-muted-foreground mb-1 font-semibold">Reason</label>
-                            <input id="page-reason"
-                              type="text"
-                              value={localDayComment}
-                              placeholder="e.g. holiday, sick leave"
-                              onChange={(e) => setLocalDayComment(e.target.value)}
-                              className="w-full bg-card border border-border rounded-md px-3 py-2 text-foreground text-[13.5px] placeholder-muted-foreground focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-between items-center pt-2 border-t border-border/50">
-                          <div className="text-[12.5px] text-muted-foreground">
-                            {daySaveSuccess ? (
-                              <span className="text-success font-semibold animate-pulse">Saved</span>
-                            ) : config ? (
-                              <span className="text-primary font-medium">Custom status</span>
-                            ) : (
-                              <span>Default ({defaultWorking ? 'Working' : 'Off'})</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={handleResetDayConfig}
-                              disabled={isSavingDay}
-                              className="px-3 py-1.5 bg-danger-soft hover:bg-danger-soft border border-danger text-danger hover:text-danger disabled:opacity-30 rounded-md text-[12.5px] font-bold"
-                            >
-                              Reset
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleSaveDayConfig}
-                              disabled={isSavingDay}
-                              className="px-4 py-1.5 bg-primary hover:bg-primary-hover text-primary-foreground rounded-full text-[12.5px] font-bold disabled:opacity-50"
-                            >
-                              {isSavingDay ? 'Saving…' : 'Apply'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
+              <ScheduleSettings
+                value={{ workStart, workEnd, deepWorkStart, deepWorkEnd, deepWorkMaxSession, leaveAllowance, sickLeaveAllowance, leaveAllowancePer, availableFrom, availableUntil }}
+                onChange={(patch) => {
+                  if (patch.workStart !== undefined) setWorkStart(patch.workStart);
+                  if (patch.workEnd !== undefined) setWorkEnd(patch.workEnd);
+                  if (patch.deepWorkStart !== undefined) setDeepWorkStart(patch.deepWorkStart);
+                  if (patch.deepWorkEnd !== undefined) setDeepWorkEnd(patch.deepWorkEnd);
+                  if (patch.deepWorkMaxSession !== undefined) setDeepWorkMaxSession(patch.deepWorkMaxSession);
+                  if (patch.leaveAllowance !== undefined) setLeaveAllowance(patch.leaveAllowance);
+                  if (patch.sickLeaveAllowance !== undefined) setSickLeaveAllowance(patch.sickLeaveAllowance);
+                  if (patch.leaveAllowancePer !== undefined) setLeaveAllowancePer(patch.leaveAllowancePer);
+                  if (patch.availableFrom !== undefined) {
+                    setAvailableFrom(patch.availableFrom);
+                    if (!patch.availableFrom && !availableUntil) setLeaveAllowancePer('YEAR');
+                  }
+                  if (patch.availableUntil !== undefined) {
+                    setAvailableUntil(patch.availableUntil);
+                    if (!patch.availableUntil && !availableFrom) setLeaveAllowancePer('YEAR');
+                  }
+                }}
+                workingDays={workingDays.join(',')}
+                onApplyDays={handleApplyDays}
+                timezone={timezone}
+                todayKey={getLocalDateString(new Date(), timezone)}
+              />
             )}
           </div>
 

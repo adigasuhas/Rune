@@ -683,3 +683,54 @@ body {
   .first-focus { transition: none; }
   .ff-tape-track { overflow-x: auto; mask-image: none; }
 }
+
+/* ---- Day kinds (src/lib/timeOff.ts) ------------------------------------
+   One hue per kind of day; a cell's shade deepens with the hours worked
+   (data-level 0-4). Mixed into the surface so it reads in both themes and
+   ink stays legible on the deepest step. */
+:root {
+  --day-working: var(--pine);
+  --day-weeklyOff: #8b8778;
+  --day-leave: var(--slate);
+  --day-sick: var(--clay);
+  --day-other: #b0842c;
+}
+:root[data-theme="dark"] {
+  --day-working: var(--pine-bright);
+  --day-weeklyOff: #8f8c82;
+  --day-leave: var(--slate-bright);
+  --day-sick: var(--clay-bright);
+  --day-other: #c99a4d;
+}
+[data-day-kind] { --day-c: var(--day-working); }
+[data-day-kind="weeklyOff"] { --day-c: var(--day-weeklyOff); }
+[data-day-kind="leave"] { --day-c: var(--day-leave); }
+[data-day-kind="sick"] { --day-c: var(--day-sick); }
+[data-day-kind="other"] { --day-c: var(--day-other); }
+[data-day-kind="unavailable"] { --day-c: var(--day-weeklyOff); }
+
+.day-tint {
+  --day-mix: 7%;
+  --day-hover: 0%;
+  background-color: color-mix(in oklab, var(--day-c) calc(var(--day-mix) + var(--day-hover)), var(--surface));
+  transition: background-color var(--duration-standard) var(--ease-standard);
+}
+/* A day that isn't a working day shows its colour even with nothing logged. */
+.day-tint:not([data-day-kind="working"]):is([data-level="0"], :not([data-level])) { --day-mix: 12%; }
+:root[data-theme="dark"] .day-tint:not([data-day-kind="working"]):is([data-level="0"], :not([data-level])) { --day-mix: 16%; }
+.day-tint[data-level="1"] { --day-mix: 14%; }
+.day-tint[data-level="2"] { --day-mix: 21%; }
+.day-tint[data-level="3"] { --day-mix: 28%; }
+.day-tint[data-level="4"] { --day-mix: 36%; }
+.day-tint.day-tint-hover:hover { --day-hover: 4%; }
+/* On a shaded day the faintest ink steps up one, to keep 4.5:1. */
+.day-tint:is([data-level="1"], [data-level="2"], [data-level="3"], [data-level="4"]) { --color-ink-faint: var(--text-secondary); }
+.day-tint[data-day-kind="unavailable"] {
+  background-color: var(--surface-sunken);
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--text-faint) 16%, transparent) 6px 7px);
+}
+/* Solid marks in the kind's colour: legend swatches, dots, the label's tick. */
+.day-ink { background-color: var(--day-c); }
+/* The kind's colour pulled toward the ink: >= 4.5:1 on its own tint in both themes. */
+.day-text { color: color-mix(in oklab, var(--day-c) 55%, var(--text)); }
+:root[data-theme="dark"] .day-text { color: color-mix(in oklab, var(--day-c) 75%, var(--text)); }

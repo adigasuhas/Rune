@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { setDayTypes } from '@/lib/timeOff';
 import { LoadError } from '@/components/LoadError';
 import Link from 'next/link';
 import { useSession } from '@/context/SessionContext';
@@ -189,7 +190,7 @@ function DashboardPage() {
   const [dayStatusModal, setDayStatusModal] = useState<{
     isOpen: boolean;
     date: string;
-    type: 'working' | 'off' | 'leave';
+    type: 'working' | 'off' | 'leave' | 'sick' | 'other';
     comment: string;
   }>({
     isOpen: false,
@@ -1736,44 +1737,19 @@ function DashboardPage() {
     }
   };
 
-  const handleSaveDashboardDayStatus = async (type: 'working' | 'off' | 'leave', comment: string) => {
+  const handleSaveDashboardDayStatus = async (type: 'working' | 'off' | 'leave' | 'sick' | 'other', comment: string) => {
     if (!selectedDate || !fullSettings) return;
 
-    const parts = selectedDate.split('-');
-    const monthKey = `${parts[0]}-${parts[1]}`;
-    const marker = `cfg:${monthKey}`;
-
-    const currentList = (workingDays || '').split(',').map(d => d.trim()).filter(Boolean);
-    const newList = currentList.filter(d => !d.startsWith(selectedDate) && d !== marker);
-
-    let suffix = '';
-    if (type !== 'working' || comment) {
-      suffix = `:${type}${comment ? `:${comment}` : ''}`;
-    }
-
-    newList.push(`${selectedDate}${suffix}`);
-    newList.push(marker);
-
-    const updatedWorkingDaysStr = newList.join(',');
+    // The reason is stored inside the date entry, so it can't carry its separators.
+    const updatedWorkingDaysStr = setDayTypes(workingDays || '', [selectedDate], type, comment);
     setWorkingDays(updatedWorkingDaysStr);
 
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workStart: fullSettings.workStart || '08:00',
-          workEnd: fullSettings.workEnd || '18:00',
-          workingDays: updatedWorkingDaysStr,
-          deepWorkStart: fullSettings.deepWorkStart || '09:00',
-          deepWorkEnd: fullSettings.deepWorkEnd || '17:00',
-          deepWorkMaxSession: fullSettings.deepWorkMaxSession || 90,
-          allowConcurrentTasks: fullSettings.allowConcurrentTasks,
-          taskNotificationsEnabled: fullSettings.taskNotificationsEnabled,
-          name: fullSettings.name || '',
-          timezone: fullSettings.timezone || 'UTC',
-          theme: fullSettings.theme || 'dark'
-        })
+        // Only the day list changes; the API leaves every other setting as it is.
+        body: JSON.stringify({ workingDays: updatedWorkingDaysStr })
       });
 
       if (res.ok) {
@@ -2196,12 +2172,20 @@ function DashboardPage() {
                 let dot = 'bg-primary';
                 if (dayConf.type === 'off') {
                   cls = 'text-ink-faint hover:bg-surface-sunken';
-                  label = `Off day${dayConf.comment ? ` · ${dayConf.comment}` : ''}`;
+                  label = `Weekly off${dayConf.comment ? ` · ${dayConf.comment}` : ''}`;
                   dot = 'bg-ink-faint';
                 } else if (dayConf.type === 'leave') {
-                  cls = 'text-danger bg-danger-soft';
+                  cls = 'text-info bg-info-soft';
                   label = `Leave${dayConf.comment ? ` · ${dayConf.comment}` : ''}`;
+                  dot = 'bg-info';
+                } else if (dayConf.type === 'sick') {
+                  cls = 'text-danger bg-danger-soft';
+                  label = `Sick leave${dayConf.comment ? ` · ${dayConf.comment}` : ''}`;
                   dot = 'bg-danger';
+                } else if (dayConf.type === 'other') {
+                  cls = 'text-warning bg-warning-soft';
+                  label = `Other${dayConf.comment ? ` · ${dayConf.comment}` : ''}`;
+                  dot = 'bg-warning';
                 }
                 return (
                   <button
@@ -3278,8 +3262,10 @@ function DashboardPage() {
                   className="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-foreground text-xs focus:outline-none"
                 >
                   <option value="working">Working day</option>
-                  <option value="off">Off day</option>
+                  <option value="off">Weekly off</option>
                   <option value="leave">Leave</option>
+                  <option value="sick">Sick leave</option>
+                  <option value="other">Other</option>
                 </select>
               </div>
 
@@ -3291,7 +3277,7 @@ function DashboardPage() {
                   <input id="page-reason-required"
                     type="text"
                     value={dayStatusModal.comment}
-                    placeholder="e.g. sick leave, vacation, holiday"
+                    placeholder="e.g. conference, public holiday"
                     onChange={(e) => setDayStatusModal(prev => ({ ...prev, comment: e.target.value }))}
                     className="w-full bg-surface-raised border border-border rounded-md px-3 py-2 text-foreground text-xs placeholder-muted-foreground focus:outline-none focus:border-border-strong"
                   />

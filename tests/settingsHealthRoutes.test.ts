@@ -103,6 +103,33 @@ describe('POST /api/settings', () => {
   });
 });
 
+describe('POST /api/settings: partial saves', () => {
+  it('saving one field leaves the others alone (the sidebar theme toggle used to reset leave days)', async () => {
+    users.push({ id: 'u1', name: 'Suhas', timezone: 'UTC', theme: 'dark' });
+    settings.push({ id: 's1', userId: 'u1', workStart: '07:30', workingDays: '2026-11-03:leave:Trip,cfg:2026-11', showOffDayWork: true, leaveAllowance: 25 });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { POST } = await import('@/app/api/settings/route');
+    expect((await POST(req({ theme: 'light' }))).status).toBe(200);
+    expect(settings[0]).toMatchObject({ workStart: '07:30', workingDays: '2026-11-03:leave:Trip,cfg:2026-11', showOffDayWork: true, leaveAllowance: 25 });
+    expect(users[0].theme).toBe('light');
+  });
+
+  it('saves and clears the time-off fields, and checks them', async () => {
+    users.push({ id: 'u1', name: 'Suhas' });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { POST } = await import('@/app/api/settings/route');
+    expect((await POST(req({ leaveAllowance: 25, sickLeaveAllowance: 10, leaveAllowancePer: 'PERIOD', availableFrom: '2026-09-01', availableUntil: '2027-08-31' }))).status).toBe(200);
+    expect(settings[0]).toMatchObject({ leaveAllowance: 25, sickLeaveAllowance: 10, leaveAllowancePer: 'PERIOD', availableFrom: '2026-09-01', availableUntil: '2027-08-31' });
+    expect((await POST(req({ leaveAllowance: null, availableUntil: null }))).status).toBe(200);
+    expect(settings[0]).toMatchObject({ leaveAllowance: null, sickLeaveAllowance: 10, availableUntil: null });
+
+    expect((await POST(req({ availableFrom: '2026-09-01', availableUntil: '2026-08-01' }))).status).toBe(400);
+    expect((await POST(req({ availableFrom: '1 Sept' }))).status).toBe(400);
+    expect((await POST(req({ leaveAllowance: -1 }))).status).toBe(400);
+    expect((await POST(req({ leaveAllowancePer: 'MONTH' }))).status).toBe(400);
+  });
+});
+
 describe('GET /api/health', () => {
   it('reports ok with a working database', async () => {
     const { GET } = await import('@/app/api/health/route');

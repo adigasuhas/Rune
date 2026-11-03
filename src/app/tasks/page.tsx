@@ -10,7 +10,8 @@ import { useConfirm, usePrompt } from '@/components/ConfirmDialog';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
 import { TaskFormModal } from '@/components/TaskFormModal';
 import { SessionType, normalizeSessionType } from '@/lib/sessionType';
-import { getPostponeCount } from '@/lib/analyticsUtils';
+import { getPostponeCount, calculateOccupiedHoursFromItems } from '@/lib/analyticsUtils';
+import { dayKind, parseDayEntries, workdayHours, formatHours } from '@/lib/timeOff';
 import { generateTaskPdfReport } from '@/lib/taskReport';
 import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/lib/postpone';
 import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
@@ -42,8 +43,8 @@ import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
 import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow } from '@/lib/taskElapsed';
-import { TaskCalendar } from '@/components/tasks/TaskCalendar';
-import { groupTasksByDay, monthOf } from './taskCalendar';
+import { TaskCalendar, type DayInfo } from '@/components/tasks/TaskCalendar';
+import { groupTasksByDay, monthGrid, monthOf, plannedHours } from './taskCalendar';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
@@ -55,6 +56,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [events, setEvents] = useState<any[]>([]);
+  // The parts of Settings the calendar colours days by (Settings -> Schedule and time off).
+  const [schedule, setSchedule] = useState({ workingDays: '', workStart: '08:00', workEnd: '18:00', availableFrom: null as string | null, availableUntil: null as string | null });
   const [allowConcurrentTasks, setAllowConcurrentTasks] = useState(false);
   const [taskNotificationsEnabled, setTaskNotificationsEnabled] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -213,6 +216,13 @@ export default function TasksPage() {
           }
           setAllowConcurrentTasks(s.allowConcurrentTasks === true);
           setTaskNotificationsEnabled(s.taskNotificationsEnabled !== false);
+          setSchedule({
+            workingDays: s.workingDays || '',
+            workStart: s.workStart || '08:00',
+            workEnd: s.workEnd || '18:00',
+            availableFrom: s.availableFrom ?? null,
+            availableUntil: s.availableUntil ?? null,
+          });
         }
       } catch (err) {
         setLoadFailed(true);
@@ -1115,6 +1125,47 @@ export default function TasksPage() {
     [view, tasks, matchesFilters, events, userTimezone]
   );
   const shownMonth = calendarMonth ?? monthOf(selectedDate ?? todayStr);
+  const dayHours = workdayHours(schedule.workStart, schedule.workEnd);
+
+  // Each day on the calendar: its kind (working, leave, sick...) and the
+  // hours worked, the same "hours worked" Analytics counts (slots and tasks
+  // marked done; today also counts slots under way). A whole day's work,
+  // whatever the filters - the shade is about the day, not one project.
+  const calendarDayInfo = React.useMemo(() => {
+    const out: Record<string, DayInfo> = {};
+    if (view !== 'calendar') return out;
+    const entries = parseDayEntries(schedule.workingDays);
+    const availability = { from: schedule.availableFrom, until: schedule.availableUntil };
+    const eventsByDay: Record<string, any[]> = {};
+    for (const e of events) {
+      const k = getLocalDateString(e.start, userTimezone);
+      if (k) (eventsByDay[k] ??= []).push(e);
+    }
+    const now = new Date();
+    for (const { key, inMonth } of monthGrid(shownMonth).flat()) {
+      if (!inMonth) continue;
+      const entry = entries.get(key);
+      out[key] = {
+        kind: dayKind(key, entries, availability),
+        reason: entry?.typed ? entry.comment : '',
+        worked: key > todayStr ? 0 : calculateOccupiedHoursFromItems(key, tasksByDateMap[key] || [], eventsByDay[key] || [], userTimezone, undefined, key === todayStr ? now : undefined),
+      };
+    }
+    return out;
+  }, [view, schedule, events, userTimezone, shownMonth, todayStr, tasksByDateMap]);
+
+  // Hours planned per day (the sum of estimates), for the week strip and
+  // the To do heading. Follows the project / priority / search filters, like
+  // the list it sits above.
+  const plannedByDay = React.useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const t of tasks) {
+      if (!matchesFilters(t)) continue;
+      const k = getLocalDateString(t.date, userTimezone);
+      if (k) out[k] = (out[k] ?? 0) + (t.estimatedTime > 0 ? t.estimatedTime : 0);
+    }
+    return out;
+  }, [tasks, matchesFilters, userTimezone]);
 
   // A task picked on the calendar: show its day below, open its row and
   // bring it into view.
@@ -1219,12 +1270,16 @@ export default function TasksPage() {
               const isTod = isToday(formatted);
               const dayTasks = tasksByDateMap[formatted] || [];
               const hasOpen = dayTasks.some(t => t.status !== 'COMPLETED');
+              const planned = plannedByDay[formatted] ?? 0;
+              const longDate = d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
               return (
                 <button
                   key={index}
                   onClick={() => setSelectedDate(isSel ? null : formatted)}
-                  title={d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
-                  className={`flex flex-col items-center justify-center w-11 h-[52px] rounded-[10px] transition-colors relative ${
+                  title={longDate}
+                  aria-label={`${longDate}${planned > 0 ? `, ${formatHours(planned)} planned` : ''}`}
+                  aria-pressed={isSel}
+                  className={`flex flex-col items-center justify-center w-11 h-[60px] rounded-[10px] transition-colors relative ${
                     isSel
                       ? 'bg-foreground text-background'
                       : isTod
@@ -1239,8 +1294,15 @@ export default function TasksPage() {
                     {d.toLocaleDateString([], { weekday: 'short' }).slice(0, 3)}
                   </span>
                   <span className="font-serif text-[18px] font-medium leading-tight tabular-nums">{d.getDate()}</span>
-                  {dayTasks.length > 0 && (
-                    <span className={`absolute bottom-1 w-1 h-1 rounded-full ${isSel ? 'bg-background/70' : hasOpen ? 'bg-ink-faint' : 'bg-primary'}`} />
+                  {/* The day's planned hours; a dot when its tasks have no estimate. */}
+                  {planned > 0 ? (
+                    <span className={`mt-px text-[10.5px] font-medium leading-none tabular-nums ${isSel ? 'text-background/80' : hasOpen ? 'text-ink-secondary' : 'text-primary'}`}>
+                      {formatHours(planned)}
+                    </span>
+                  ) : dayTasks.length > 0 ? (
+                    <span className={`mt-1 w-1 h-1 rounded-full ${isSel ? 'bg-background/70' : hasOpen ? 'bg-ink-faint' : 'bg-primary'}`} />
+                  ) : (
+                    <span className="mt-px h-[10.5px]" />
                   )}
                 </button>
               );
@@ -1312,6 +1374,8 @@ export default function TasksPage() {
           selectedDate={selectedDate}
           onSelectDate={(key) => { setCalendarMonth(monthOf(key)); setSelectedDate(key === selectedDate ? null : key); }}
           onOpenTask={openTaskFromCalendar}
+          dayInfo={calendarDayInfo}
+          dayHours={dayHours}
         />
       )}
 
@@ -1388,7 +1452,12 @@ export default function TasksPage() {
         <div className="space-y-10">
           {groupedByState.map(group => (
             <div key={group.key}>
-              <SectionHeader title={group.label} meta={group.tasks.length} />
+              <SectionHeader
+                title={group.label}
+                meta={group.key === 'PENDING' && statusFilter !== 'POSTPONED'
+                  ? <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">{group.tasks.length}<PlannedHoursBadge planned={selectedDate ? plannedByDay[selectedDate] ?? 0 : plannedHours(group.tasks.map((task) => ({ task })))} dayHours={selectedDate ? dayHours : null} dayLabel={selectedDate === todayStr ? 'today' : selectedDate ? new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : null} /></span>
+                  : group.tasks.length}
+              />
               {group.key === 'PENDING' && statusFilter !== 'POSTPONED' ? (
                 <ReorderableTaskList tasks={group.tasks} renderRow={renderTaskRow} onCommit={commitTodoOrder} />
               ) : (
@@ -1833,3 +1902,30 @@ export default function TasksPage() {
   );
 }
 export const dynamic = 'force-dynamic';
+
+/**
+ * Beside "To do": the hours planned for the day on screen (every task on it,
+ * done or not) against the length of the working day, as a figure and a
+ * small meter. With no day picked it's the To do list's own total.
+ */
+function PlannedHoursBadge({ planned, dayHours, dayLabel }: { planned: number; dayHours: number | null; dayLabel: string | null }) {
+  if (!(planned > 0) && dayHours === null) return null;
+  const over = dayHours !== null && planned > dayHours;
+  const fill = dayHours ? Math.min(planned / dayHours, 1) : 0;
+  return (
+    <span
+      className={`inline-flex h-6 items-center gap-2 rounded-full border px-2.5 text-[12px] font-normal ${over ? 'border-warning/40 bg-warning-soft text-warning' : 'border-border bg-surface text-ink-secondary'}`}
+      title={dayHours !== null ? `${formatHours(planned)} planned${dayLabel ? ` for ${dayLabel}` : ''}, against a ${formatHours(dayHours)} working day` : undefined}
+    >
+      {dayHours !== null && (
+        <span aria-hidden="true" className="relative h-1.5 w-10 overflow-hidden rounded-full bg-surface-sunken">
+          <span className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-warning' : 'bg-primary'}`} style={{ width: `${Math.max(fill * 100, planned > 0 ? 6 : 0)}%` }} />
+        </span>
+      )}
+      <span className="tabular-nums">
+        <span className={`font-semibold ${over ? '' : 'text-foreground'}`}>{formatHours(planned)}</span> planned{dayLabel ? ` ${dayLabel === 'today' ? 'today' : `for ${dayLabel}`}` : ''}
+        {dayHours !== null && <span className={over ? '' : 'text-ink-faint'}> · {over ? `${formatHours(planned - dayHours)} over` : `of ${formatHours(dayHours)}`}</span>}
+      </span>
+    </span>
+  );
+}

@@ -115,3 +115,12 @@ export function buildSettingsPayload(body: Record<string, SettingValue>) {
     return acc;
   }, {} as Record<string, SettingValue>);
 }
+
+/** Just the fields present in `body`, coerced - for updating an existing row without touching the rest. */
+export function buildSettingsUpdate(body: Record<string, SettingValue>) {
+  return SETTINGS_FIELDS.reduce((acc, field) => {
+    const raw = body[field.key];
+    if (raw !== undefined) acc[field.key] = field.coerce ? field.coerce(raw) : raw;
+    return acc;
+  }, {} as Record<string, SettingValue>);
+}
