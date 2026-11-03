@@ -26,7 +26,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { useNotifications } from '@/context/NotificationContext';
 import { useNotebookDirty } from '@/context/NotebookDirtyContext';
 import type { Notebook, NotebookPage, RevisionListItem, OutlineEntry } from './types';
-import { getNotebookColor, hexToRgba, downloadPdfBlob, computeOutline, computeEquationsList, computeReferencesList } from './notebookHelpers';
+import { getNotebookColor, downloadPdfBlob, computeOutline, computeEquationsList, computeReferencesList } from './notebookHelpers';
+import { tintHex } from '@/lib/latex/colors';
 import {
   BookOpen,
   FolderGit2,
@@ -227,13 +228,21 @@ export default function NotebookPage() {
   // PDF Export
   const [isPdfExportModalOpen, setIsPdfExportModalOpen] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [exportProfile, setExportProfile] = useState<'full' | 'research' | 'minimal'>('research');
-  const [exportTitleFont, setExportTitleFont] = useState<'Raleway' | 'Montserrat' | 'Poppins'>('Raleway');
-  const [exportBodyFont, setExportBodyFont] = useState<'Inter' | 'Figtree' | 'Nunito' | 'Lato' | 'Open Sans' | 'JetBrains Mono' | 'Fira Code'>('Figtree');
+  // The PDF's look (see PdfStyle in lib/notebookExport): remembered per browser.
+  const [exportProfile, setExportProfileState] = useState<'article' | 'thesis' | 'preview'>('article');
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('rune-pdf-style');
+      if (saved === 'article' || saved === 'thesis' || saved === 'preview') setExportProfileState(saved);
+    } catch { /* storage blocked: keep the default */ }
+  }, []);
+  const setExportProfile = (v: 'article' | 'thesis' | 'preview') => {
+    setExportProfileState(v);
+    try { window.localStorage.setItem('rune-pdf-style', v); } catch { /* not remembered */ }
+  };
   const [exportIncludeCover, setExportIncludeCover] = useState(false);
   const [exportIncludeHeader, setExportIncludeHeader] = useState(true);
   const [exportIncludeFooter, setExportIncludeFooter] = useState(true);
-  const [exportIncludeSummary, setExportIncludeSummary] = useState(false);
 
   // Notebook settings modal and color override
   const [editingNotebook, setEditingNotebook] = useState<Notebook | null>(null);
@@ -1040,12 +1049,13 @@ export default function NotebookPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profile: exportProfile,
-          titleFont: exportTitleFont,
-          bodyFont: exportBodyFont,
+          // The style sets the faces; these are only the older defaults.
+          titleFont: 'Raleway',
+          bodyFont: 'Figtree',
           includeCover: exportIncludeCover,
           includeHeader: exportIncludeHeader,
           includeFooter: exportIncludeFooter,
-          includeSummary: exportIncludeSummary,
+          includeSummary: false,
           // Export what's on screen, unsaved edits included, without saving.
           content: pageContent
         })
@@ -1830,7 +1840,8 @@ export default function NotebookPage() {
                           { name: 'White', value: '#ffffff' },
                         ]}
                         onPick={(hex) => {
-                          insertTextAtCursor(`\\textcolor{${hex}}{`, '}');
+                          // Real xcolor syntax, so the source still compiles as LaTeX.
+                          insertTextAtCursor(`\\textcolor[HTML]{${hex.replace('#', '').toUpperCase()}}{`, '}');
                           setViewMode((v) => (v === 'edit' ? 'split' : v));
                         }}
                       />
@@ -1847,8 +1858,9 @@ export default function NotebookPage() {
                           { name: 'Purple', value: '#8b5cf6' },
                         ]}
                         onPick={(hex) => {
-                          const rgba = hexToRgba(hex, 0.25);
-                          insertTextAtCursor(`\\colorbox{${rgba}}{`, '}');
+                          // A solid pale tint (25% of the colour over white), in
+                          // xcolor syntax - LaTeX has no see-through boxes.
+                          insertTextAtCursor(`\\colorbox[HTML]{${tintHex(hex, 25)}}{`, '}');
                           setViewMode((v) => (v === 'edit' ? 'split' : v));
                         }}
                       />
@@ -2014,6 +2026,7 @@ export default function NotebookPage() {
                           .notebook-preview-styled pre {
                             font-family: var(--font-mono), ui-monospace, monospace !important; font-size: .86em;
                           }
+                          .notebook-preview-styled .ltx-colorbox { padding: .04em .2em; border-radius: 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
                           ${nestedListCss('.notebook-preview-styled')}
                         `}</style>
                         {previewProblem && (
@@ -2476,41 +2489,59 @@ export default function NotebookPage() {
               Export “{activeNotebook.title}” as a PDF.
             </p>
 
-            <div className="space-y-3 pt-3 border-t border-border">
-              <span className="text-[11.5px] font-semibold text-muted-foreground block">PDF options</span>
-
-              <div className="space-y-1">
-                <label htmlFor="notebookview-profile" className="text-[11.5px] text-ink-faint font-semibold">Profile</label>
-                <select id="notebookview-profile"
-                  value={exportProfile}
-                  onChange={(e) => setExportProfile(e.target.value as any)}
-                  className="w-full bg-surface-raised border border-border rounded-md px-2.5 py-2 text-[11px] text-foreground focus:outline-none focus:border-border-strong cursor-pointer"
-                >
-                  <option value="research">Research report</option>
-                  <option value="full">Full</option>
-                  <option value="minimal">Minimal</option>
-                </select>
+            <fieldset className="space-y-2.5">
+              <legend className="mb-2 text-[12.5px] font-semibold text-foreground">Style</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { v: 'article', name: 'Article', note: 'LaTeX article: Computer Modern, numbered sections', face: 'KaTeX_Main, Georgia, serif', ink: '#111111' },
+                  { v: 'thesis', name: 'Thesis', note: 'Navy headings and pale-blue panels, like a Beamer deck', face: 'var(--font-geist), sans-serif', ink: '#000061' },
+                  { v: 'preview', name: 'Preview', note: 'As the preview shows it: Newsreader, open spacing', face: 'var(--font-newsreader), Georgia, serif', ink: '#111111' },
+                ] as const).map((o) => {
+                  const on = exportProfile === o.v;
+                  return (
+                    <label
+                      key={o.v}
+                      className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-[8px] border transition-colors ${on ? 'border-foreground shadow-[0_0_0_1px_var(--color-foreground)]' : 'border-border hover:border-border-strong'}`}
+                    >
+                      <input type="radio" name="pdf-style" value={o.v} checked={on} onChange={() => setExportProfile(o.v)} className="sr-only" />
+                      {/* A scrap of the page in its own type, always on white paper. */}
+                      <span aria-hidden="true" className="flex h-[74px] flex-col gap-[3px] bg-white px-2.5 pt-2.5" style={{ fontFamily: o.face, color: o.ink }}>
+                        <span className="flex items-center gap-1 text-[12px] font-semibold leading-none">
+                          {o.v === 'thesis' && <span className="grid h-[11px] w-[11px] place-items-center rounded-[1.5px] bg-[#000080] text-[7.5px] text-white">1</span>}
+                          {o.v === 'article' ? '1 ' : ''}Introduction
+                        </span>
+                        <span className="mt-0.5 block h-[3px] w-full rounded-full bg-black/15" />
+                        <span className="block h-[3px] w-[92%] rounded-full bg-black/15" />
+                        {o.v === 'thesis'
+                          ? <span className="mt-0.5 block h-[11px] w-full rounded-[2px] bg-[#def0ff]" />
+                          : <span className="block h-[3px] w-[96%] rounded-full bg-black/15" />}
+                        <span className="block h-[3px] w-[70%] rounded-full bg-black/15" />
+                      </span>
+                      <span className="border-t border-border bg-surface px-2.5 py-2">
+                        <span className="block text-[12.5px] font-semibold text-foreground">{o.name}</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-ink-secondary">{o.note}</span>
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
+            </fieldset>
 
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1.5">
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                  <input type="checkbox" checked={exportIncludeCover} onChange={(e) => setExportIncludeCover(e.target.checked)} className="accent-blue-500 w-3.5 h-3.5 rounded bg-surface-raised border-border cursor-pointer" />
-                  Cover page
-                </label>
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                  <input type="checkbox" checked={exportIncludeHeader} onChange={(e) => setExportIncludeHeader(e.target.checked)} className="accent-blue-500 w-3.5 h-3.5 rounded bg-surface-raised border-border cursor-pointer" />
-                  Header
-                </label>
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                  <input type="checkbox" checked={exportIncludeFooter} onChange={(e) => setExportIncludeFooter(e.target.checked)} className="accent-blue-500 w-3.5 h-3.5 rounded bg-surface-raised border-border cursor-pointer" />
-                  Footer
-                </label>
-                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                  <input type="checkbox" checked={exportIncludeSummary} onChange={(e) => setExportIncludeSummary(e.target.checked)} className="accent-blue-500 w-3.5 h-3.5 rounded bg-surface-raised border-border cursor-pointer" />
-                  Summary page
-                </label>
+            <fieldset>
+              <legend className="mb-2 text-[12.5px] font-semibold text-foreground">On the page</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                {([
+                  ['Title page', exportIncludeCover, setExportIncludeCover],
+                  ['Running head', exportIncludeHeader, setExportIncludeHeader],
+                  ['Page numbers', exportIncludeFooter, setExportIncludeFooter],
+                ] as const).map(([label, checked, set]) => (
+                  <label key={label} className="flex cursor-pointer items-center gap-2 text-[12.5px] text-ink-secondary transition-colors hover:text-foreground">
+                    <input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)} className="h-3.5 w-3.5 cursor-pointer rounded-[3px] border-border-strong accent-[var(--color-primary)]" />
+                    {label}
+                  </label>
+                ))}
               </div>
-            </div>
+            </fieldset>
 
             <div className="flex justify-end gap-2 pt-4 border-t border-border">
               <button onClick={() => setIsPdfExportModalOpen(false)} disabled={isExportingPdf} className="px-3.5 py-2 border border-border hover:border-border-strong text-muted-foreground hover:text-foreground rounded-md text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">

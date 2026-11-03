@@ -51,8 +51,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Sign in to continue.' }, { status: 401 });
   }
 
+  // Earliest first, so a task's slots always read in time order wherever
+  // they're listed - however and whenever each one was added.
   const events = await db.calendarEvent.findMany({
-    where: { userId: session.userId }
+    where: { userId: session.userId },
+    orderBy: [{ start: 'asc' }, { end: 'asc' }]
   });
   return NextResponse.json(events);
 }

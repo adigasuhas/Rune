@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { parseDateInTimezone, parseDateTimeInTimezone, getLocalDateString, toLocalDayKey } from '@/lib/dateUtils';
 import { normalizeSessionType } from '@/lib/sessionType';
+import { orderSlotDrafts } from '@/lib/taskElapsed';
 import { canEditProject, canViewProject, usersShareATeam } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
 import { appendPostponement } from '@/lib/postpone';
@@ -153,9 +154,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       updateData.blockedOnUserId = null;
     }
     
-    if (data.slots !== undefined) {
-      updateData.startTime = data.slots.length > 0 ? data.slots[0].startTime : null;
-      updateData.endTime = data.slots.length > 0 ? data.slots[0].endTime : null;
+    // Slots in time order, empty rows dropped (see POST /api/tasks).
+    const orderedSlots = data.slots !== undefined ? orderSlotDrafts(data.slots) : null;
+    if (orderedSlots) {
+      updateData.startTime = orderedSlots.length > 0 ? orderedSlots[0].startTime : null;
+      updateData.endTime = orderedSlots.length > 0 ? orderedSlots[0].endTime : null;
     } else {
       if (data.startTime !== undefined) updateData.startTime = data.startTime || null;
       if (data.endTime !== undefined) updateData.endTime = data.endTime || null;
@@ -180,7 +183,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         await deleteCalendarEventAndSync(task.userId, e);
       }
 
-      const slotsToCreate = data.slots.filter((s: any) => s.startTime && s.endTime);
+      const slotsToCreate = orderedSlots ?? [];
       for (const slot of slotsToCreate) {
         const startDateTime = parseDateTimeInTimezone(taskDateStr, slot.startTime as string, tz);
         let endDateTime = parseDateTimeInTimezone(taskDateStr, slot.endTime as string, tz);

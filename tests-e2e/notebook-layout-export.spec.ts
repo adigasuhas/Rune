@@ -94,6 +94,11 @@ test('PDF export from Split view gives a readable PDF with the unsaved edit and 
   await page.keyboard.type('\n\\section{Typed before export}\nNot saved yet.\n');
 
   await page.getByRole('button', { name: 'Export', exact: true }).click();
+  // Article is the default; Thesis prints the deck-style footline "n/N".
+  const dialogStyle = page.getByRole('group', { name: 'Style' });
+  await expect(dialogStyle.getByRole('radio', { name: /Article/ })).toBeChecked();
+  await dialogStyle.getByText('Thesis', { exact: true }).click();
+  await expect(dialogStyle.getByRole('radio', { name: /Thesis/ })).toBeChecked();
   const download = page.waitForEvent('download', { timeout: 120_000 });
   await page.getByRole('button', { name: 'Export PDF' }).click();
   const file = await (await download).path();
@@ -108,11 +113,50 @@ test('PDF export from Split view gives a readable PDF with the unsaved edit and 
   for (const s of ['Introduction', 'Bold point', 'Italic point', 'Results part 10', 'TYPED BEFORE EXPORT', 'results/batch7.json']) {
     expect(text.toUpperCase()).toContain(s.toUpperCase());
   }
-  expect(text).toContain(`Page 1 of ${total}`);
-  expect(text).toContain(`Page ${total} of ${total}`);
+  expect(text).toContain(`1/${total}`);
+  expect(text).toContain(`${total}/${total}`);
 
   // Exporting didn't write the document: the saved copy has no trace of the unsaved edit yet
   // unless autosave (3 s after typing) got there first - either way, export itself never PUTs.
   const saved = (await (await page.request.get(`/api/notebooks/${id}`)).json()).page.content as string;
   expect(saved.startsWith(String.raw`\section{Introduction}`)).toBeTruthy();
+});
+
+test('the default PDF is set like a LaTeX article, coloured text included', async ({ page }) => {
+  const nb = await (await page.request.post('/api/notebooks', { data: { title: uniqueName('E2E article'), isPersonal: true } })).json();
+  created.push(nb.id);
+  const content = String.raw`\section{Results}
+Plain words, then \textcolor[HTML]{B20000}{coloured words} and \textcolor{#3b82f6}{older blue}.
+
+\section*{Thanks}
+Done.`;
+  const res = await page.request.post(`/api/notebooks/${nb.id}/export-pdf`, { data: { profile: 'article', includeCover: false, includeHeader: true, includeFooter: true, content }, timeout: 120_000 });
+  expect(res.ok()).toBeTruthy();
+  const bytes = Buffer.from(await res.body());
+  expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+  // Computer Modern (KaTeX's own font files) is embedded - not a fallback sans.
+  expect(bytes.toString('latin1')).toContain('KaTeX_Main');
+  const parser = new PDFParse({ data: bytes });
+  const { text } = await parser.getText();
+  await parser.destroy();
+  // Numbered like \section, unnumbered like \section*.
+  expect(text).toMatch(/1\s+Results/);
+  expect(text).not.toMatch(/2\s+Thanks/);
+  expect(text).toContain('coloured words');
+});
+
+test('text colour shows in the preview instead of vanishing', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const nb = await (await page.request.post('/api/notebooks', { data: { title: uniqueName('E2E colour'), isPersonal: true } })).json();
+  created.push(nb.id);
+  const full = await (await page.request.get(`/api/notebooks/${nb.id}`)).json();
+  await page.request.put(`/api/notebooks/${nb.id}/pages/${full.page.id}`, { data: { content: String.raw`Before \textcolor[HTML]{B20000}{red words} and \textcolor{#3b82f6}{blue words} after.`, tags: [] } });
+  await page.goto('/notebook');
+  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), nb.id);
+  await page.goto('/notebook');
+  await expect(page.getByRole('group', { name: 'View' })).toBeVisible({ timeout: 30_000 });
+  await view(page, 'Split').click();
+  const preview = page.locator('.notebook-preview');
+  await expect(preview.getByText('red words')).toHaveCSS('color', 'rgb(178, 0, 0)');
+  await expect(preview.getByText('blue words')).toHaveCSS('color', 'rgb(59, 130, 246)');
 });

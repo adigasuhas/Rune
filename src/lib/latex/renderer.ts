@@ -1,8 +1,12 @@
+import { resolveLatexColor, luminanceOnWhite } from './colors';
 import { renderMathCached } from './katexCache';
 import { parseLatex, LatexNode } from './parser';
 import { buildLabelMap, LabelMap } from './crossref';
 import { renderEnvironment } from './environments';
 import { parseBibtex, formatCitation, extractBibliographyContent } from './bibliography';
+
+/** xcolor models accepted as the optional first argument of \textcolor / \colorbox. */
+const COLOR_MODELS = new Set(['HTML', 'rgb', 'RGB', 'gray']);
 
 export function parseLatexToHtml(
   latex: string,
@@ -100,13 +104,13 @@ export function parseLatexToHtml(
         if (cmdName === 'section') {
           const title = node.args[0] ? renderInline(node.args[0]) : 'Section';
           // Sections sit one level below the document title (the page's h1).
-          html += `<h2 class="ltx-1 text-2xl font-bold font-sans mt-8 mb-4 border-b border-border pb-2 text-foreground">${title}</h2>`;
+          html += `<h2 class="ltx-1${node.starred ? ' ltx-nonum' : ''} text-2xl font-bold font-sans mt-8 mb-4 border-b border-border pb-2 text-foreground">${title}</h2>`;
         } else if (cmdName === 'subsection') {
           const title = node.args[0] ? renderInline(node.args[0]) : 'Subsection';
-          html += `<h3 class="ltx-2 text-xl font-semibold font-sans mt-6 mb-3 border-b border-border pb-1 text-foreground">${title}</h3>`;
+          html += `<h3 class="ltx-2${node.starred ? ' ltx-nonum' : ''} text-xl font-semibold font-sans mt-6 mb-3 border-b border-border pb-1 text-foreground">${title}</h3>`;
         } else if (cmdName === 'subsubsection') {
           const title = node.args[0] ? renderInline(node.args[0]) : 'Subsubsection';
-          html += `<h4 class="ltx-3 text-lg font-semibold font-sans mt-4 mb-2 text-foreground">${title}</h4>`;
+          html += `<h4 class="ltx-3${node.starred ? ' ltx-nonum' : ''} text-lg font-semibold font-sans mt-4 mb-2 text-foreground">${title}</h4>`;
         }
         
         // B. Formatting commands
@@ -121,46 +125,44 @@ export function parseLatexToHtml(
           html += `<u>${renderNodes(argNodes)}</u>`;
         } else if (cmdName === 'texttt') {
           const contentStr = node.args[0] || '';
-          html += `<code class="bg-surface-sunken border border-border px-1.5 py-0.5 rounded text-xs font-mono text-foreground">${escapeHtml(contentStr)}</code>`;
+          html += `<code class="ltx-tt bg-surface-sunken border border-border px-1.5 py-0.5 rounded text-xs font-mono text-foreground">${escapeHtml(contentStr)}</code>`;
         } else if (cmdName === 'textsf') {
           const argNodes = parseLatex(node.args[0] || '');
           html += `<span class="font-sans">${renderNodes(argNodes)}</span>`;
         } else if (cmdName === 'textrm') {
           const argNodes = parseLatex(node.args[0] || '');
           html += `<span class="font-serif">${renderNodes(argNodes)}</span>`;
-        } else if (cmdName === 'textcolor') {
-          const colorName = node.args[0] || 'white';
-          const textContent = node.args[1] || '';
-          const COLOR_MAP: Record<string, string> = {
-            red: '#ef4444',
-            blue: '#3b82f6',
-            green: '#10b981',
-            yellow: '#f59e0b',
-            purple: '#8b5cf6',
-            pink: '#ec4899',
-            white: '#ffffff',
-            gray: '#71717a',
-            zinc: '#d4d4d8'
-          };
-          const colorVal = COLOR_MAP[colorName.toLowerCase()] || COLOR_MAP.white;
-          const argNodes = parseLatex(textContent);
-          html += `<span style="color: ${colorVal};">${renderNodes(argNodes)}</span>`;
-        } else if (cmdName === 'colorbox') {
-          const colorName = node.args[0] || 'yellow';
-          const textContent = node.args[1] || '';
-          const BG_COLOR_MAP: Record<string, string> = {
-            red: 'rgba(239, 68, 68, 0.2)',
-            blue: 'rgba(59, 130, 246, 0.2)',
-            green: 'rgba(16, 185, 129, 0.2)',
-            yellow: 'rgba(245, 158, 11, 0.2)',
-            purple: 'rgba(139, 92, 246, 0.2)',
-            pink: 'rgba(236, 72, 153, 0.2)',
-            white: 'rgba(255, 255, 255, 0.15)',
-            gray: 'rgba(113, 113, 122, 0.2)'
-          };
-          const bgVal = BG_COLOR_MAP[colorName.toLowerCase()] || BG_COLOR_MAP.yellow;
-          const argNodes = parseLatex(textContent);
-          html += `<span style="background-color: ${bgVal}; padding: 2px 6px; border-radius: 4px; display: inline-block;">${renderNodes(argNodes)}</span>`;
+        } else if (cmdName === 'textcolor' || cmdName === 'colorbox') {
+          // \textcolor[model]{colour}{text} / \colorbox[model]{colour}{text}.
+          // The parser hands every [..] and {..} back in one list, so a
+          // leading xcolor model name marks the three-argument form. Any
+          // brace group after the text is ordinary text, not dropped.
+          const hasModel = node.args.length >= 3 && COLOR_MODELS.has((node.args[0] || '').trim());
+          const model = hasModel ? node.args[0] : null;
+          const spec = node.args[hasModel ? 1 : 0] || '';
+          const body = node.args[hasModel ? 2 : 1] || '';
+          const rest = node.args.slice(hasModel ? 3 : 2).map((a) => renderNodes(parseLatex(a))).join('');
+          const inner = renderNodes(parseLatex(body));
+          const color = resolveLatexColor(model, spec);
+          if (cmdName === 'textcolor') {
+            // An unreadable colour leaves the text as it is - never white.
+            html += color ? `<span class="ltx-color" style="color: ${color.css};">${inner}</span>` : inner;
+          } else if (!color) {
+            html += `<span class="ltx-colorbox">${inner}</span>`;
+          } else {
+            // A bare colour name keeps the soft tint notebooks have always
+            // shown; an exact colour ([HTML]{..}, a mix, rgb) is used as given.
+            const bare = !model && /^[a-z]+$/i.test(spec.trim());
+            const bg = bare ? `rgba(${color.rgb[0]}, ${color.rgb[1]}, ${color.rgb[2]}, 0.22)` : color.css;
+            const lum = luminanceOnWhite(bare ? { ...color, alpha: 0.22 } : color);
+            // Light boxes keep dark ink and dark boxes light ink, so the
+            // words stay readable on the dark-theme preview too.
+            // (A see-through box takes the page's own ink, so it already does.)
+            const solid = !bare && color.alpha === 1;
+            const ink = !solid ? '' : lum > 0.5 ? ' color: #1f2937;' : lum < 0.18 ? ' color: #ffffff;' : '';
+            html += `<span class="ltx-colorbox" style="background-color: ${bg};${ink}">${inner}</span>`;
+          }
+          html += rest;
         }
         
         // C. Paragraph breaks / Newlines
@@ -283,9 +285,14 @@ export function parseLatexToHtml(
   // 4. Resolve Paragraphs
   // In LaTeX, double newlines split paragraphs.
   const paragraphs = rendered.split(/\n\s*\n/);
-  const formattedParagraphs = paragraphs.map(p => {
+  const formatParagraph = (p: string): string => {
     const trimmed = p.trim();
     if (!trimmed) return '';
+    // A heading followed directly by text (no blank line between, as people
+    // usually write it): the heading stays a heading and the text after it
+    // is a paragraph of its own, not loose text.
+    const heading = trimmed.match(/^(<h([1-6])\b[^>]*>[\s\S]*?<\/h\2>)([\s\S]*)$/);
+    if (heading && heading[3].trim()) return `${heading[1]}\n${formatParagraph(heading[3])}`;
     // Skip wrapping if it's already an environment block (starts with block container tags)
     if (
       trimmed.startsWith('<div') ||
@@ -304,7 +311,8 @@ export function parseLatexToHtml(
       return trimmed;
     }
     return `<p class="mb-4 text-foreground leading-relaxed">${trimmed}</p>`;
-  });
+  };
+  const formattedParagraphs = paragraphs.map(formatParagraph);
   
   rendered = formattedParagraphs.filter(Boolean).join('\n');
 

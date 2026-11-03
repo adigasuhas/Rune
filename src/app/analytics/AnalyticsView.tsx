@@ -98,14 +98,35 @@ export default function AnalyticsPage() {
   }, []);
 
   // --- 1. DATA COMPUTATIONS ---
-  const rawTasks = Array.isArray(tasks) ? tasks : [];
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const rawAccomplishments = Array.isArray(accomplishments) ? accomplishments : [];
-  const rawCalendarEvents = Array.isArray(calendarEvents) ? calendarEvents : [];
-  const safeNotebooks = Array.isArray(notebooks) ? notebooks : [];
-
   const userTimezone = settings?.timezone || 'UTC';
   const todayStr = getLocalDateString(new Date(), userTimezone);
+
+  // Settings -> "When you're available": every figure on this page counts
+  // only those dates. Work outside them is left out, and the ranges below
+  // start no earlier and end no later than them.
+  const availFrom: string | null = settings?.availableFrom && settings.availableFrom <= todayStr ? settings.availableFrom : null;
+  const availUntil: string | null = settings?.availableUntil && (!availFrom || settings.availableUntil >= availFrom) ? settings.availableUntil : null;
+  // The last day any range runs to: today, or the last available day.
+  const rangeEndStr = availUntil && availUntil < todayStr ? availUntil : todayStr;
+  const { rawTasks, rawAccomplishments, rawCalendarEvents } = React.useMemo(() => {
+    const t = Array.isArray(tasks) ? tasks : [];
+    const a = Array.isArray(accomplishments) ? accomplishments : [];
+    const e = Array.isArray(calendarEvents) ? calendarEvents : [];
+    if (!availFrom && !availUntil) return { rawTasks: t, rawAccomplishments: a, rawCalendarEvents: e };
+    const inWindow = (when: string | Date | null | undefined, local = true) => {
+      if (!when) return false;
+      let d: string;
+      try { d = local ? getLocalDateString(when, userTimezone) : String(when).slice(0, 10); } catch { return false; }
+      return (!availFrom || d >= availFrom) && (!availUntil || d <= availUntil);
+    };
+    return {
+      rawTasks: t.filter((x: any) => inWindow(x?.date)),
+      rawAccomplishments: a.filter((x: any) => inWindow(x?.date, false)),
+      rawCalendarEvents: e.filter((x: any) => inWindow(x?.start)),
+    };
+  }, [tasks, accomplishments, calendarEvents, availFrom, availUntil, userTimezone]);
+  const safeProjects = Array.isArray(projects) ? projects : [];
+  const safeNotebooks = Array.isArray(notebooks) ? notebooks : [];
 
   // Initialize selectedDate once todayStr is resolved
   useEffect(() => {
@@ -169,15 +190,16 @@ export default function AnalyticsPage() {
   const accountCreationDateStr = React.useMemo(() => {
     const createdAtStr = settings?.createdAt ? getLocalDateString(settings.createdAt, userTimezone) : null;
     const candidates = [createdAtStr, earliestActivityDateStr].filter((d): d is string => !!d);
-    if (candidates.length === 0) return getLocalDateString(new Date(), userTimezone);
-    return candidates.reduce((min, d) => (d < min ? d : min));
-  }, [settings?.createdAt, earliestActivityDateStr, userTimezone]);
+    const first = candidates.length === 0 ? getLocalDateString(new Date(), userTimezone) : candidates.reduce((min, d) => (d < min ? d : min));
+    // Never before the first available day.
+    return availFrom && availFrom > first ? availFrom : first;
+  }, [settings?.createdAt, earliestActivityDateStr, userTimezone, availFrom]);
 
   // Base configured working days (lifetime)
   const baseAllWorkingDays = React.useMemo(() => {
-    if (!accountCreationDateStr || !todayStr) return [];
-    return getWorkingDaysBetween(accountCreationDateStr, todayStr, workingDaysConfig, accountCreationDateStr);
-  }, [accountCreationDateStr, todayStr, workingDaysConfig]);
+    if (!accountCreationDateStr || !rangeEndStr) return [];
+    return getWorkingDaysBetween(accountCreationDateStr, rangeEndStr, workingDaysConfig, accountCreationDateStr);
+  }, [accountCreationDateStr, rangeEndStr, workingDaysConfig]);
 
   // Off-days Work Toggle is server-backed (Setting.showOffDayWork) so it persists across reloads/relogins.
   const showOffDaysWork = settings?.showOffDayWork === true;
@@ -325,40 +347,40 @@ export default function AnalyticsPage() {
   const allWorkingDays = React.useMemo(() => {
     const start = accountCreationDateStr;
     if (showOffDaysWork) {
-      return getAnalyticsDays(baseAllWorkingDays, activeDays, start, todayStr);
+      return getAnalyticsDays(baseAllWorkingDays, activeDays, start, rangeEndStr);
     }
     return baseAllWorkingDays;
-  }, [baseAllWorkingDays, activeDays, accountCreationDateStr, todayStr, showOffDaysWork]);
+  }, [baseAllWorkingDays, activeDays, accountCreationDateStr, rangeEndStr, showOffDaysWork]);
 
   // Base configured working days lists for 7 and 30 days
   const baseLast7Days = React.useMemo(() => {
-    if (!todayStr) return [];
-    return getLastNWorkingDays(todayStr, 7, workingDaysConfig, accountCreationDateStr);
-  }, [todayStr, workingDaysConfig, accountCreationDateStr]);
+    if (!rangeEndStr) return [];
+    return getLastNWorkingDays(rangeEndStr, 7, workingDaysConfig, accountCreationDateStr);
+  }, [rangeEndStr, workingDaysConfig, accountCreationDateStr]);
 
   const baseLast30Days = React.useMemo(() => {
-    if (!todayStr) return [];
-    return getLastNWorkingDays(todayStr, 30, workingDaysConfig, accountCreationDateStr);
-  }, [todayStr, workingDaysConfig, accountCreationDateStr]);
+    if (!rangeEndStr) return [];
+    return getLastNWorkingDays(rangeEndStr, 30, workingDaysConfig, accountCreationDateStr);
+  }, [rangeEndStr, workingDaysConfig, accountCreationDateStr]);
 
   // Combined analytics days lists for 7 and 30 days (configured + active non-working days in those ranges)
   const last7Days = React.useMemo(() => {
     const start = baseLast7Days.length > 0 ? baseLast7Days[0] : accountCreationDateStr;
     if (showOffDaysWork) {
-      return getAnalyticsDays(baseLast7Days, activeDays, start, todayStr);
+      return getAnalyticsDays(baseLast7Days, activeDays, start, rangeEndStr);
     }
     return baseLast7Days;
-  }, [baseLast7Days, activeDays, accountCreationDateStr, todayStr, showOffDaysWork]);
+  }, [baseLast7Days, activeDays, accountCreationDateStr, rangeEndStr, showOffDaysWork]);
 
   const last30Days = React.useMemo(() => {
     const start = baseLast30Days.length > 0 ? baseLast30Days[0] : accountCreationDateStr;
     if (showOffDaysWork) {
-      return getAnalyticsDays(baseLast30Days, activeDays, start, todayStr);
+      return getAnalyticsDays(baseLast30Days, activeDays, start, rangeEndStr);
     }
     return baseLast30Days;
-  }, [baseLast30Days, activeDays, accountCreationDateStr, todayStr, showOffDaysWork]);
+  }, [baseLast30Days, activeDays, accountCreationDateStr, rangeEndStr, showOffDaysWork]);
 
-  const todayTime = new Date(todayStr).getTime();
+  const todayTime = new Date(rangeEndStr).getTime();
   const creationTime = new Date(accountCreationDateStr).getTime();
   const allCalendarDaysCount = (!isNaN(todayTime) && !isNaN(creationTime))
     ? Math.max(Math.ceil((todayTime - creationTime) / (1000 * 60 * 60 * 24)) + 1, 1)
@@ -366,21 +388,21 @@ export default function AnalyticsPage() {
 
   // Month-to-date active days breakdown
   const monthToDateStats = React.useMemo(() => {
-    if (!todayStr) return { configured: 0, additional: 0, total: 0 };
-    const parts = todayStr.split('-');
+    if (!rangeEndStr) return { configured: 0, additional: 0, total: 0 };
+    const parts = rangeEndStr.split('-');
     if (parts.length < 2) return { configured: 0, additional: 0, total: 0 };
     const [year, month] = parts.map(Number);
     const startOfMonth = `${year}-${String(month).padStart(2, '0')}-01`;
-    const baseMonthDays = getWorkingDaysBetween(startOfMonth, todayStr, workingDaysConfig, accountCreationDateStr);
+    const baseMonthDays = getWorkingDaysBetween(startOfMonth, rangeEndStr, workingDaysConfig, accountCreationDateStr);
     const monthDays = showOffDaysWork
-      ? getAnalyticsDays(baseMonthDays, activeDays, startOfMonth, todayStr)
+      ? getAnalyticsDays(baseMonthDays, activeDays, startOfMonth, rangeEndStr)
       : baseMonthDays;
     return {
       configured: baseMonthDays.length,
       additional: Math.max(monthDays.length - baseMonthDays.length, 0),
       total: monthDays.length
     };
-  }, [workingDaysConfig, activeDays, todayStr, showOffDaysWork]);
+  }, [workingDaysConfig, activeDays, rangeEndStr, showOffDaysWork]);
 
   const lifetimeMetrics = React.useMemo(() => {
     if (safeTasks.length === 0 && safeAccomplishments.length === 0) {
@@ -863,6 +885,16 @@ export default function AnalyticsPage() {
         }
       />
       {loadFailed && <LoadError what="your analytics" onRetry={fetchAllData} />}
+      {(availFrom || availUntil) && (
+        <p className="-mt-3 flex flex-wrap items-center gap-x-2 text-[13px] text-ink-secondary">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+          Counting only your available dates:{' '}
+          <span className="font-medium text-foreground tabular-nums">
+            {availFrom ? formatAvailDate(availFrom) : 'from the start'} – {availUntil ? formatAvailDate(availUntil) : 'onward'}
+          </span>
+          <a href="/settings?section=calendar" className="underline decoration-border-strong underline-offset-2 hover:text-foreground">Change</a>
+        </p>
+      )}
 
       <div className="space-y-6">
         {/* Section tabs */}
@@ -901,6 +933,7 @@ export default function AnalyticsPage() {
                 events={calendarEvents}
                 timezone={settings?.timezone || 'UTC'}
                 today={getCurrentDateInTimezone(settings?.timezone || 'UTC')}
+                availability={{ from: settings?.availableFrom, until: settings?.availableUntil }}
               />
             </div>
           </section>
@@ -1652,3 +1685,8 @@ export default function AnalyticsPage() {
 }
 
 export const dynamic = 'force-dynamic';
+
+/** "1 Jan 2026". */
+function formatAvailDate(key: string): string {
+  return new Date(`${key}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}

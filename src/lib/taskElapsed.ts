@@ -187,6 +187,41 @@ export function initialScheduleSlots(
 }
 
 /**
+ * A schedule as it's saved: complete slots only, earliest start first. Slots
+ * are added in any order (an afternoon block, then the morning's work logged
+ * later), but they're always kept and shown in time order.
+ */
+export function orderSlotDrafts<T extends { startTime?: string | null; endTime?: string | null }>(slots: T[]): Array<T & SlotDraft> {
+  return slots
+    .filter((s): s is T & SlotDraft => !!s.startTime && !!s.endTime)
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => a.s.startTime.localeCompare(b.s.startTime) || a.s.endTime.localeCompare(b.s.endTime) || a.i - b.i)
+    .map(({ s }) => s);
+}
+
+/** "HH:MM" now in `timezone` (the browser's zone when not given). */
+export function nowHHMM(timezone?: string, now: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timezone ? { timeZone: timezone } : {}) }).format(now);
+  } catch {
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
+/**
+ * Where an empty end-time picker should start: now, when the slot began
+ * earlier today (logging work just done); otherwise an hour after the start.
+ */
+export function suggestEndTime(startTime: string, timezone?: string, now: Date = new Date()): string {
+  const current = nowHHMM(timezone, now);
+  if (!/^\d{2}:\d{2}$/.test(startTime || '')) return current;
+  if (current > startTime) return current;
+  const [h, m] = startTime.split(':').map(Number);
+  const mins = Math.min(h * 60 + m + 60, 23 * 60 + 59);
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+/**
  * Checks a schedule is complete before it's submitted. A slot with only one
  * end filled in is an error, never silently dropped.
  */

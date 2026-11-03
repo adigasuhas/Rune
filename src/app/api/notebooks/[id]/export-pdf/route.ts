@@ -4,7 +4,7 @@ import path from 'path';
 import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { buildNotebookExportHtml, buildPdfFooterTemplate, ExportOptions, ExportPage, stripPageMetadata } from '@/lib/notebookExport';
+import { buildNotebookExportHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, ExportOptions, ExportPage, pdfStyleFor, stripPageMetadata } from '@/lib/notebookExport';
 import { enforceRateLimit } from '@/lib/rateLimit';
 import { readLocalUpload, mimeForStoredName } from '@/lib/storage';
 
@@ -119,6 +119,45 @@ function getInlinedKatexCssBlock(): string {
   return cachedKatexCssBlock;
 }
 
+let cachedFontBlocks: { page: string; template: Record<string, string> } | null = null;
+
+/**
+ * The text faces the PDF styles use besides KaTeX's (which the KaTeX block
+ * already carries): Geist for Thesis, Newsreader for Preview - the app's own
+ * checked-in font files, inlined so the export needs no network and looks
+ * the same on every host (serverless Chromium ships almost no fonts, which
+ * is what made the old export fall back to a generic sans).
+ *
+ * `template` is a smaller @font-face set for the running head and foot,
+ * which Chromium draws separately and can't share the page's fonts.
+ */
+function getFontBlocks(): { page: string; template: Record<string, string> } {
+  if (cachedFontBlocks) return cachedFontBlocks;
+  const fontsDir = path.join(/*turbopackIgnore: true*/ process.cwd(), 'src', 'app', 'fonts');
+  const katexFonts = resolveKatexDistDir();
+  const read = (file: string) => {
+    try { return fs.readFileSync(file).toString('base64'); } catch { return null; }
+  };
+  const face = (family: string, file: string | null, weight: string, style = 'normal') => {
+    if (!file) return '';
+    const data = read(file);
+    return data ? `@font-face{font-family:'${family}';src:url(data:font/woff2;base64,${data}) format('woff2');font-weight:${weight};font-style:${style};font-display:block;}` : '';
+  };
+  const geist = face('Geist', path.join(fontsDir, 'geist-latin-wght-normal.woff2'), '100 900');
+  const geistMono = face('Geist Mono', path.join(fontsDir, 'geist-mono-latin-wght-normal.woff2'), '100 900');
+  const news = face('Newsreader', path.join(fontsDir, 'newsreader-latin-wght-normal.woff2'), '200 800')
+    + face('Newsreader', path.join(fontsDir, 'newsreader-latin-wght-italic.woff2'), '200 800', 'italic');
+  const cm = katexFonts
+    ? face('KaTeX_Main', path.join(katexFonts, 'fonts', 'KaTeX_Main-Regular.woff2'), '400')
+      + face('KaTeX_Main', path.join(katexFonts, 'fonts', 'KaTeX_Main-Italic.woff2'), '400', 'italic')
+    : '';
+  cachedFontBlocks = {
+    page: `<style>${geist}${geistMono}${news}</style>`,
+    template: { article: cm, thesis: geist, preview: news },
+  };
+  return cachedFontBlocks;
+}
+
 // True on Vercel, AWS Lambda, and Netlify Functions - the common markers each
 // platform sets on its own serverless runtime. Used to pick a bundled,
 // serverless-safe Chromium instead of hunting for a system-installed browser
@@ -229,8 +268,9 @@ export async function POST(
     const options: ExportOptions = {
       notebookTitle: notebook.title,
       projectName: project ? project.name : null,
-      authorName: user?.name || 'User Name',
-      profile: profile === 'research' || profile === 'daily' ? profile : 'full',
+      authorName: user?.name || '',
+      // article (default), thesis or preview - older names map onto them.
+      profile: pdfStyleFor(profile),
       titleFont: typeof titleFont === 'string' ? titleFont : 'Raleway',
       bodyFont: typeof bodyFont === 'string' ? bodyFont : 'Inter',
       includeCover: includeCover !== false,
@@ -240,7 +280,8 @@ export async function POST(
     };
 
     const katexCssBlock = getInlinedKatexCssBlock();
-    const builtHtml = buildNotebookExportHtml(orderedPages, options, katexCssBlock);
+    const fonts = getFontBlocks();
+    const builtHtml = buildNotebookExportHtml(orderedPages, options, katexCssBlock, fonts.page);
     const html = await inlineLocalImages(builtHtml);
 
     const launchOptions = await resolveLaunchOptions();
@@ -288,9 +329,13 @@ export async function POST(
         printBackground: true,
         // Keep the document's own @page margins; the footer prints inside them.
         preferCSSPageSize: true,
-        displayHeaderFooter: options.includeFooter,
-        headerTemplate: '<span></span>',
-        footerTemplate: buildPdfFooterTemplate(notebook.title),
+        displayHeaderFooter: options.includeFooter || options.includeHeader,
+        headerTemplate: options.includeHeader
+          ? buildPdfHeaderTemplate(orderedPages[0]?.title || notebook.title, { profile: options.profile, projectName: options.projectName, fontCss: fonts.template[pdfStyleFor(options.profile)] })
+          : '<span></span>',
+        footerTemplate: options.includeFooter
+          ? buildPdfFooterTemplate(notebook.title, { profile: options.profile, author: options.authorName, fontCss: fonts.template[pdfStyleFor(options.profile)] })
+          : '<span></span>',
       });
       // Never hand back something that isn't a PDF as if it were one.
       if (pdfBuffer.length < 100 || Buffer.from(pdfBuffer.subarray(0, 5)).toString('latin1') !== '%PDF-') {

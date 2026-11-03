@@ -269,3 +269,30 @@ describe('daily worked time - attributed to the day work STARTS (overnight work)
     expect(calculateOccupiedHoursForDay('2026-10-17', [t], ev, ny, undefined, now)).toBe(0);
   });
 });
+
+describe('slots in time order, and where a new time starts', () => {
+  it('a morning slot added after an afternoon one is saved first', async () => {
+    const { orderSlotDrafts } = await import('@/lib/taskElapsed');
+    expect(orderSlotDrafts([
+      { startTime: '14:00', endTime: '16:00' },
+      { startTime: '', endTime: '' },
+      { startTime: '09:30', endTime: '11:00' },
+      { startTime: '09:30', endTime: '10:00' },
+    ])).toEqual([
+      { startTime: '09:30', endTime: '10:00' },
+      { startTime: '09:30', endTime: '11:00' },
+      { startTime: '14:00', endTime: '16:00' },
+    ]);
+  });
+
+  it('an empty time starts at now; an end starts at now when the slot began earlier, else an hour after its start', async () => {
+    const { nowHHMM, suggestEndTime } = await import('@/lib/taskElapsed');
+    const now = new Date('2026-11-03T10:42:00Z');
+    expect(nowHHMM('UTC', now)).toBe('10:42');
+    expect(nowHHMM('Asia/Kolkata', now)).toBe('16:12');
+    expect(suggestEndTime('09:00', 'UTC', now)).toBe('10:42');
+    expect(suggestEndTime('13:15', 'UTC', now)).toBe('14:15');
+    expect(suggestEndTime('23:30', 'UTC', now)).toBe('23:59');
+    expect(suggestEndTime('', 'UTC', now)).toBe('10:42');
+  });
+});

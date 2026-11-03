@@ -65,9 +65,9 @@ export function renderEnvironment(
         : 'text-[10px] font-bold text-ink-secondary tracking-wider uppercase font-mono';
 
       return `
-        <div class="my-6 py-4 px-6 ${borderClass} flex flex-col items-center relative gap-2 page-break-inside-avoid">
-          ${tagValue && !nameClean.endsWith('*') ? `<div class="${labelClass}">Equation (${tagValue})</div>` : ''}
-          <div class="w-full overflow-x-auto py-2 text-center">${rendered}</div>
+        <div class="ltx-equation my-6 py-4 px-6 ${borderClass} flex flex-col items-center relative gap-2 page-break-inside-avoid">
+          ${tagValue && !nameClean.endsWith('*') ? `<div class="ltx-eqlabel ${labelClass}">Equation (${tagValue})</div>` : ''}
+          <div class="ltx-math w-full overflow-x-auto py-2 text-center">${rendered}</div>
         </div>
       `;
     } catch (err) {
@@ -100,11 +100,11 @@ export function renderEnvironment(
       : 'font-bold text-foreground';
 
     return `
-      <div class="my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
-        ${imgUrl ? `<img src="${imgUrl}" alt="${altText}" class="max-h-96 w-auto object-contain rounded-md" />` : '<div class="text-ink-secondary text-xs italic">[No Image Specified]</div>'}
+      <div class="ltx-figure my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
+        ${imgUrl ? `<img src="${imgUrl}" alt="${altText}" class="ltx-img max-h-96 w-auto object-contain rounded-md" />` : '<div class="text-ink-secondary text-xs italic">[No Image Specified]</div>'}
         ${captionText ? `
-          <div class="text-center ${capClass} max-w-lg leading-relaxed">
-            <span class="${tagClass}">Figure ${tagValue || ''}:</span> ${inline(captionText)}
+          <div class="ltx-caption text-center ${capClass} max-w-lg leading-relaxed">
+            <span class="ltx-captag ${tagClass}">Figure ${tagValue || ''}:</span> ${inline(captionText)}
           </div>
         ` : ''}
       </div>
@@ -130,13 +130,13 @@ export function renderEnvironment(
     const tagClass = isPdfExport ? 'font-bold text-gray-800' : 'font-bold text-foreground';
 
     return `
-      <div class="my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
+      <div class="ltx-table my-6 p-4 rounded-md ${borderClass} flex flex-col items-center gap-4 page-break-inside-avoid">
         ${captionText ? `
-          <div class="text-center ${capClass} max-w-lg leading-relaxed">
-            <span class="${tagClass}">Table ${tagValue || ''}:</span> ${inline(captionText)}
+          <div class="ltx-caption text-center ${capClass} max-w-lg leading-relaxed">
+            <span class="ltx-captag ${tagClass}">Table ${tagValue || ''}:</span> ${inline(captionText)}
           </div>
         ` : ''}
-        <div class="w-full overflow-x-auto flex justify-center">${renderedTable}</div>
+        <div class="ltx-tabular-wrap w-full overflow-x-auto flex justify-center">${renderedTable}</div>
       </div>
     `;
   }
@@ -153,7 +153,7 @@ export function renderEnvironment(
       if (nameClean === 'description') {
         const label = item.label || '';
         return `
-          <div class="mb-3">
+          <div class="ltx-ditem mb-3">
             <dt class="font-bold text-foreground">${inline(label)}</dt>
             <dd class="pl-4 text-ink-secondary">${renderedInner}</dd>
           </div>
@@ -163,17 +163,17 @@ export function renderEnvironment(
     }).join('\n');
 
     if (nameClean === 'itemize') {
-      return `<ul class="list-disc pl-6 my-4 space-y-1">${renderedItems}</ul>`;
+      return `<ul class="ltx-list list-disc pl-6 my-4 space-y-1">${renderedItems}</ul>`;
     } else if (nameClean === 'enumerate') {
-      return `<ol class="list-decimal pl-6 my-4 space-y-1">${renderedItems}</ol>`;
+      return `<ol class="ltx-list list-decimal pl-6 my-4 space-y-1">${renderedItems}</ol>`;
     } else {
-      return `<dl class="my-4 space-y-2">${renderedItems}</dl>`;
+      return `<dl class="ltx-description my-4 space-y-2">${renderedItems}</dl>`;
     }
   }
 
   // 5. Verbatim Environment
   if (nameClean === 'verbatim') {
-    return `<pre class="bg-surface-sunken border border-border rounded-md p-4 my-4 overflow-x-auto font-mono text-xs text-foreground"><code>${content}</code></pre>`;
+    return `<pre class="ltx-verbatim bg-surface-sunken border border-border rounded-md p-4 my-4 overflow-x-auto font-mono text-xs text-foreground"><code>${content.replace(/^[ \t]*\r?\n/, '').replace(/\s+$/, '')}</code></pre>`;
   }
 
   // 6. Quote Environment
@@ -182,7 +182,7 @@ export function renderEnvironment(
       ? 'border-l-4 border-gray-300 bg-gray-50 text-gray-700' 
       : 'border-l-4 border-border bg-surface-sunken text-foreground';
     return `
-      <blockquote class="my-4 py-3 pl-5 pr-4 rounded-r-md italic text-sm ${quoteClass} leading-relaxed">
+      <blockquote class="ltx-quote my-4 py-3 pl-5 pr-4 rounded-r-md italic text-sm ${quoteClass} leading-relaxed">
         ${renderNodes(parseLatex(content))}
       </blockquote>
     `;
@@ -194,9 +194,9 @@ export function renderEnvironment(
       ? 'border border-[#e5e7eb] bg-slate-50/20' 
       : 'border border-border bg-surface-sunken/40';
     return `
-      <div class="my-6 p-6 rounded-md ${abstractClass} max-w-2xl mx-auto">
-        <h4 class="text-xs font-bold uppercase tracking-widest text-center text-ink-secondary mb-3 font-mono">Abstract</h4>
-        <div class="italic text-sm text-foreground leading-relaxed text-justify font-serif">
+      <div class="ltx-abstract my-6 p-6 rounded-md ${abstractClass} max-w-2xl mx-auto">
+        <h4 class="ltx-abstract-title text-xs font-bold uppercase tracking-widest text-center text-ink-secondary mb-3 font-mono">Abstract</h4>
+        <div class="ltx-abstract-body italic text-sm text-foreground leading-relaxed text-justify font-serif">
           ${renderNodes(parseLatex(content))}
         </div>
       </div>
@@ -205,8 +205,8 @@ export function renderEnvironment(
 
   // Fallback for custom or unhandled environments
   return `
-    <div class="my-4 p-4 border border-border rounded-md bg-surface-sunken/60">
-      <div class="text-[10px] font-bold text-ink-secondary uppercase tracking-widest font-mono mb-2">Environment: ${name}</div>
+    <div class="ltx-env my-4 p-4 border border-border rounded-md bg-surface-sunken/60">
+      <div class="ltx-env-name text-[10px] font-bold text-ink-secondary uppercase tracking-widest font-mono mb-2"><span class="ltx-env-kind">Environment: </span><span class="ltx-env-title">${escapeAttr(name)}</span></div>
       ${renderNodes(parseLatex(content))}
     </div>
   `;
@@ -253,7 +253,7 @@ function renderTabular(body: string, cols: string, isPdfExport: boolean, inline:
     ? 'border-b border-gray-200 text-gray-700'
     : 'border-b border-border text-foreground';
 
-  let html = `<table class="min-w-[50%] border-collapse border-spacing-0 my-2 text-xs text-left font-light rounded-md overflow-hidden">`;
+  let html = `<table class="ltx-tabular min-w-[50%] border-collapse border-spacing-0 my-2 text-xs text-left font-light rounded-md overflow-hidden">`;
 
   let isFirstRow = true;
   rows.forEach(row => {
@@ -286,9 +286,9 @@ function renderTabular(body: string, cols: string, isPdfExport: boolean, inline:
       const colspanAttr = colspan > 1 ? ` colspan="${colspan}"` : '';
 
       if (isFirstRow) {
-        html += `<th class="${thClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</th>`;
+        html += `<th class="ltx-th ${thClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</th>`;
       } else {
-        html += `<td class="${tdClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</td>`;
+        html += `<td class="ltx-td ${tdClass} p-3"${styleAttr}${colspanAttr}>${inline(cellContent)}</td>`;
       }
       colIndex += colspan;
     });

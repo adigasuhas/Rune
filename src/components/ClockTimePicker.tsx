@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
+import { nowHHMM } from '@/lib/taskElapsed';
 
 interface ClockTimePickerProps {
   value: string; // "HH:MM" 24h format
@@ -9,9 +10,13 @@ interface ClockTimePickerProps {
   placeholder?: string;
   className?: string;
   align?: 'left' | 'right';
+  /** The account's time zone, for "now". */
+  timezone?: string;
+  /** Where an empty picker starts when opened ("HH:MM"); the current time when not given. */
+  suggest?: string;
 }
 
-export function ClockTimePicker({ value, onChange, placeholder = 'Set time', className = '', align = 'left' }: ClockTimePickerProps) {
+export function ClockTimePicker({ value, onChange, placeholder = 'Set time', className = '', align = 'left', timezone, suggest }: ClockTimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<'hour' | 'minute'>('hour'); // 'hour' or 'minute'
   const [selectedHour, setSelectedHour] = useState(12); // 1-12
@@ -128,6 +133,9 @@ export function ClockTimePicker({ value, onChange, placeholder = 'Set time', cla
     <div ref={containerRef} className="relative w-full">
       <div
         onClick={() => {
+          // An empty time starts at the current time (or the suggestion),
+          // already filled in - adjust it on the dial, or keep it.
+          if (!isOpen && !value) onChange(suggest && /^\d{2}:\d{2}$/.test(suggest) ? suggest : nowHHMM(timezone));
           setIsOpen(!isOpen);
           setMode('hour');
         }}

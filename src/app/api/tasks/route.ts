@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { parseDateInTimezone, parseDateTimeInTimezone, toLocalDayKey } from '@/lib/dateUtils';
 import { normalizeSessionType } from '@/lib/sessionType';
+import { orderSlotDrafts } from '@/lib/taskElapsed';
 import { canEditProject, canViewProject } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
 
@@ -134,6 +135,11 @@ export async function POST(req: Request) {
     const tz = owner?.timezone || 'UTC';
     const taskDate = parseDateInTimezone(toLocalDayKey(date, tz), tz);
 
+    // Slots in time order, empty rows dropped: the task's own start/end is
+    // its earliest slot, even when a morning slot was added after an
+    // afternoon one.
+    const orderedSlots = slots ? orderSlotDrafts(slots) : null;
+
     const task = await db.task.create({
       data: {
         name,
@@ -149,8 +155,8 @@ export async function POST(req: Request) {
         impact: impact !== undefined ? Number(impact) : 5,
         status: status || 'PENDING',
         notes: notes || '',
-        startTime: slots && slots.length > 0 ? slots[0].startTime : (startTime || null),
-        endTime: slots && slots.length > 0 ? slots[0].endTime : (endTime || null),
+        startTime: orderedSlots && orderedSlots.length > 0 ? orderedSlots[0].startTime : (startTime || null),
+        endTime: orderedSlots && orderedSlots.length > 0 ? orderedSlots[0].endTime : (endTime || null),
         userId: taskOwnerId,
         assignedById,
         // Delegated tasks start out awaiting the assignee's acknowledgment;
@@ -163,8 +169,8 @@ export async function POST(req: Request) {
       }
     });
 
-    const slotsToCreate = slots && slots.length > 0
-      ? slots.filter((s: any) => s.startTime && s.endTime)
+    const slotsToCreate = orderedSlots && orderedSlots.length > 0
+      ? orderedSlots
       : (startTime && endTime ? [{ startTime, endTime }] : []);
 
     const dateStr = toLocalDayKey(date, tz);

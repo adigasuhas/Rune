@@ -76,7 +76,7 @@ export default function UserGuidePage() {
       <H2>Exporting your work</H2>
       <UL>
         <li><strong className="text-foreground">Tasks (PDF):</strong> on Tasks, select Export, then choose a date range, projects, status, and priority.</li>
-        <li><strong className="text-foreground">Notebook (PDF):</strong> in a notebook, select Export, then choose a profile (Research report, Full, or Minimal).</li>
+        <li><strong className="text-foreground">Notebook (PDF):</strong> in a notebook, select Export, then choose a style: Article (LaTeX article, the default), Thesis (navy headings and pale-blue panels) or Preview (as the preview shows it).</li>
         <li><strong className="text-foreground">Runs (PDF):</strong> on the Runs History tab, select Export PDF to save the runs matching your filters.</li>
         <li><strong className="text-foreground">Objectives (CSV):</strong> on Analytics, under Time by objective, select Export CSV.</li>
       </UL>

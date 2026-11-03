@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Plus, X, AlertCircle } from 'lucide-react';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
+import { suggestEndTime } from '@/lib/taskElapsed';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { SessionType, durationLabel } from '@/lib/sessionType';
 import { Modal } from '@/components/Modal';
@@ -97,7 +98,10 @@ export function TaskFormModal(props: TaskFormModalProps) {
               type="text"
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
-              onBlur={() => setTouched(true)}
+              // Leaving the field empty isn't an error until saving: flagging
+              // it on blur pushed the form down mid-click, so a click on
+              // "More options" (or anything below) landed nowhere.
+              onBlur={() => { if (name.trim()) setTouched(true); }}
               placeholder="What do you need to do?"
               aria-label="Task name"
               aria-invalid={nameEmpty || undefined}
@@ -301,6 +305,7 @@ export function TaskFormModal(props: TaskFormModalProps) {
                       <span className="text-[11.5px] text-ink-secondary font-semibold block mb-1">End</span>
                       <ClockTimePicker
                         value={slot.endTime}
+                        suggest={suggestEndTime(slot.startTime)}
                         onChange={(val) => onSlotsChange(slots.map((s, i) => (i === index ? { ...s, endTime: val } : s)))}
                         placeholder="End"
                         align="right"

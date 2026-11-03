@@ -30,7 +30,7 @@ import { Button, SectionHeader, StatusPill } from '@/components/ui';
 import { ActivityGraph } from '@/components/activity/ActivityGraph';
 import { formatHours } from '@/lib/activity';
 import { calculateOccupiedHoursForDay, getPostponeCount } from '@/lib/analyticsUtils';
-import { getTaskElapsed, formatElapsedMinutes, initialScheduleSlots, validateScheduleSlots } from '@/lib/taskElapsed';
+import { getTaskElapsed, formatElapsedMinutes, initialScheduleSlots, validateScheduleSlots, suggestEndTime } from '@/lib/taskElapsed';
 import { compareManualOrder } from '@/lib/taskOrder';
 import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
 import { getLocalDateString, getCurrentDateInTimezone, parseDateInTimezone, getStartOfDayInTimezone, formatRelativeDeadline, daysUntil } from '@/lib/dateUtils';
@@ -2630,7 +2630,7 @@ function DashboardPage() {
               right={<Link href="/analytics#activity" className="text-[12.5px] text-ink-secondary hover:text-foreground">Full year →</Link>}
             />
             <div className="pt-3">
-              <ActivityGraph compact tasks={tasks as any} events={events as any} timezone={userTimezone} today={getCurrentDateInTimezone(userTimezone)} memberSince={user?.memberSince} footer={<span />} />
+              <ActivityGraph compact tasks={tasks as any} events={events as any} timezone={userTimezone} today={getCurrentDateInTimezone(userTimezone)} memberSince={user?.memberSince} availability={{ from: fullSettings?.availableFrom, until: fullSettings?.availableUntil }} footer={<span />} />
             </div>
           </div>
 
@@ -2938,6 +2938,7 @@ function DashboardPage() {
                           <span className="text-[11.5px] text-muted-foreground font-semibold block mb-1">Start</span>
                           <ClockTimePicker
                             value={slot.startTime}
+                            timezone={userTimezone}
                             onChange={(val) => {
                               const updated = eventSlots.map((s, i) =>
                                 i === index ? { ...s, startTime: val } : s
@@ -2951,6 +2952,8 @@ function DashboardPage() {
                           <span className="text-[11.5px] text-muted-foreground font-semibold block mb-1">End</span>
                           <ClockTimePicker
                             value={slot.endTime}
+                            suggest={suggestEndTime(slot.startTime, userTimezone)}
+                            timezone={userTimezone}
                             onChange={(val) => {
                               const updated = eventSlots.map((s, i) =>
                                 i === index ? { ...s, endTime: val } : s
@@ -2988,6 +2991,7 @@ function DashboardPage() {
                       <label className="block text-[12.5px] font-semibold text-muted-foreground mb-2">Start *</label>
                       <ClockTimePicker
                         value={eventStart}
+                        timezone={userTimezone}
                         onChange={(val) => setEventStart(val)}
                       />
                     </div>
@@ -2995,6 +2999,8 @@ function DashboardPage() {
                       <label className="block text-[12.5px] font-semibold text-muted-foreground mb-2">End *</label>
                       <ClockTimePicker
                         value={eventEnd}
+                        suggest={suggestEndTime(eventStart, userTimezone)}
+                        timezone={userTimezone}
                         onChange={(val) => setEventEnd(val)}
                         align="right"
                       />
@@ -3186,6 +3192,7 @@ function DashboardPage() {
                         <label className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">Actual start</label>
                         <ClockTimePicker
                           value={slot.startTime}
+                          timezone={userTimezone}
                           onChange={(val) => {
                             const updated = completeTaskModal.slots.map((s, i) =>
                               i === index ? { ...s, startTime: val } : s
@@ -3199,6 +3206,8 @@ function DashboardPage() {
                         <label className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">Actual end</label>
                         <ClockTimePicker
                           value={slot.endTime}
+                          suggest={suggestEndTime(slot.startTime, userTimezone)}
+                          timezone={userTimezone}
                           onChange={(val) => {
                             const updated = completeTaskModal.slots.map((s, i) =>
                               i === index ? { ...s, endTime: val } : s

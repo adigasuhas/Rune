@@ -734,3 +734,9 @@ body {
 /* The kind's colour pulled toward the ink: >= 4.5:1 on its own tint in both themes. */
 .day-text { color: color-mix(in oklab, var(--day-c) 55%, var(--text)); }
 :root[data-theme="dark"] .day-text { color: color-mix(in oklab, var(--day-c) 75%, var(--text)); }
+
+/* Tasks calendar: the month collapsing to one week, and the day's agenda
+   opening under it. One short settle, no movement under reduced motion. */
+.cal-reveal { animation: cal-reveal 220ms var(--ease-out) both; }
+@keyframes cal-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cal-reveal { animation: none; } }

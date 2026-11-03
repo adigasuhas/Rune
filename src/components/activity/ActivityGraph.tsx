@@ -33,6 +33,9 @@ const LEVEL_BG = [
   'var(--primary)',
 ];
 
+// Days outside the availability dates: hatched, like "Not available" on the Tasks calendar.
+const OUTSIDE_BG = 'repeating-linear-gradient(135deg, var(--surface-sunken) 0 2px, transparent 2px 4px)';
+
 // One formatter for every cell's label (a year is ~370 of them per render).
 let longFmt: Intl.DateTimeFormat | null = null;
 function longDate(ymd: string) {
@@ -48,6 +51,7 @@ export function ActivityGraph({
   compact = false,
   footer,
   memberSince,
+  availability,
 }: {
   tasks: AnyTask[];
   events: AnyEvent[];
@@ -57,7 +61,18 @@ export function ActivityGraph({
   footer?: React.ReactNode;
   /** The day the account was created (YYYY-MM-DD) - compact mode never starts before it. */
   memberSince?: string | null;
+  /**
+   * Settings -> "When you're available". Only these dates count: the graph
+   * starts no earlier and ends no later than them, and any day outside them
+   * that's still on screen is drawn hatched and holds no time.
+   */
+  availability?: { from?: string | null; until?: string | null };
 }) {
+  const availFrom = availability?.from && availability.from <= today ? availability.from : null;
+  const availUntil = availability?.until && (!availFrom || availability.until >= availFrom) ? availability.until : null;
+  const inWindow = (d: string) => (!availFrom || d >= availFrom) && (!availUntil || d <= availUntil);
+  // The last day shown: today, or the last available day if that's earlier.
+  const lastDay = availUntil && availUntil < today ? availUntil : today;
   // Periods: the last 12 months, plus every calendar year that has any data.
   const years = useMemo(() => {
     const ys = new Set<string>();
@@ -82,31 +97,38 @@ export function ActivityGraph({
   }, []);
   const fitWeeks = boxW ? Math.max(4, Math.floor((boxW - LABEL_W + GAP) / (MIN_CELL + GAP))) : compact ? RECENT_WEEKS_DEFAULT : 53;
   // Compact (Today): an adaptive range - see recentWeeksStart.
-  const compactStart = useMemo(
-    () => (compact ? recentWeeksStart({ today, memberSince, firstActivity: firstActiveDay(tasks, events, timezone, today) }) : null),
-    [compact, today, memberSince, tasks, events, timezone]
-  );
-  const wantWeeks = compactStart ? Math.floor((Date.parse(`${mondayOf(today)}T12:00:00Z`) - Date.parse(`${compactStart}T12:00:00Z`)) / 604_800_000) + 1 : 53;
+  const compactStart = useMemo(() => {
+    if (!compact) return null;
+    const start = recentWeeksStart({ today: lastDay, memberSince, firstActivity: firstActiveDay(tasks, events, timezone, lastDay) });
+    // Never before the week availability begins.
+    return availFrom && mondayOf(availFrom) > start ? mondayOf(availFrom) : start;
+  }, [compact, lastDay, memberSince, tasks, events, timezone, availFrom]);
+  const wantWeeks = compactStart ? Math.floor((Date.parse(`${mondayOf(lastDay)}T12:00:00Z`) - Date.parse(`${compactStart}T12:00:00Z`)) / 604_800_000) + 1 : 53;
   const shownWeeks = Math.min(wantWeeks, fitWeeks);
 
   const { days } = useMemo(() => {
-    let end = today;
+    let end = lastDay;
     let start: string;
     if (compactStart) {
       // The adaptive start, or as many recent weeks as fit on a narrow screen.
-      const fitStart = addDaysYmd(mondayOf(today), -7 * (shownWeeks - 1));
+      const fitStart = addDaysYmd(mondayOf(lastDay), -7 * (shownWeeks - 1));
       start = fitStart > compactStart ? fitStart : compactStart;
-    } else if (compact || period === 'last') start = rangeStart(today, shownWeeks);
+    } else if (compact || period === 'last') start = rangeStart(lastDay, shownWeeks);
     else {
-      end = period === today.slice(0, 4) ? today : `${period}-12-31`;
+      end = period === lastDay.slice(0, 4) ? lastDay : `${period}-12-31`;
       const yearStart = rangeStart(`${period}-01-07`, 1); // the Monday on or before 1 January
       const fitStart = rangeStart(end, shownWeeks);
       start = fitStart > yearStart ? fitStart : yearStart;
     }
-    return { days: dailyActivity(tasks, events, timezone, start, end) };
-  }, [tasks, events, timezone, today, period, shownWeeks, compact, compactStart]);
+    const all = dailyActivity(tasks, events, timezone, start, end);
+    return { days: availFrom || availUntil ? all.map((d) => (inWindow(d.date) ? d : { ...d, hours: 0, completed: 0, level: 0 as const, outside: true })) : all };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, events, timezone, lastDay, period, shownWeeks, compact, compactStart, availFrom, availUntil]);
 
-  const summary = useMemo(() => summarize(days.filter((d) => period === 'last' || compact || d.date.startsWith(period))), [days, period, compact]);
+  const summary = useMemo(() => summarize(days.filter((d) => !d.outside && (period === 'last' || compact || d.date.startsWith(period)))), [days, period, compact]);
+  const windowNote = availFrom || availUntil
+    ? `Counting only your available dates${availFrom ? ` from ${longDate(availFrom)}` : ''}${availUntil ? ` until ${longDate(availUntil)}` : ''}.`
+    : null;
 
   // Columns are weeks (Monday first).
   const weeks: (DayActivity | null)[][] = [];
@@ -158,7 +180,7 @@ export function ActivityGraph({
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <p className="text-[15px] text-ink-secondary">
             <span className="font-serif text-[26px] font-medium tracking-[-0.02em] text-foreground tabular-nums">{formatHours(summary.totalHours)}</span>{' '}
-            {period === 'last' ? 'worked in the last year' : `worked in ${period}`}
+            {period === 'last' ? (availFrom || availUntil ? 'worked in your available dates' : 'worked in the last year') : `worked in ${period}`}
           </p>
           <label className="flex items-center gap-2 text-[13px] text-ink-secondary">
             <span className="sr-only">Period</span>
@@ -199,12 +221,12 @@ export function ActivityGraph({
                     <span
                       key={r}
                       role="gridcell"
-                      aria-label={`${longDate(d.date)}: ${d.hours ? formatHours(d.hours) : 'no recorded work'}`}
+                      aria-label={`${longDate(d.date)}: ${d.outside ? 'outside your available dates' : d.hours ? formatHours(d.hours) : 'no recorded work'}`}
                       aria-selected={on}
                       onMouseEnter={() => setActive(idx)}
                       onClick={() => setPinned(idx)}
                       className="rounded-[3px] transition-transform duration-100"
-                      style={{ width: CELL, height: CELL, background: LEVEL_BG[d.level], outline: on ? '1.5px solid var(--text)' : undefined, outlineOffset: 1, transform: on ? 'scale(1.15)' : undefined, boxShadow: d.date === today ? 'inset 0 0 0 1px color-mix(in srgb, var(--text) 45%, transparent)' : undefined }}
+                      style={{ width: CELL, height: CELL, background: d.outside ? OUTSIDE_BG : LEVEL_BG[d.level], outline: on ? '1.5px solid var(--text)' : undefined, outlineOffset: 1, transform: on ? 'scale(1.15)' : undefined, boxShadow: d.date === today ? 'inset 0 0 0 1px color-mix(in srgb, var(--text) 45%, transparent)' : undefined }}
                     />
                   );
                 })}
@@ -219,7 +241,7 @@ export function ActivityGraph({
               style={{ left: cardLeft, top: 18 + (activeRow + 1) * (CELL + GAP) + 4 }}
             >
               <p className="font-semibold text-foreground">{longDate(activeDay.date)}</p>
-              <p className="mt-0.5 text-foreground">{activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}</p>
+              <p className="mt-0.5 text-foreground">{activeDay.outside ? 'Outside your available dates' : activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}</p>
               {activeDay.completed > 0 && <p className="text-ink-secondary">{activeDay.completed} {activeDay.completed === 1 ? 'task' : 'tasks'} completed</p>}
             </div>
           )}
@@ -235,7 +257,7 @@ export function ActivityGraph({
             <>
               <p className="truncate font-semibold text-foreground">{longDate(activeDay.date)}</p>
               <p className="truncate text-ink-secondary">
-                {activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}
+                {activeDay.outside ? 'Outside your available dates' : activeDay.hours ? `${formatHours(activeDay.hours)} of focused work` : 'No recorded work'}
                 {activeDay.completed > 0 ? ` · ${activeDay.completed} ${activeDay.completed === 1 ? 'task' : 'tasks'} completed` : ''}
               </p>
             </>
@@ -247,6 +269,7 @@ export function ActivityGraph({
       {compact && summary.totalHours === 0 && (
         <p className="mt-2 text-[12.5px] text-ink-secondary">Nothing tracked yet. These weeks fill in as you complete tasks and calendar blocks.</p>
       )}
+      {windowNote && <p className="mt-2 text-[12px] text-ink-secondary">{windowNote}</p>}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-[12px] text-ink-faint">
         {footer ?? <span>{trimmed ? `The last ${shownWeeks} weeks fit here; widen the window for the full year. ` : ''}Time from completed calendar blocks and timed tasks.</span>}
         <span className="flex items-center gap-1.5" aria-hidden="true">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildNotebookExportHtml, buildPdfFooterTemplate, type ExportOptions } from '@/lib/notebookExport';
+import { buildNotebookExportHtml, buildPdfFooterTemplate, buildPdfHeaderTemplate, pdfStyleFor, type ExportOptions } from '@/lib/notebookExport';
 
 /**
  * The HTML the PDF export hands to Chromium. The PDF itself is checked end to
@@ -53,15 +53,45 @@ describe('notebook PDF export HTML', () => {
 
   it('no longer prints a static "Page 1 of 1" - page numbers come from the print footer', () => {
     expect(build('Text')).not.toMatch(/Page \d+ of \d+/);
-    const footer = buildPdfFooterTemplate('Pt catalyst stability');
-    expect(footer).toContain('class="pageNumber"');
-    expect(footer).toContain('class="totalPages"');
-    expect(footer).toContain('Pt catalyst stability');
+    // Article: LaTeX's plain page number, centred.
+    expect(buildPdfFooterTemplate('Pt catalyst stability')).toContain('class="pageNumber"');
+    // Thesis: the deck's footline - author left, n/N right.
+    const thesis = buildPdfFooterTemplate('Pt catalyst stability', { profile: 'thesis', author: 'Suhas' });
+    expect(thesis).toContain('Suhas');
+    expect(thesis).toMatch(/class="pageNumber"><\/span>\/<span class="totalPages"/);
+    // Preview: the title and "n of N".
+    const preview = buildPdfFooterTemplate('Pt catalyst stability', { profile: 'preview' });
+    expect(preview).toContain('Pt catalyst stability');
+    expect(preview).toContain('class="totalPages"');
   });
 
-  it('escapes the notebook title in the footer', () => {
-    const footer = buildPdfFooterTemplate('<img src=x onerror=alert(1)>');
-    expect(footer).not.toContain('<img');
+  it('escapes the notebook title and project in the running head and foot', () => {
+    expect(buildPdfFooterTemplate('<img src=x onerror=alert(1)>', { profile: 'preview' })).not.toContain('<img');
+    expect(buildPdfHeaderTemplate('<img src=x onerror=alert(1)>', { projectName: '<b>x</b>' })).not.toMatch(/<img|<b>/);
+  });
+
+  it('typesets the default style like a LaTeX article', () => {
+    const html = build(String.raw`\section{Results} text \section*{Thanks} more`);
+    expect(html).toContain('KaTeX_Main'); // Computer Modern, the same face as the maths
+    expect(html).toMatch(/h2\.ltx-1:not\(\.ltx-nonum\)::before \{ content: counter\(sec\)/); // numbered sections
+    expect(html).toContain('ltx-1 ltx-nonum'); // \section* stays unnumbered
+    expect(html).toContain('text-align: justify');
+    expect(html).toMatch(/class="title-block"[\s\S]*Suhas[\s\S]*\d{4}/); // \maketitle: title, author, date
+  });
+
+  it('maps old profile names onto the styles', () => {
+    expect(pdfStyleFor('research')).toBe('article');
+    expect(pdfStyleFor(undefined)).toBe('article');
+    expect(pdfStyleFor('full')).toBe('thesis');
+    expect(pdfStyleFor('minimal')).toBe('preview');
+    expect(build('x', { profile: 'thesis' })).toContain('#000061');
+  });
+
+  it('prints coloured text in its colour instead of dropping it', () => {
+    const html = build(String.raw`\textcolor[HTML]{B20000}{red words} and \textcolor{#3b82f6}{blue} and \colorbox[HTML]{FDE7A8}{marked}`);
+    expect(html).toContain('color: #b20000;">red words');
+    expect(html).toContain('color: #3b82f6;">blue');
+    expect(html).toContain('background-color: #fde7a8');
   });
 
   it('wraps long code lines instead of letting them run off the page', () => {

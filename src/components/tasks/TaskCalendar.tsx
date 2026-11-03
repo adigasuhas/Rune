@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { addDays, monthGrid, monthOf, plannedHours, shiftMonth, type CalendarEntry } from '@/app/tasks/taskCalendar';
 import type { Task } from '@/app/tasks/types';
 import { DAY_KIND_LABEL, DAY_KIND_SHORT, formatHours, intensityLevel, isWeekend, type DayKind } from '@/lib/timeOff';
@@ -22,8 +22,14 @@ import { DAY_KIND_LABEL, DAY_KIND_SHORT, formatHours, intensityLevel, isWeekend,
  * reads as a heat map of where the time went. Leave, sick and other days
  * also say so in words, so colour is never the only cue.
  *
+ * Picking a day collapses the month to that day's week, with the day's
+ * full agenda below it (drawn by the page). The week row keeps the same
+ * cells, so switching days stays one click, and "Show the month" opens it
+ * back out. A busy day never has to squeeze into a month cell.
+ *
  * Keyboard: one tab stop (the focused day); arrow keys move a day or a
- * week, Page Up/Down a month, Home/End the week's ends, Enter picks.
+ * week, Page Up/Down a month, Home/End the week's ends, Enter picks. In the
+ * collapsed week the arrows pick as they move, so the agenda follows.
  */
 
 const MAX_CHIPS = 3;
@@ -33,7 +39,7 @@ const WEEKDAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', '
 const labelDate = (key: string, opts: Intl.DateTimeFormatOptions) =>
   new Date(`${key}T12:00:00Z`).toLocaleDateString([], { ...opts, timeZone: 'UTC' });
 
-function tickClass(task: Task): string {
+export function tickClass(task: Task): string {
   if (task.status === 'COMPLETED') return 'bg-border';
   if (task.status === 'IN_PROGRESS') return 'bg-primary';
   if (task.status === 'BLOCKED') return 'bg-[var(--color-data-slate)]';
@@ -71,17 +77,24 @@ interface Props {
   dayInfo?: Record<string, DayInfo>;
   /** Length of the working day in hours, the scale for the shading. */
   dayHours?: number;
+  /** Show only the picked day's week (the page shows the day's agenda below). */
+  collapsed?: boolean;
+  /** Open the collapsed week back out to the month. */
+  onExpand?: () => void;
 }
 
-export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, todayKey, selectedDate, onSelectDate, onOpenTask, dayInfo = {}, dayHours = 8 }: Props) {
+export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, todayKey, selectedDate, onSelectDate, onOpenTask, dayInfo = {}, dayHours = 8, collapsed = false, onExpand }: Props) {
   const weeks = React.useMemo(() => monthGrid(month), [month]);
+  const collapsedWeek = collapsed && selectedDate ? weeks.find((w) => w.some((d) => d.key === selectedDate)) ?? null : null;
+  const shownWeeks = collapsedWeek ? [collapsedWeek] : weeks;
   const gridRef = React.useRef<HTMLDivElement>(null);
   const [lastFocus, setFocusKey] = React.useState<string | null>(null);
   const pendingFocus = React.useRef(false);
   // The roving tab stop always sits in the month on screen: the day last
   // moved to, else the picked day, else today, else the 1st.
   const focusKey =
-    lastFocus && monthOf(lastFocus) === month ? lastFocus
+    collapsedWeek ? (lastFocus && collapsedWeek.some((d) => d.key === lastFocus) ? lastFocus : selectedDate!)
+    : lastFocus && monthOf(lastFocus) === month ? lastFocus
     : selectedDate && monthOf(selectedDate) === month ? selectedDate
     : monthOf(todayKey) === month ? todayKey
     : `${month}-01`;
@@ -91,7 +104,7 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
     if (!pendingFocus.current) return;
     pendingFocus.current = false;
     gridRef.current?.querySelector<HTMLButtonElement>(`[data-day="${focusKey}"]`)?.focus();
-  }, [focusKey, weeks]);
+  }, [focusKey, weeks, collapsedWeek]);
 
   const timeLabel = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: timezone });
 
@@ -111,42 +124,70 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
     e.preventDefault();
     pendingFocus.current = true;
     setFocusKey(next);
-    if (monthOf(next) !== month) onMonthChange(monthOf(next));
+    if (collapsedWeek) onSelectDate(next);
+    else if (monthOf(next) !== month) onMonthChange(monthOf(next));
   };
 
   const monthTitle = labelDate(`${month}-01`, { month: 'long', year: 'numeric' });
+  // The week as the reader's locale writes a range: "November 2 – 8, 2026"
+  // or "2–8 November 2026"; short months on phones.
+  const weekRange = (month: 'long' | 'short') => {
+    if (!collapsedWeek) return null;
+    const a = new Date(`${collapsedWeek[0].key}T12:00:00Z`), b = new Date(`${collapsedWeek[6].key}T12:00:00Z`);
+    const fmt = new Intl.DateTimeFormat([], { day: 'numeric', month, ...(month === 'long' ? { year: 'numeric' as const } : {}), timeZone: 'UTC' });
+    try { return fmt.formatRange(a, b); } catch { return `${fmt.format(a)} – ${fmt.format(b)}`; }
+  };
+  const weekTitle = weekRange('long');
+  const weekTitleShort = weekRange('short');
+  const step = (dir: -1 | 1) => (collapsedWeek && selectedDate ? onSelectDate(addDays(selectedDate, dir * 7)) : onMonthChange(shiftMonth(month, dir)));
 
   return (
     <section aria-label="Task calendar" className="space-y-3">
       <div className="flex items-center gap-1.5">
         <button
-          onClick={() => onMonthChange(shiftMonth(month, -1))}
+          onClick={() => step(-1)}
           className="grid h-8 w-8 place-items-center text-ink-faint hover:text-foreground hover:bg-surface-sunken rounded-[8px] transition-colors"
-          title="Previous month" aria-label="Previous month"
+          title={collapsedWeek ? 'Previous week' : 'Previous month'} aria-label={collapsedWeek ? 'Previous week' : 'Previous month'}
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <h2 className="min-w-[10.5rem] text-center font-serif text-[21px] font-medium tracking-[-0.01em] text-foreground" aria-live="polite">
-          {monthTitle}
+        <h2 className="min-w-[8.5rem] whitespace-nowrap text-center font-serif text-[19px] font-medium tracking-[-0.01em] text-foreground sm:min-w-[10.5rem] sm:text-[21px]" aria-live="polite">
+          {weekTitle ? (<><span className="sm:hidden">{weekTitleShort}</span><span className="hidden sm:inline">{weekTitle}</span></>) : monthTitle}
         </h2>
         <button
-          onClick={() => onMonthChange(shiftMonth(month, 1))}
+          onClick={() => step(1)}
           className="grid h-8 w-8 place-items-center text-ink-faint hover:text-foreground hover:bg-surface-sunken rounded-[8px] transition-colors"
-          title="Next month" aria-label="Next month"
+          title={collapsedWeek ? 'Next week' : 'Next month'} aria-label={collapsedWeek ? 'Next week' : 'Next month'}
         >
           <ChevronRight className="w-4 h-4" />
         </button>
-        {month !== monthOf(todayKey) && (
+        {!collapsedWeek && month !== monthOf(todayKey) && (
           <button onClick={() => onMonthChange(monthOf(todayKey))} className="ml-1 text-[13px] text-ink-secondary hover:text-foreground transition-colors">
             This month
           </button>
         )}
+        <span className="ml-auto" />
+        {collapsedWeek ? (
+          <button
+            onClick={onExpand}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-foreground"
+          >
+            <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" /> <span className="whitespace-nowrap">Show the month</span>
+          </button>
+        ) : selectedDate && monthOf(selectedDate) === month ? (
+          <button
+            onClick={() => onSelectDate(selectedDate)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-foreground"
+          >
+            <ChevronsDownUp className="h-3.5 w-3.5" aria-hidden="true" /> <span className="whitespace-nowrap">Collapse to {labelDate(selectedDate, { day: 'numeric', month: 'short' })}</span>
+          </button>
+        ) : null}
       </div>
 
       <div
         ref={gridRef}
         role="grid"
-        aria-label={monthTitle}
+        aria-label={weekTitle ? `Week of ${weekTitle}` : monthTitle}
         onKeyDown={onKeyDown}
         className="overflow-hidden rounded-[12px] border border-border bg-border"
       >
@@ -158,9 +199,11 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
             </div>
           ))}
         </div>
-        {weeks.map((week) => (
-          <div key={week[0].key} role="row" className="mt-px grid grid-cols-7 gap-px">
-            {week.map((day) => {
+        {shownWeeks.map((week) => (
+          <div key={week[0].key} role="row" className={`mt-px grid grid-cols-7 gap-px ${collapsedWeek ? 'cal-reveal' : ''}`}>
+            {week.map((cellDay) => {
+              // The collapsed week shows all seven days in full, whichever month they're in.
+              const day = collapsedWeek ? { ...cellDay, inMonth: true } : cellDay;
               const entries = entriesByDay[day.key] ?? [];
               const open = entries.filter((e) => e.task.status !== 'COMPLETED').length;
               const hours = plannedHours(entries);
@@ -304,7 +347,7 @@ export function TaskCalendar({ month, onMonthChange, entriesByDay, timezone, tod
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-primary" />In progress</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-[var(--color-data-slate)]" />Blocked</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-3 w-[2.5px] rounded-full bg-border" />Done</span>
-        <span className="ml-auto">Top right: hours planned. Pick a day to see and edit its tasks below.</span>
+        <span className="ml-auto">Top right: hours planned. Pick a day to open its agenda.</span>
       </p>
     </section>
   );

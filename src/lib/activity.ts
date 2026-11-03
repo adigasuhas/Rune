@@ -13,7 +13,7 @@
 import { calculateOccupiedHoursFromItems } from './analyticsUtils';
 import { getLocalDateString } from './dateUtils';
 
-export type DayActivity = { date: string; hours: number; completed: number; level: 0 | 1 | 2 | 3 | 4 };
+export type DayActivity = { date: string; hours: number; completed: number; level: 0 | 1 | 2 | 3 | 4; /** Outside the availability dates: shown, never counted. */ outside?: boolean };
 
 /** Upper bounds (hours) for levels 1-3; anything above the last is level 4. */
 export const LEVEL_BOUNDS = [1.5, 3.5, 5.5] as const;

@@ -17,6 +17,7 @@ import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/l
 import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
 import { ReorderableTaskList } from '@/components/tasks/ReorderableTaskList';
 import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
+import { PlannedHoursBadge, ElapsedHoursBadge, SpentHoursBadge } from '@/components/tasks/SectionHours';
 import {
   CheckSquare,
   Plus,
@@ -42,8 +43,9 @@ import {
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
-import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow } from '@/lib/taskElapsed';
+import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow, suggestEndTime } from '@/lib/taskElapsed';
 import { TaskCalendar, type DayInfo } from '@/components/tasks/TaskCalendar';
+import { DayAgenda } from '@/components/tasks/DayAgenda';
 import { groupTasksByDay, monthGrid, monthOf, plannedHours } from './taskCalendar';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
@@ -83,6 +85,9 @@ export default function TasksPage() {
   // page always renders as a list first so the server and client agree.
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
+  // Calendar only: the month collapsed to the picked day's week, with that
+  // day's agenda below it.
+  const [calendarCollapsed, setCalendarCollapsed] = useState(false);
   useEffect(() => {
     try {
       if (window.localStorage.getItem('rune-tasks-view') === 'calendar') setView('calendar');
@@ -1142,8 +1147,9 @@ export default function TasksPage() {
       if (k) (eventsByDay[k] ??= []).push(e);
     }
     const now = new Date();
-    for (const { key, inMonth } of monthGrid(shownMonth).flat()) {
-      if (!inMonth) continue;
+    // Every day on the grid, neighbouring months' included: the collapsed
+    // week shows them all in full.
+    for (const { key } of monthGrid(shownMonth).flat()) {
       const entry = entries.get(key);
       out[key] = {
         kind: dayKind(key, entries, availability),
@@ -1170,7 +1176,9 @@ export default function TasksPage() {
   // A task picked on the calendar: show its day below, open its row and
   // bring it into view.
   const openTaskFromCalendar = (task: Task, dayKey: string) => {
+    setCalendarMonth(monthOf(dayKey));
     setSelectedDate(dayKey);
+    setCalendarCollapsed(true);
     setStatusFilter('ALL');
     setExpandedPostponeTaskIds(p => ({ ...p, [task.id]: true }));
     const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -1332,14 +1340,22 @@ export default function TasksPage() {
           )}
         </div>
         )}
-        {view === 'calendar' && selectedDate && (
-          <button onClick={() => setSelectedDate(null)} className="text-[13px] text-ink-secondary hover:text-foreground transition-colors">
-            Show all days
-          </button>
-        )}
         </div>
 
         <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+          {view === 'calendar' && (
+            <div className="relative min-w-0 flex-1 sm:flex-none">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" aria-hidden="true" />
+              <input
+                type="text"
+                placeholder="Find a task…"
+                aria-label="Find a task"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 w-full sm:w-48 bg-surface border border-border rounded-[9px] pl-9 pr-3 text-[13.5px] text-foreground placeholder-ink-faint focus:outline-none focus:border-border-strong"
+              />
+            </div>
+          )}
           <select
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
@@ -1372,12 +1388,28 @@ export default function TasksPage() {
           timezone={userTimezone}
           todayKey={todayStr}
           selectedDate={selectedDate}
-          onSelectDate={(key) => { setCalendarMonth(monthOf(key)); setSelectedDate(key === selectedDate ? null : key); }}
+          onSelectDate={(key) => { setCalendarMonth(monthOf(key)); setSelectedDate(key); setCalendarCollapsed(true); }}
           onOpenTask={openTaskFromCalendar}
           dayInfo={calendarDayInfo}
           dayHours={dayHours}
+          collapsed={calendarCollapsed}
+          onExpand={() => setCalendarCollapsed(false)}
         />
       )}
+
+      {view === 'calendar' && calendarCollapsed && selectedDate && (
+        <DayAgenda
+          dayKey={selectedDate}
+          isToday={selectedDate === todayStr}
+          entries={calendarEntries[selectedDate] ?? []}
+          info={calendarDayInfo[selectedDate]}
+          timezone={userTimezone}
+          renderRow={(task) => renderTaskRow(formatTasks([task])[0])}
+          onAdd={openCreateModal}
+        />
+      )}
+
+      {view === 'list' && (<>
 
       {/* Segmented state bar + search */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1454,9 +1486,16 @@ export default function TasksPage() {
             <div key={group.key}>
               <SectionHeader
                 title={group.label}
-                meta={group.key === 'PENDING' && statusFilter !== 'POSTPONED'
-                  ? <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">{group.tasks.length}<PlannedHoursBadge planned={selectedDate ? plannedByDay[selectedDate] ?? 0 : plannedHours(group.tasks.map((task) => ({ task })))} dayHours={selectedDate ? dayHours : null} dayLabel={selectedDate === todayStr ? 'today' : selectedDate ? new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : null} /></span>
-                  : group.tasks.length}
+                meta={statusFilter === 'POSTPONED' || group.key === 'BLOCKED'
+                  ? group.tasks.length
+                  : (
+                    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      {group.tasks.length}
+                      {group.key === 'PENDING' && <PlannedHoursBadge planned={selectedDate ? plannedByDay[selectedDate] ?? 0 : plannedHours(group.tasks.map((task) => ({ task })))} dayHours={selectedDate ? dayHours : null} dayLabel={selectedDate === todayStr ? 'today' : selectedDate ? new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : null} />}
+                      {group.key === 'IN_PROGRESS' && <ElapsedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />}
+                      {group.key === 'COMPLETED' && <SpentHoursBadge tasks={group.tasks} />}
+                    </span>
+                  )}
               />
               {group.key === 'PENDING' && statusFilter !== 'POSTPONED' ? (
                 <ReorderableTaskList tasks={group.tasks} renderRow={renderTaskRow} onCommit={commitTodoOrder} />
@@ -1469,6 +1508,7 @@ export default function TasksPage() {
           ))}
         </div>
       )}
+      </>)}
 
       {blockingTask && (
         <BlockTaskDialog
@@ -1793,6 +1833,7 @@ export default function TasksPage() {
                         <label className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">Actual start</label>
                         <ClockTimePicker
                           value={slot.startTime}
+                          timezone={userTimezone}
                           onChange={(val) => {
                             const updated = completeTaskModal.slots.map((s, i) =>
                               i === index ? { ...s, startTime: val } : s
@@ -1806,6 +1847,8 @@ export default function TasksPage() {
                         <label className="block text-[11.5px] font-semibold text-muted-foreground mb-1.5">Actual end</label>
                         <ClockTimePicker
                           value={slot.endTime}
+                          suggest={suggestEndTime(slot.startTime, userTimezone)}
+                          timezone={userTimezone}
                           onChange={(val) => {
                             const updated = completeTaskModal.slots.map((s, i) =>
                               i === index ? { ...s, endTime: val } : s
@@ -1902,30 +1945,3 @@ export default function TasksPage() {
   );
 }
 export const dynamic = 'force-dynamic';
-
-/**
- * Beside "To do": the hours planned for the day on screen (every task on it,
- * done or not) against the length of the working day, as a figure and a
- * small meter. With no day picked it's the To do list's own total.
- */
-function PlannedHoursBadge({ planned, dayHours, dayLabel }: { planned: number; dayHours: number | null; dayLabel: string | null }) {
-  if (!(planned > 0) && dayHours === null) return null;
-  const over = dayHours !== null && planned > dayHours;
-  const fill = dayHours ? Math.min(planned / dayHours, 1) : 0;
-  return (
-    <span
-      className={`inline-flex h-6 items-center gap-2 rounded-full border px-2.5 text-[12px] font-normal ${over ? 'border-warning/40 bg-warning-soft text-warning' : 'border-border bg-surface text-ink-secondary'}`}
-      title={dayHours !== null ? `${formatHours(planned)} planned${dayLabel ? ` for ${dayLabel}` : ''}, against a ${formatHours(dayHours)} working day` : undefined}
-    >
-      {dayHours !== null && (
-        <span aria-hidden="true" className="relative h-1.5 w-10 overflow-hidden rounded-full bg-surface-sunken">
-          <span className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-warning' : 'bg-primary'}`} style={{ width: `${Math.max(fill * 100, planned > 0 ? 6 : 0)}%` }} />
-        </span>
-      )}
-      <span className="tabular-nums">
-        <span className={`font-semibold ${over ? '' : 'text-foreground'}`}>{formatHours(planned)}</span> planned{dayLabel ? ` ${dayLabel === 'today' ? 'today' : `for ${dayLabel}`}` : ''}
-        {dayHours !== null && <span className={over ? '' : 'text-ink-faint'}> · {over ? `${formatHours(planned - dayHours)} over` : `of ${formatHours(dayHours)}`}</span>}
-      </span>
-    </span>
-  );
-}
