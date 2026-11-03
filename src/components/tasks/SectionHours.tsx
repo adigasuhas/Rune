@@ -5,14 +5,12 @@ import { getTaskElapsed, formatElapsedMinutes } from '@/lib/taskElapsed';
 import { formatHours } from '@/lib/timeOff';
 
 /**
- * The hours beside each section heading on the Tasks list - one figure and
- * one small meter, read the same way in every section:
+ * The hours beside the In progress heading on the Tasks list - one figure
+ * and one small meter:
  *
- *   To do        2.5h planned today · of 8h      (against the working day)
  *   In progress  1h20m elapsed · of 3h planned   (live, every session counted)
- *   Done         4.5h spent · 0.5h over plan     (against what was planned)
  *
- * The meter fills toward the second figure; past it, it stays full and the
+ * The meter fills toward the planned time; past it, it stays full and the
  * badge turns the warning tone, and the words say "over" so colour is never
  * the only cue.
  */
@@ -45,23 +43,6 @@ function Meter({ value, of, over, lead, tail, title }: { value: number; of: numb
 
 const strong = (over: boolean, text: string) => <span className={`font-semibold ${over ? '' : 'text-foreground'}`}>{text}</span>;
 
-/** To do: hours planned for the day on screen, against the working day. With no day picked, the list's own total. */
-export function PlannedHoursBadge({ planned, dayHours, dayLabel }: { planned: number; dayHours: number | null; dayLabel: string | null }) {
-  if (!(planned > 0) && dayHours === null) return null;
-  const over = dayHours !== null && planned > dayHours;
-  const when = dayLabel ? ` ${dayLabel === 'today' ? 'today' : `for ${dayLabel}`}` : '';
-  return (
-    <Meter
-      value={planned}
-      of={dayHours}
-      over={over}
-      title={dayHours !== null ? `${formatHours(planned)} planned${dayLabel ? ` for ${dayLabel}` : ''}, against a ${formatHours(dayHours)} working day` : undefined}
-      lead={<>{strong(over, formatHours(planned))} planned{when}</>}
-      tail={dayHours !== null ? (over ? `${formatHours(planned - dayHours)} over` : `of ${formatHours(dayHours)}`) : null}
-    />
-  );
-}
-
 /**
  * In progress: time elapsed across every session of every task in the
  * section (the same figure each row shows), against their estimates.
@@ -82,25 +63,6 @@ export function ElapsedHoursBadge({ tasks, events, timezone }: { tasks: ElapsedT
       title={`Time elapsed on the scheduled sessions of ${tasks.length === 1 ? 'this task' : `these ${tasks.length} tasks`}${plannedMin ? `, against ${formatHours(planned)} planned` : ''}`}
       lead={<>{strong(over, formatElapsedMinutes(minutes))} elapsed</>}
       tail={plannedMin ? (over ? `${formatElapsedMinutes(minutes - plannedMin)} over` : `of ${formatHours(planned)} planned`) : null}
-    />
-  );
-}
-
-/** Done: the time the finished tasks took, against what was planned for them. */
-export function SpentHoursBadge({ tasks }: { tasks: Array<{ actualTime?: number | null; estimatedTime?: number | null }> }) {
-  if (tasks.length === 0) return null;
-  const spent = tasks.reduce((h, t) => h + (t.actualTime && t.actualTime > 0 ? t.actualTime : 0), 0);
-  const planned = tasks.reduce((h, t) => h + (t.estimatedTime && t.estimatedTime > 0 ? t.estimatedTime : 0), 0);
-  const diff = Math.round((spent - planned) * 10) / 10;
-  const over = planned > 0 && diff > 0;
-  return (
-    <Meter
-      value={spent}
-      of={planned || null}
-      over={over}
-      title={`${formatHours(spent)} spent on ${tasks.length === 1 ? 'this task' : `these ${tasks.length} tasks`}${planned ? `, against ${formatHours(planned)} planned` : ''}`}
-      lead={<>{strong(over, formatHours(spent))} spent</>}
-      tail={planned ? (over ? `${formatHours(diff)} over plan` : diff < 0 ? `${formatHours(-diff)} under plan` : 'on plan') : null}
     />
   );
 }

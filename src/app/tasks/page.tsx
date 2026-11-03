@@ -17,7 +17,7 @@ import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/l
 import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
 import { ReorderableTaskList } from '@/components/tasks/ReorderableTaskList';
 import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
-import { PlannedHoursBadge, ElapsedHoursBadge, SpentHoursBadge } from '@/components/tasks/SectionHours';
+import { ElapsedHoursBadge } from '@/components/tasks/SectionHours';
 import {
   CheckSquare,
   Plus,
@@ -46,7 +46,7 @@ import type { Goal, Project, AssignableMember, Task } from './types';
 import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow, suggestEndTime } from '@/lib/taskElapsed';
 import { TaskCalendar, type DayInfo } from '@/components/tasks/TaskCalendar';
 import { DayAgenda } from '@/components/tasks/DayAgenda';
-import { groupTasksByDay, monthGrid, monthOf, plannedHours } from './taskCalendar';
+import { groupTasksByDay, monthGrid, monthOf } from './taskCalendar';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
 
 export default function TasksPage() {
@@ -1486,16 +1486,15 @@ export default function TasksPage() {
             <div key={group.key}>
               <SectionHeader
                 title={group.label}
-                meta={statusFilter === 'POSTPONED' || group.key === 'BLOCKED'
-                  ? group.tasks.length
-                  : (
+                meta={group.key === 'IN_PROGRESS' && statusFilter !== 'POSTPONED'
+                  ? (
+                    // Only In progress carries hours: the time elapsed across its sessions.
                     <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
                       {group.tasks.length}
-                      {group.key === 'PENDING' && <PlannedHoursBadge planned={selectedDate ? plannedByDay[selectedDate] ?? 0 : plannedHours(group.tasks.map((task) => ({ task })))} dayHours={selectedDate ? dayHours : null} dayLabel={selectedDate === todayStr ? 'today' : selectedDate ? new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : null} />}
-                      {group.key === 'IN_PROGRESS' && <ElapsedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />}
-                      {group.key === 'COMPLETED' && <SpentHoursBadge tasks={group.tasks} />}
+                      <ElapsedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />
                     </span>
-                  )}
+                  )
+                  : group.tasks.length}
               />
               {group.key === 'PENDING' && statusFilter !== 'POSTPONED' ? (
                 <ReorderableTaskList tasks={group.tasks} renderRow={renderTaskRow} onCommit={commitTodoOrder} />

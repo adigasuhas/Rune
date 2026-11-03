@@ -6,7 +6,7 @@ import { uniqueName } from './helpers';
  * Settings -> Schedule and time off, and where it shows: leave and sick
  * allowances counting down as days are marked, availability dates, a
  * stretch of leave marked at once; then the Tasks calendar colouring those
- * days and shading by hours worked, and the hours planned beside To do.
+ * days and shading by hours worked, and the hours planned on the week strip.
  */
 
 const created: string[] = [];
@@ -56,6 +56,10 @@ test('mark a stretch of leave and a sick day; allowances count down; the Tasks c
   await page.goto('/settings?section=calendar');
   await expect(page.getByRole('heading', { level: 2, name: 'Schedule and time off' })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Schedule and time off' })).toHaveAttribute('aria-current', 'page');
+
+  // Let the page finish loading before typing (a late load must not, and
+  // no longer can, overwrite the form - but the test shouldn't depend on it).
+  await page.waitForLoadState('networkidle');
 
   // Allowances and availability save with the page.
   const leaveCard = page.locator('[data-day-kind="leave"]').filter({ has: page.getByLabel('Days allowed') });
@@ -117,7 +121,7 @@ test('mark a stretch of leave and a sick day; allowances count down; the Tasks c
   if (sickDay.slice(0, 7) === month) await expect(cellOf(sickDay)).toHaveAttribute('data-day-kind', 'sick');
 });
 
-test('the Tasks calendar deepens with hours worked; hours planned show beside To do and on the week strip', async ({ page }) => {
+test('the Tasks calendar deepens with hours worked; hours planned show on the week strip', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   const { today } = await clock(page);
   // Yesterday: 4h worked (a finished task with its slot), so it's shaded.
@@ -128,11 +132,12 @@ test('the Tasks calendar deepens with hours worked; hours planned show beside To
   created.push(todo.id);
 
   await page.goto('/tasks');
-  // List view: today's To do says how much is planned today.
+  // List view: the week strip says how much is planned each day; the To do
+  // heading itself carries only its count.
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'List' }).click();
   const todoHeading = page.locator('.app-section').filter({ has: page.getByRole('heading', { name: 'To do' }) });
-  await expect(todoHeading).toContainText(/planned today/);
-  await expect(todoHeading).toContainText(/of \d+(\.\d)?h|over/);
+  await expect(todoHeading).toBeVisible();
+  await expect(todoHeading).not.toContainText(/planned/);
   await expect(page.getByRole('button', { name: /planned$/ }).first()).toBeVisible();
 
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Calendar' }).click();

@@ -288,12 +288,18 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
+    // A load that's been superseded (React runs effects twice in
+    // development, and Retry starts a new one) must not land late and
+    // overwrite what's already been typed into the form.
+    let stale = false;
     const fetchSettings = async () => {
       try {
         const res = await fetch('/api/settings');
+        if (stale) return;
         setSettingsLoadFailed(!res.ok);
         if (res.ok) {
           const data = await res.json();
+          if (stale) return;
           setWorkStart(data.workStart || '08:00');
           setWorkEnd(data.workEnd || '18:00');
           if (data.workingDays) {
@@ -323,15 +329,19 @@ export default function SettingsPage() {
           }
         }
       } catch (err) {
+        if (stale) return;
         setSettingsLoadFailed(true);
         console.error(err);
       } finally {
-        const localFontSize = localStorage.getItem('rune_font_size') || 'medium';
-        setFontSize(localFontSize);
-        setLoading(false);
+        if (!stale) {
+          const localFontSize = localStorage.getItem('rune_font_size') || 'medium';
+          setFontSize(localFontSize);
+          setLoading(false);
+        }
       }
     };
     fetchSettings();
+    return () => { stale = true; };
   }, [settingsReload]);
 
   // /api/settings replaces every Setting field with its default when a

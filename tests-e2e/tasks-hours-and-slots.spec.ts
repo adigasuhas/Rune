@@ -3,8 +3,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { uniqueName } from './helpers';
 
 /**
- * Tasks list: the hours beside In progress and Done (like To do's planned
- * hours); a task's time slots always in time order, whichever was added
+ * Tasks list: the time elapsed beside In progress (and nothing beside To do
+ * or Done); a task's time slots always in time order, whichever was added
  * first; an empty time picker starting at the current time; and Analytics /
  * Recent weeks counting only the "When you're available" dates.
  */
@@ -31,7 +31,7 @@ async function make(page: Page, data: Record<string, unknown>) {
   return t as { id: string; name: string; startTime: string | null };
 }
 
-test('In progress shows time elapsed and Done shows time spent, beside their headings', async ({ page }) => {
+test('In progress shows time elapsed beside its heading; To do and Done show only their counts', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const { date, time } = await clock(page);
   const now = new Date();
@@ -47,8 +47,9 @@ test('In progress shows time elapsed and Done shows time spent, beside their hea
   const section = (name: string) => page.locator('.app-section').filter({ has: page.getByRole('heading', { name, exact: true }) });
   await expect(section('In progress')).toContainText(/\d+h\d{2}m elapsed|\d+m elapsed/);
   await expect(section('In progress')).toContainText(/of \d+(\.\d)?h planned|over/);
-  await expect(section('Done')).toContainText(/\d+(\.\d)?h spent/);
-  await expect(section('Done')).toContainText(/(under|over) plan|on plan/);
+  // Done carries only its count.
+  await expect(section('Done')).toBeVisible();
+  await expect(section('Done')).not.toContainText(/spent|planned|elapsed/);
   expect((await new AxeBuilder({ page }).include('main').analyze()).violations).toEqual([]);
 });
 
