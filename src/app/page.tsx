@@ -1,6 +1,7 @@
 'use client';
 
 import { withoutCancelled } from '@/lib/taskCancel';
+import { DEFAULT_CONTEXTS, joinContexts, ownContextsByUse } from '@/lib/taskContext';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { setDayTypes } from '@/lib/timeOff';
 import { LoadError } from '@/components/LoadError';
@@ -213,9 +214,7 @@ function DashboardPage() {
   const [newTaskDate, setNewTaskDate] = useState(selectedDate);
   const [newTaskSessionType, setNewTaskSessionType] = useState<SessionType>('REGULAR');
   const [newTaskEst, setNewTaskEst] = useState('1');
-  const [newTaskContext, setNewTaskContext] = useState('COMPUTER');
-  const [isCustomNewTaskContext, setIsCustomNewTaskContext] = useState(false);
-  const [customNewTaskContext, setCustomNewTaskContext] = useState('');
+  const [newTaskContexts, setNewTaskContexts] = useState<string[]>(DEFAULT_CONTEXTS);
   const [newTaskEffort, setNewTaskEffort] = useState('5');
   const [newTaskImpact, setNewTaskImpact] = useState('5');
   const [newTaskSlots, setNewTaskSlots] = useState<Array<{ startTime: string; endTime: string }>>([
@@ -1246,7 +1245,7 @@ function DashboardPage() {
             date: newTaskDate,
             sessionType: newTaskSessionType,
             estimatedTime: Number(newTaskEst),
-            context: isCustomNewTaskContext ? (customNewTaskContext.trim().toUpperCase() || 'ANALYSIS') : newTaskContext,
+            context: joinContexts(newTaskContexts),
             effort: Number(newTaskEffort),
             impact: Number(newTaskImpact),
             status: 'PENDING',
@@ -1263,9 +1262,7 @@ function DashboardPage() {
           setNewTaskPriority('MEDIUM');
           setNewTaskSessionType('REGULAR');
           setNewTaskEst('1');
-          setNewTaskContext('COMPUTER');
-          setIsCustomNewTaskContext(false);
-          setCustomNewTaskContext('');
+          setNewTaskContexts([...DEFAULT_CONTEXTS]);
           setNewTaskEffort('5');
           setNewTaskImpact('5');
           setNewTaskSlots([{ startTime: '', endTime: '' }]);
@@ -2743,9 +2740,8 @@ function DashboardPage() {
           detail={newTaskDetail} onDetailChange={setNewTaskDetail}
           projectId={newTaskProject} onProjectChange={setNewTaskProject}
           goalId={newTaskGoalId} onGoalChange={setNewTaskGoalId}
-          context={newTaskContext} onContextChange={(v) => { setNewTaskContext(v); setIsCustomNewTaskContext(v === 'CUSTOM'); }}
-          isCustomContext={isCustomNewTaskContext}
-          customContext={customNewTaskContext} onCustomContextChange={setCustomNewTaskContext}
+          contexts={newTaskContexts} onContextsChange={setNewTaskContexts}
+          contextSuggestions={ownContextsByUse(tasks)}
           priority={newTaskPriority} onPriorityChange={setNewTaskPriority}
           estimatedTime={newTaskEst} onEstimatedTimeChange={setNewTaskEst}
           effort={newTaskEffort} onEffortChange={setNewTaskEffort}

@@ -9,6 +9,7 @@ import { canEditProject, canViewProject, usersShareATeam } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
 import { appendPostponement } from '@/lib/postpone';
 import { cleanCancelReason } from '@/lib/taskCancel';
+import { joinContexts, parseContexts } from '@/lib/taskContext';
 
 const slotSchema = z.object({ startTime: z.string().max(20).optional(), endTime: z.string().max(20).optional() });
 
@@ -21,7 +22,8 @@ const updateSchema = z.object({
   date: z.string().max(60).optional(),
   sessionType: z.string().max(50).optional(),
   estimatedTime: z.union([z.string(), z.number()]).optional(),
-  context: z.string().max(100).optional(),
+  // One or several, comma-separated - see lib/taskContext.
+  context: z.string().max(400).optional(),
   effort: z.union([z.string(), z.number()]).optional(),
   impact: z.union([z.string(), z.number()]).optional(),
   status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'BLOCKED', 'CANCELLED']).optional(),
@@ -117,7 +119,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (data.date !== undefined) updateData.date = parseDateInTimezone(toLocalDayKey(data.date, tz), tz);
     if (data.sessionType !== undefined) updateData.sessionType = normalizeSessionType(data.sessionType);
     if (data.estimatedTime !== undefined) updateData.estimatedTime = Number(data.estimatedTime);
-    if (data.context !== undefined) updateData.context = data.context;
+    if (data.context !== undefined) updateData.context = joinContexts(parseContexts(data.context));
     if (data.effort !== undefined) updateData.effort = Number(data.effort);
     if (data.impact !== undefined) updateData.impact = Number(data.impact);
     if (data.status !== undefined) updateData.status = data.status;

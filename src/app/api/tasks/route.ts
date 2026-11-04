@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { parseDateInTimezone, parseDateTimeInTimezone, toLocalDayKey } from '@/lib/dateUtils';
 import { normalizeSessionType } from '@/lib/sessionType';
 import { orderSlotDrafts } from '@/lib/taskElapsed';
+import { joinContexts, parseContexts } from '@/lib/taskContext';
 import { canEditProject, canViewProject } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
 
@@ -19,7 +20,8 @@ const createSchema = z.object({
   date: z.string().min(1).max(60),
   sessionType: z.string().max(50).optional(),
   estimatedTime: z.union([z.string(), z.number()]).optional(),
-  context: z.string().max(100).optional(),
+  // One or several, comma-separated ("COMPUTER,WRITING") - see lib/taskContext.
+  context: z.string().max(400).optional(),
   effort: z.union([z.string(), z.number()]).optional(),
   impact: z.union([z.string(), z.number()]).optional(),
   // A new task can't start out cancelled - cancelling asks for a reason.
@@ -151,7 +153,7 @@ export async function POST(req: Request) {
         date: taskDate,
         sessionType: normalizeSessionType(sessionType),
         estimatedTime: estimatedTime !== undefined ? Number(estimatedTime) : 1.0,
-        context: context || 'COMPUTER',
+        context: context !== undefined ? joinContexts(parseContexts(context)) : 'COMPUTER',
         effort: effort !== undefined ? Number(effort) : 5,
         impact: impact !== undefined ? Number(impact) : 5,
         status: status || 'PENDING',

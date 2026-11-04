@@ -1,5 +1,6 @@
 import { getLocalDateString } from '@/lib/dateUtils';
 import { parsePostponeHistory, postponeDayKey } from '@/lib/postpone';
+import { contextsText } from '@/lib/taskContext';
 
 /**
  * Builds the printable task report and opens it in a new window that
@@ -45,6 +46,7 @@ const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 
 const STATUS_LABEL: Record<string, string> = { PENDING: 'To do', IN_PROGRESS: 'In progress', COMPLETED: 'Done', BLOCKED: 'Blocked', CANCELLED: 'Cancelled' };
 const PRIORITY_LABEL: Record<string, string> = { CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' };
 const STATUS_FILTER_LABEL: Record<string, string> = { ALL: 'All', COMPLETED: 'Done', UNFINISHED: 'Not done', POSTPONED: 'Postponed' };
+const escapeHtml = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, ' ');
 
 export function generateTaskPdfReport(opts: TaskReportOptions): void {
@@ -131,7 +133,7 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
           </td>
           <td style="text-align: center;">${t.sessionType === 'DEEP_WORK' ? 'Yes' : 'No'}</td>
           <td>${t.estimatedTime}h</td>
-          <td>${sentenceCase(t.context)}</td>
+          <td>${escapeHtml(contextsText(t.context)) || '–'}</td>
           <td>${t.notes || '-'}</td>
         </tr>
       `;

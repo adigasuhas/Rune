@@ -45,6 +45,7 @@ import {
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
 import { CancelTaskDialog } from '@/components/tasks/CancelTaskDialog';
 import { withoutCancelled, isCancelled } from '@/lib/taskCancel';
+import { DEFAULT_CONTEXTS, contextsText, hasContext, joinContexts, ownContextsByUse, parseContexts } from '@/lib/taskContext';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
 import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow, suggestEndTime } from '@/lib/taskElapsed';
@@ -65,6 +66,9 @@ export default function TasksPage() {
   const [allTasks, setTasks] = useState<Task[]>([]);
   const tasks = React.useMemo(() => withoutCancelled(allTasks), [allTasks]);
   const cancelledAll = React.useMemo(() => allTasks.filter(isCancelled), [allTasks]);
+  // Contexts of the writer's own, from any task, most used first - offered
+  // as quick picks in the task form.
+  const contextSuggestions = React.useMemo(() => ownContextsByUse(allTasks), [allTasks]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   // The parts of Settings the calendar colours days by (Settings -> Schedule and time off).
@@ -141,9 +145,7 @@ export default function TasksPage() {
   });
   const [taskSessionType, setTaskSessionType] = useState<SessionType>('REGULAR');
   const [taskEst, setTaskEst] = useState('1');
-  const [taskContext, setTaskContext] = useState<string>('COMPUTER');
-  const [isCustomContext, setIsCustomContext] = useState(false);
-  const [customContext, setCustomContext] = useState('');
+  const [taskContexts, setTaskContexts] = useState<string[]>(DEFAULT_CONTEXTS);
   const [taskEffort, setTaskEffort] = useState('5');
   const [taskImpact, setTaskImpact] = useState('5');
   const [taskStatus, setTaskStatus] = useState<'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>('PENDING');
@@ -372,9 +374,7 @@ export default function TasksPage() {
     setTaskDate(selectedDate || getCurrentDateInTimezone(userTimezone));
     setTaskSessionType('REGULAR');
     setTaskEst('1');
-    setTaskContext('COMPUTER');
-    setIsCustomContext(false);
-    setCustomContext('');
+    setTaskContexts([...DEFAULT_CONTEXTS]);
     setTaskEffort('5');
     setTaskImpact('5');
     setTaskStatus('PENDING');
@@ -400,16 +400,7 @@ export default function TasksPage() {
     setTaskSessionType(normalizeSessionType(task.sessionType));
     setTaskEst(String(task.estimatedTime));
     
-    const standardContexts = ['COMPUTER', 'CODING', 'READING', 'WRITING', 'RESEARCH', 'MEETING', 'ANALYSIS'];
-    if (standardContexts.includes(task.context)) {
-      setTaskContext(task.context);
-      setIsCustomContext(false);
-      setCustomContext('');
-    } else {
-      setTaskContext('CUSTOM');
-      setIsCustomContext(true);
-      setCustomContext(task.context);
-    }
+    setTaskContexts(parseContexts(task.context));
     
     setTaskEffort(String(task.effort));
     setTaskImpact(String(task.impact));
@@ -520,7 +511,7 @@ export default function TasksPage() {
       date: taskDate,
       sessionType: taskSessionType,
       estimatedTime: Number(taskEst),
-      context: isCustomContext ? (customContext.trim().toUpperCase() || 'ANALYSIS') : taskContext,
+      context: joinContexts(taskContexts),
       effort: Number(taskEffort),
       impact: Number(taskImpact),
       // Preserve an existing block: the edit form can't represent BLOCKED, so
@@ -846,7 +837,7 @@ export default function TasksPage() {
       // Priority filter
       if (priorityFilter !== 'ALL' && t.priority !== priorityFilter) return false;
       // Context filter
-      if (contextFilter !== 'ALL' && t.context?.toUpperCase() !== contextFilter.toUpperCase()) return false;
+      if (contextFilter !== 'ALL' && !hasContext(t.context, contextFilter)) return false;
       // Project filter
       if (projectFilter !== 'ALL' && t.projectId !== projectFilter) return false;
 
@@ -1150,6 +1141,7 @@ export default function TasksPage() {
                                 {(task.timeDifference || 0) >= 0 ? '+' : ''}{(task.timeDifference || 0).toFixed(1)}h vs plan
                               </span>
                             )}
+                            {contextsText(task.context) && <span title="Context">{contextsText(task.context)}</span>}
                             <span>effort {task.effort}/10 · impact {task.impact}/10</span>
                           </div>
                           {task.parsedHistory && task.parsedHistory.length > 0 && (
@@ -1669,9 +1661,8 @@ export default function TasksPage() {
           assigneeId={taskAssigneeId} onAssigneeChange={setTaskAssigneeId}
           assignableMembers={!editingTask ? assignableMembers : undefined}
           goalId={taskGoalId} onGoalChange={setTaskGoalId}
-          context={taskContext} onContextChange={(v) => { setTaskContext(v); setIsCustomContext(v === 'CUSTOM'); }}
-          isCustomContext={isCustomContext}
-          customContext={customContext} onCustomContextChange={setCustomContext}
+          contexts={taskContexts} onContextsChange={setTaskContexts}
+          contextSuggestions={contextSuggestions}
           priority={taskPriority} onPriorityChange={(v) => setTaskPriority(v as any)}
           estimatedTime={taskEst} onEstimatedTimeChange={setTaskEst}
           effort={taskEffort} onEffortChange={setTaskEffort}

@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Plus, X, AlertCircle } from 'lucide-react';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
 import { suggestEndTime, slotDraftHours } from '@/lib/taskElapsed';
+import { ContextPicker } from '@/components/tasks/ContextPicker';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { SessionType, durationLabel } from '@/lib/sessionType';
 import { Modal } from '@/components/Modal';
@@ -31,9 +32,10 @@ interface TaskFormModalProps {
   // undefined list means "don't render the field" rather than "no options."
   assigneeId?: string; onAssigneeChange?: (v: string) => void;
   assignableMembers?: Array<{ userId: string; name: string | null; email: string }>;
-  context: string; onContextChange: (v: string) => void;
-  isCustomContext: boolean;
-  customContext: string; onCustomContextChange: (v: string) => void;
+  /** Any number of contexts (see lib/taskContext). */
+  contexts: string[]; onContextsChange: (v: string[]) => void;
+  /** Contexts used on other tasks, offered as quick picks. */
+  contextSuggestions?: string[];
   priority: string; onPriorityChange: (v: string) => void;
   estimatedTime: string; onEstimatedTimeChange: (v: string) => void;
   effort: string; onEffortChange: (v: string) => void;
@@ -59,7 +61,7 @@ export function TaskFormModal(props: TaskFormModalProps) {
     name, onNameChange, detail, onDetailChange,
     projectId, onProjectChange, goalId, onGoalChange,
     assigneeId, onAssigneeChange, assignableMembers,
-    context, onContextChange, isCustomContext, customContext, onCustomContextChange,
+    contexts, onContextsChange, contextSuggestions,
     priority, onPriorityChange, estimatedTime, onEstimatedTimeChange,
     effort, onEffortChange, impact, onImpactChange,
     slots, onSlotsChange, date, onDateChange, sessionType, onSessionTypeChange,
@@ -241,24 +243,9 @@ export function TaskFormModal(props: TaskFormModalProps) {
 
           {showMore && (
             <div className="space-y-4 border-t border-border pt-4">
+              <ContextPicker value={contexts} onChange={onContextsChange} suggestions={contextSuggestions} labelClass={labelClass} />
+
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="taskformmodal-context" className={labelClass}>Context</label>
-                  <select id="taskformmodal-context"
-                    value={context}
-                    onChange={(e) => onContextChange(e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="COMPUTER">Computer</option>
-                    <option value="CODING">Coding</option>
-                    <option value="READING">Reading</option>
-                    <option value="WRITING">Writing</option>
-                    <option value="RESEARCH">Research</option>
-                    <option value="MEETING">Meeting</option>
-                    <option value="ANALYSIS">Analysis</option>
-                    <option value="CUSTOM">Custom…</option>
-                  </select>
-                </div>
                 <div>
                   <label htmlFor="taskformmodal-hours" className={labelClass}>{durationLabel(sessionType)} (hours)</label>
                   <input id="taskformmodal-hours"
@@ -282,19 +269,6 @@ export function TaskFormModal(props: TaskFormModalProps) {
                   )}
                 </div>
               </div>
-
-              {isCustomContext && (
-                <div>
-                  <label htmlFor="taskformmodal-custom-context-name" className={labelClass}>Custom context name</label>
-                  <input id="taskformmodal-custom-context-name"
-                    type="text"
-                    placeholder="e.g. Writing, Calls, Bench work"
-                    value={customContext}
-                    onChange={(e) => onCustomContextChange(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

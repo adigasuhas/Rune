@@ -115,8 +115,12 @@ test('a project sets its own backup frequency and backs up its notebooks and tas
 });
 
 test('PDF export of a notebook works (the sanitizer loads)', async ({ page }) => {
+  // Often the run's first PDF: on the dev server CI uses, that request
+  // compiles the export route and starts Chromium cold - on a slow runner,
+  // well past the default 30s (as in notebook-layout-export.spec.ts).
+  test.setTimeout(150_000);
   const id = await makeNotebook(page, uniqueName('E2E export'), '\\section{Hello $\\text{Cs}_3$}\nText.');
-  const res = await page.request.post(`/api/notebooks/${id}/export-pdf`, { data: {} });
+  const res = await page.request.post(`/api/notebooks/${id}/export-pdf`, { data: {}, timeout: 120_000 });
   expect(res.status(), await res.text().catch(() => '')).toBe(200);
   expect(res.headers()['content-type']).toContain('application/pdf');
 });
