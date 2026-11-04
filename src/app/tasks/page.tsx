@@ -39,8 +39,12 @@ import {
   Ban,
   Check,
   MessageSquare,
+  CircleSlash,
+  RotateCcw,
 } from 'lucide-react';
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
+import { CancelTaskDialog } from '@/components/tasks/CancelTaskDialog';
+import { withoutCancelled, isCancelled } from '@/lib/taskCancel';
 import { BlockTaskDialog } from '@/components/BlockTaskDialog';
 import type { Goal, Project, AssignableMember, Task } from './types';
 import { getTaskElapsed, formatElapsedMinutes, getTaskSlotIntervals, currentSlot, formatSlotWindow, suggestEndTime } from '@/lib/taskElapsed';
@@ -55,7 +59,12 @@ export default function TasksPage() {
   const confirm = useConfirm();
   const prompt = usePrompt();
   const [discussingTask, setDiscussingTask] = useState<Task | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  // Every task as loaded. Cancelled ones are kept apart: the page's plans,
+  // counts and calendar work from `tasks`; the Cancelled tab from
+  // `cancelledAll`.
+  const [allTasks, setTasks] = useState<Task[]>([]);
+  const tasks = React.useMemo(() => withoutCancelled(allTasks), [allTasks]);
+  const cancelledAll = React.useMemo(() => allTasks.filter(isCancelled), [allTasks]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   // The parts of Settings the calendar colours days by (Settings -> Schedule and time off).
@@ -73,8 +82,9 @@ export default function TasksPage() {
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'POSTPONED'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'POSTPONED' | 'CANCELLED'>('ALL');
   const [blockingTask, setBlockingTask] = useState<Task | null>(null);
+  const [cancellingTask, setCancellingTask] = useState<Task | null>(null);
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
   const [contextFilter] = useState<string>('ALL');
   const [projectFilter, setProjectFilter] = useState<string>('ALL');
@@ -406,7 +416,7 @@ export default function TasksPage() {
     // The edit form doesn't carry the BLOCKED state (that's set via the
     // dedicated block dialog); show it as PENDING here so a save from the
     // form doesn't silently clobber the block - the user unblocks explicitly.
-    setTaskStatus(task.status === 'BLOCKED' ? 'PENDING' : task.status);
+    setTaskStatus(task.status === 'BLOCKED' || task.status === 'CANCELLED' ? 'PENDING' : task.status);
     setTaskNotes(task.notes || '');
     setTaskStartTime((task as any).startTime || '');
     setTaskEndTime((task as any).endTime || '');
@@ -562,7 +572,34 @@ export default function TasksPage() {
   };
 
 
+  // A cancelled task back on the plan, as To do (its reason is dropped).
+  const restoreTask = async (task: Task) => {
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'PENDING' })
+      });
+      if (res.ok) { setRefreshTrigger(prev => prev + 1); toast('Task restored', 'It’s back in To do. Give it a new time if it needs one.', 'success'); }
+      else toast('Not restored', 'Try again.', 'error');
+    } catch { toast('Not restored', 'Check your connection and try again.', 'error'); }
+  };
+
+  const onTaskCancelled = (updated: Task, wasCancelled: boolean) => {
+    setRefreshTrigger(prev => prev + 1);
+    if (wasCancelled) { toast('Reason saved', 'It shows with the task under Cancelled.', 'success'); return; }
+    toast('Task cancelled', `“${updated.name}” is under Cancelled, with your reason.`, 'success', {
+      id: `cancelled-${updated.id}`,
+      actions: [
+        { label: 'Undo', primary: true, onClick: () => restoreTask(updated) },
+        { label: 'Show', onClick: () => { setStatusFilter('CANCELLED'); setExpandedPostponeTaskIds(p => ({ ...p, [updated.id]: true })); } },
+      ],
+    });
+  };
+
   const toggleTaskStatus = async (task: Task) => {
+    // A cancelled task's marker restores it.
+    if (task.status === 'CANCELLED') { await restoreTask(task); return; }
     // A blocked task's marker is a quick "unblock" back to the active list.
     if (task.status === 'BLOCKED') {
       try {
@@ -828,6 +865,13 @@ export default function TasksPage() {
     [tasks, selectedDate, userTimezone, matchesFilters]
   );
   const postponedDayTasks = React.useMemo(() => tasksPostponedFrom(tasks, selectedDate, userTimezone), [tasks, selectedDate, userTimezone]);
+  // Cancelled tasks planned for the selected day (all of them with no day
+  // picked), newest cancellation first.
+  const cancelledDayTasks = React.useMemo(() => tasksOnDate(cancelledAll, selectedDate, userTimezone), [cancelledAll, selectedDate, userTimezone]);
+  const cancelledTasks = React.useMemo(
+    () => cancelledDayTasks.filter(matchesFilters).sort((a, b) => String(b.cancelledAt || '').localeCompare(String(a.cancelledAt || ''))),
+    [cancelledDayTasks, matchesFilters]
+  );
 
   // Sort tasks
   const sortTasks = React.useCallback((list: Task[]) => {
@@ -877,6 +921,7 @@ export default function TasksPage() {
   }, [userTimezone]);
   const formattedTasksList = React.useMemo(() => formatTasks(sortTasks(filteredTasks)), [formatTasks, sortTasks, filteredTasks]);
   const formattedPostponedList = React.useMemo(() => formatTasks(sortTasks(postponedTasks)), [formatTasks, sortTasks, postponedTasks]);
+  const formattedCancelledList = React.useMemo(() => formatTasks(cancelledTasks), [formatTasks, cancelledTasks]);
 
   // The mockup groups tasks by STATE (In progress / To do / Done), not by date.
   // The date rail narrows the set; this decides the sections shown within it.
@@ -887,7 +932,11 @@ export default function TasksPage() {
     { key: 'COMPLETED', label: 'Done' },
   ] as const;
 
-  const groupedByState = React.useMemo(() => {
+  const groupedByState = React.useMemo((): Array<{ key: string; label: string; tasks: typeof formattedTasksList }> => {
+    // Cancelled: one section of its own, newest cancellation first.
+    if (statusFilter === 'CANCELLED') {
+      return formattedCancelledList.length ? [{ key: 'CANCELLED', label: 'Cancelled', tasks: formattedCancelledList }] : [];
+    }
     const base = statusFilter === 'POSTPONED' ? formattedPostponedList : formattedTasksList;
     return STATE_GROUPS
       // To do is in the user's own order (drag to arrange); the other
@@ -897,7 +946,7 @@ export default function TasksPage() {
         if (statusFilter === 'ALL' || statusFilter === 'POSTPONED') return g.tasks.length > 0;
         return g.key === statusFilter;
       });
-  }, [formattedTasksList, formattedPostponedList, statusFilter]);
+  }, [formattedTasksList, formattedPostponedList, formattedCancelledList, statusFilter]);
 
   // One task row, shared by every section. `dragHandle` is only passed in
   // the To do section (ReorderableTaskList); it sits in the left gutter so
@@ -907,6 +956,7 @@ export default function TasksPage() {
                   const isCompleted = task.status === 'COMPLETED';
                   const isInProgress = task.status === 'IN_PROGRESS';
                   const isBlocked = task.status === 'BLOCKED';
+                  const isCancelledRow = task.status === 'CANCELLED';
                   const pendingAcceptance = task.assignmentStatus === 'PENDING_ACCEPTANCE';
                   const declined = task.assignmentStatus === 'DECLINED';
                   const linkedProject = projects.find(p => p.id === task.projectId);
@@ -923,9 +973,11 @@ export default function TasksPage() {
                         <button
                           onClick={() => toggleTaskStatus(task)}
                           className="shrink-0 text-ink-faint hover:text-foreground transition-colors"
-                          title={isCompleted ? 'Reopen task' : isBlocked ? 'Unblock task' : 'Mark done'}
+                          title={isCancelledRow ? 'Restore task' : isCompleted ? 'Reopen task' : isBlocked ? 'Unblock task' : 'Mark done'}
+                          aria-label={isCancelledRow ? `Restore ${task.name}` : undefined}
                         >
-                          {isCompleted ? <CheckCircle2 className="w-[18px] h-[18px] text-primary" />
+                          {isCancelledRow ? <CircleSlash className="w-[18px] h-[18px] text-ink-faint" />
+                            : isCompleted ? <CheckCircle2 className="w-[18px] h-[18px] text-primary" />
                             : isBlocked ? <Ban className="w-[18px] h-[18px] text-[var(--color-data-slate)]" />
                             : isInProgress ? <CircleDot className="w-[18px] h-[18px] text-primary" />
                             : <Circle className="w-[18px] h-[18px]" strokeWidth={1.6} />}
@@ -935,9 +987,14 @@ export default function TasksPage() {
                           onClick={() => setExpandedPostponeTaskIds(p => ({ ...p, [task.id]: !p[task.id] }))}
                           className="flex-1 min-w-0 text-left flex items-center gap-2"
                         >
-                          <span className={`text-[14.5px] truncate ${isCompleted ? 'line-through text-ink-faint' : 'text-foreground font-medium'}`}>
+                          <span className={`text-[14.5px] truncate ${isCompleted ? 'line-through text-ink-faint' : isCancelledRow ? 'text-ink-secondary' : 'text-foreground font-medium'}`}>
                             {task.name}
                           </span>
+                          {isCancelledRow && task.cancelReason && (
+                            <span className="min-w-0 hidden sm:inline truncate text-[12.5px] italic text-ink-faint" title={task.cancelReason}>
+                              <span className="sr-only">Cancelled: </span>{task.cancelReason}
+                            </span>
+                          )}
                           {isBlocked && (task.blockedOnName || task.blockedReason) && (
                             <span className="shrink-0 hidden sm:inline text-[12.5px] text-ink-secondary truncate max-w-[16rem]" title={task.blockedReason || undefined}>
                               {task.blockedOnName ? `waiting on ${task.blockedOnName}` : task.blockedReason}
@@ -1002,17 +1059,36 @@ export default function TasksPage() {
                                 <MessageSquare className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {!isCompleted && (
+                            {isCancelledRow && (
+                              <>
+                                <button onClick={() => restoreTask(task)} className="inline-flex items-center gap-1 rounded-[3px] px-1.5 py-1 text-[12px] font-medium text-ink-secondary hover:bg-surface-sunken hover:text-foreground transition-colors" title="Restore to To do">
+                                  <RotateCcw className="w-3.5 h-3.5" /> Restore
+                                </button>
+                                <button onClick={() => setCancellingTask(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Edit the reason" aria-label="Edit the cancel reason">
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                            {!isCompleted && !isCancelledRow && (
                               <button onClick={() => setBlockingTask(task)} className={`p-1 rounded-[3px] hover:bg-surface-sunken transition-colors ${isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint hover:text-foreground'}`} title={isBlocked ? 'Edit block' : 'Mark blocked'} aria-label={isBlocked ? 'Edit block' : 'Mark blocked'}>
                                 <Ban className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            <button onClick={() => openEditModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Edit" aria-label="Edit task">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => openMoveModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Move" aria-label="Move task">
-                              <CalendarIcon className="w-3.5 h-3.5" />
-                            </button>
+                            {!isCancelledRow && (
+                              <>
+                                <button onClick={() => openEditModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Edit" aria-label="Edit task">
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => openMoveModal(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Move (postpone)" aria-label="Move task">
+                                  <CalendarIcon className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                            {!isCompleted && !isCancelledRow && (
+                              <button onClick={() => setCancellingTask(task)} className="p-1 text-ink-faint hover:text-danger rounded-[3px] hover:bg-danger-soft transition-colors" title="Cancel task (asks why)" aria-label="Cancel task">
+                                <CircleSlash className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button onClick={() => handleDuplicate(task)} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" title="Duplicate" aria-label="Duplicate task">
                               <Copy className="w-3.5 h-3.5" />
                             </button>
@@ -1026,6 +1102,15 @@ export default function TasksPage() {
 
                       {expanded && (
                         <div className="pb-4 pl-8 pr-2 text-[13.5px] text-ink-secondary space-y-2">
+                          {isCancelledRow && (
+                            <p className="leading-relaxed flex items-start gap-1.5">
+                              <CircleSlash className="w-3.5 h-3.5 mt-0.5 shrink-0 text-ink-faint" />
+                              <span>
+                                Cancelled{task.cancelledAt ? ` on ${new Date(task.cancelledAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric', timeZone: userTimezone })}` : ''}: <span className="text-foreground">{task.cancelReason || 'no reason given'}</span>
+                                {' '}<button onClick={() => setCancellingTask(task)} className="underline hover:text-foreground">Edit</button>
+                              </span>
+                            </p>
+                          )}
                           {isBlocked && (
                             <p className="leading-relaxed text-[var(--color-data-slate)] flex items-start gap-1.5">
                               <Ban className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -1105,8 +1190,8 @@ export default function TasksPage() {
   };
 
   const totalShown = groupedByState.reduce((n, g) => n + g.tasks.length, 0);
-  const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, postponedTasks.length), [filteredTasks, postponedTasks]);
-  const dayCounts = React.useMemo(() => countByStatusTab(dayTasks, postponedDayTasks.length), [dayTasks, postponedDayTasks]);
+  const statusCounts = React.useMemo(() => countByStatusTab(filteredTasks, postponedTasks.length, cancelledTasks.length), [filteredTasks, postponedTasks, cancelledTasks]);
+  const dayCounts = React.useMemo(() => countByStatusTab(dayTasks, postponedDayTasks.length, cancelledDayTasks.length), [dayTasks, postponedDayTasks, cancelledDayTasks]);
 
   // Pre-calculate task counts per day for the mini-calendar indicators
   const tasksByDateMap = React.useMemo(() => {
@@ -1426,6 +1511,7 @@ export default function TasksPage() {
               ['BLOCKED', 'Blocked'],
               ['COMPLETED', 'Done'],
               ['POSTPONED', 'Postponed'],
+              ['CANCELLED', 'Cancelled'],
             ] as const).map(([val, label], i) => (
               <button
                 key={val}
@@ -1462,7 +1548,13 @@ export default function TasksPage() {
         (() => {
           const filtersActive = searchQuery.trim() !== '' || statusFilter !== 'ALL' || priorityFilter !== 'ALL' || projectFilter !== 'ALL' || !!selectedDate;
           const hasAnyTasks = tasks.length > 0;
-          return loadFailed ? null : (
+          return loadFailed ? null : statusFilter === 'CANCELLED' ? (
+            <EmptyState
+              spot="search"
+              title={selectedDate ? 'Nothing cancelled on this day' : 'Nothing cancelled'}
+              message="Tasks you cancel land here with the reason you gave, so you can see what was dropped and why. Restore one to put it back in To do."
+            />
+          ) : (
             filtersActive && hasAnyTasks ? (
               <EmptyState
                 spot="search"
@@ -1508,6 +1600,17 @@ export default function TasksPage() {
         </div>
       )}
       </>)}
+
+      {cancellingTask && (
+        <CancelTaskDialog
+          task={cancellingTask}
+          events={events}
+          projectName={projects.find(p => p.id === cancellingTask.projectId)?.name ?? null}
+          timezone={userTimezone}
+          onClose={() => setCancellingTask(null)}
+          onSaved={(updated) => onTaskCancelled(updated, cancellingTask.status === 'CANCELLED')}
+        />
+      )}
 
       {blockingTask && (
         <BlockTaskDialog

@@ -158,7 +158,7 @@ export function anchorForToday(timezone: string): Date {
   return new Date(`${getCurrentDateInTimezone(timezone)}T12:00:00Z`);
 }
 
-export type StatusTab = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED' | 'POSTPONED';
+export type StatusTab = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED' | 'POSTPONED' | 'CANCELLED';
 
 /**
  * Tasks scheduled on `dateKey` (YYYY-MM-DD in the account's timezone), by
@@ -178,9 +178,12 @@ export function tasksOnDate<T extends { date: string | Date | null }>(tasks: T[]
  * lib/postpone), which the caller passes in - those tasks are scheduled on
  * their new date, so they aren't part of `tasks`.
  */
-export function countByStatusTab<T extends { status: string }>(tasks: T[], postponed: number): Record<StatusTab, number> {
-  const counts: Record<StatusTab, number> = { ALL: tasks.length, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 0, POSTPONED: postponed };
-  for (const t of tasks) {
+export function countByStatusTab<T extends { status: string }>(tasks: T[], postponed: number, cancelled = 0): Record<StatusTab, number> {
+  // Cancelled tasks are never in `tasks` (they're out of the plan); their
+  // tab counts the ones passed separately.
+  const active = tasks.filter((t) => t.status !== 'CANCELLED');
+  const counts: Record<StatusTab, number> = { ALL: active.length, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 0, POSTPONED: postponed, CANCELLED: cancelled };
+  for (const t of active) {
     if (t.status in counts && t.status !== 'ALL' && t.status !== 'POSTPONED') counts[t.status as StatusTab]++;
   }
   return counts;

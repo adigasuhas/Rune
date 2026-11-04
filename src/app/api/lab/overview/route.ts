@@ -44,7 +44,7 @@ export async function GET() {
 
   // Batched lookups.
   const [allTasks, allCollaborators, allNotebooks] = await Promise.all([
-    db.task.findMany({ where: { projectId: { in: projectIds } } }),
+    db.task.findMany({ where: { projectId: { in: projectIds }, status: { not: 'CANCELLED' as const } } }),
     db.projectCollaborator.findMany({ where: { projectId: { in: projectIds } } }),
     db.notebook.findMany({ where: { projectId: { in: projectIds } } })
   ]);

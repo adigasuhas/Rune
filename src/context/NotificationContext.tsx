@@ -1,5 +1,6 @@
 'use client';
 
+import { withoutCancelled } from '@/lib/taskCancel';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/context/SessionContext';
 import { startVisiblePolling } from '@/lib/visiblePolling';
@@ -30,7 +31,7 @@ interface ToastOptions {
 
 export interface NotificationItem {
   id: string;
-  type: 'JOB_REMINDER' | 'JOB_RECURRING' | 'JOB_TERMINATION' | 'TASK_REMINDER' | 'RUN_APPROACHING_END' | 'RUN_OVERDUE' | 'TASK_BLOCKED' | 'WEEKLY_DIGEST' | 'NOTEBOOK_REVIEW_REQUESTED' | 'NOTEBOOK_COMMENT' | 'TASK_ASSIGNED' | 'TASK_ACCEPTED' | 'TASK_DECLINED' | 'CHAT_MENTION';
+  type: 'JOB_REMINDER' | 'JOB_RECURRING' | 'JOB_TERMINATION' | 'TASK_REMINDER' | 'RUN_APPROACHING_END' | 'RUN_OVERDUE' | 'TASK_BLOCKED' | 'WEEKLY_DIGEST' | 'NOTEBOOK_REVIEW_REQUESTED' | 'NOTEBOOK_COMMENT' | 'TASK_ASSIGNED' | 'TASK_ACCEPTED' | 'TASK_DECLINED' | 'TASK_CANCELLED' | 'CHAT_MENTION';
   title: string;
   body?: string | null;
   sourceType: 'Job' | 'Task' | 'Notebook' | 'Digest' | 'Team';
@@ -176,6 +177,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       TASK_ASSIGNED: 'info',
       TASK_ACCEPTED: 'success',
       TASK_DECLINED: 'warning',
+      TASK_CANCELLED: 'warning',
       CHAT_MENTION: 'info'
     };
     try {
@@ -317,7 +319,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           fetch('/api/tasks'), fetch('/api/settings'), fetch('/api/calendar'), fetch('/api/notifications'),
         ]);
         if (!tasksRes.ok || cancelled) return;
-        const tasks = await tasksRes.json();
+        const tasks = withoutCancelled<any>(await tasksRes.json());
         const settings = settingsRes.ok ? await settingsRes.json() : null;
         const events = eventsRes.ok ? await eventsRes.json() : [];
         const open: NotificationItem[] = notifRes.ok ? await notifRes.json() : [];

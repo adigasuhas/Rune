@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Loader2, Plus, X, AlertCircle } from 'lucide-react';
 import { ClockTimePicker } from '@/components/ClockTimePicker';
-import { suggestEndTime } from '@/lib/taskElapsed';
+import { suggestEndTime, slotDraftHours } from '@/lib/taskElapsed';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { SessionType, durationLabel } from '@/lib/sessionType';
 import { Modal } from '@/components/Modal';
@@ -75,6 +75,26 @@ export function TaskFormModal(props: TaskFormModalProps) {
   }, []);
 
   const nameEmpty = touched && name.trim().length === 0;
+
+  // Planned keeps up with the time slots: once the slots add up to more
+  // than the estimate, the estimate follows them (up or down) until the
+  // writer types their own figure. The server applies the same rule, so a
+  // slot stretched anywhere else updates it too.
+  const slotHours = slotDraftHours(slots);
+  const [followSlots, setFollowSlots] = useState(false);
+  useEffect(() => {
+    if (slotHours <= 0) return;
+    const est = Number(estimatedTime);
+    // An empty field follows; an explicit 0 ("no estimate") is left alone.
+    if (followSlots || estimatedTime.trim() === '' || (est > 0 && slotHours > est + 1e-6)) {
+      if (!(Math.abs(est - slotHours) < 1e-6)) onEstimatedTimeChange(String(slotHours));
+      if (!followSlots) setFollowSlots(true);
+    }
+    // Only the slots drive this; the estimate changing on its own is the writer's say.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotHours]);
+  const fmtHours = (h: number) => (h < 1 ? `${Math.round(h * 60)}m` : `${Math.round(h * 100) / 100}h`);
+  const estNum = Number(estimatedTime);
 
   return (
     <Modal onClose={onClose} size="md">
@@ -245,11 +265,21 @@ export function TaskFormModal(props: TaskFormModalProps) {
                     type="number"
                     step="any"
                     min="0.01"
-                    max="12"
+                    max="24"
                     value={estimatedTime}
-                    onChange={(e) => onEstimatedTimeChange(e.target.value)}
+                    onChange={(e) => { setFollowSlots(false); onEstimatedTimeChange(e.target.value); }}
+                    aria-describedby={slotHours > 0 ? 'taskformmodal-hours-note' : undefined}
                     className={inputClass}
                   />
+                  {slotHours > 0 && (
+                    <p id="taskformmodal-hours-note" className="mt-1 text-[11.5px] text-ink-faint" aria-live="polite">
+                      {followSlots && Math.abs(estNum - slotHours) < 1e-6
+                        ? 'Matches the time slots below.'
+                        : estNum > slotHours
+                          ? `Time slots cover ${fmtHours(slotHours)} of it.`
+                          : null}
+                    </p>
+                  )}
                 </div>
               </div>
 

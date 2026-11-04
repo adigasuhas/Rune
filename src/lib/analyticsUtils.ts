@@ -392,7 +392,7 @@ export function calculateWorkingDayMetrics(
   // cannot complete work that is waiting on someone else, so counting it
   // against you would penalise an external dependency (same principle as
   // dropping the postponement penalty).
-  const rateEligibleTasks = tasksOnWorkingDays.filter(t => t.status !== 'BLOCKED');
+  const rateEligibleTasks = tasksOnWorkingDays.filter(t => t.status !== 'BLOCKED' && t.status !== 'CANCELLED');
   const completedTasks = rateEligibleTasks.filter(t => t.status === 'COMPLETED');
   const totalTasksCount = tasksOnWorkingDays.length;
   const rateDenominator = rateEligibleTasks.length;
@@ -439,7 +439,7 @@ export function calculateWorkingDayMetrics(
       // (dateStr is always a working day here, since we're iterating workingDays)
       const dayTasks = tasksByDate.get(dateStr) || [];
       if (dayTasks.length > 0) {
-        const rateEligible = dayTasks.filter(t => t.status !== 'BLOCKED');
+        const rateEligible = dayTasks.filter(t => t.status !== 'BLOCKED' && t.status !== 'CANCELLED');
         const rate = rateEligible.length > 0
           ? Math.round((rateEligible.filter(t => t.status === 'COMPLETED').length / rateEligible.length) * 100)
           : 0;
@@ -697,3 +697,11 @@ export function shiftOffDaysWork(
   };
 }
 
+/**
+ * The days an average may count: every day before `today`, and today itself
+ * only once it's been reviewed (Review the day). A day still under way
+ * would otherwise pull every average down - n days of work over n + 1 days.
+ */
+export function settledDays(days: string[], today: string, todayReviewed: boolean): string[] {
+  return days.filter((d) => d < today || (d === today && todayReviewed));
+}

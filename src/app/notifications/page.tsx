@@ -22,6 +22,7 @@ const TYPE_LABELS: Record<string, string> = {
   TASK_ASSIGNED: 'Task assigned',
   TASK_ACCEPTED: 'Task accepted',
   TASK_DECLINED: 'Task declined',
+  TASK_CANCELLED: 'Task cancelled',
   CHAT_MENTION: 'Mention'
 };
 

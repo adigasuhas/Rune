@@ -8,6 +8,7 @@ import { orderSlotDrafts } from '@/lib/taskElapsed';
 import { canEditProject, canViewProject, usersShareATeam } from '@/lib/teams';
 import { createNotification } from '@/lib/notify';
 import { appendPostponement } from '@/lib/postpone';
+import { cleanCancelReason } from '@/lib/taskCancel';
 
 const slotSchema = z.object({ startTime: z.string().max(20).optional(), endTime: z.string().max(20).optional() });
 
@@ -23,7 +24,9 @@ const updateSchema = z.object({
   context: z.string().max(100).optional(),
   effort: z.union([z.string(), z.number()]).optional(),
   impact: z.union([z.string(), z.number()]).optional(),
-  status: z.string().max(50).optional(),
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'BLOCKED', 'CANCELLED']).optional(),
+  // Required when cancelling (status CANCELLED); can be edited while cancelled.
+  cancelReason: z.string().max(2000).nullable().optional(),
   notes: z.string().max(10_000).nullable().optional(),
   postponeHistory: z.string().max(2_000_000).optional(),
   // "Postpone": move to `date` and log it. The server writes the history
@@ -118,6 +121,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (data.effort !== undefined) updateData.effort = Number(data.effort);
     if (data.impact !== undefined) updateData.impact = Number(data.impact);
     if (data.status !== undefined) updateData.status = data.status;
+
+    // Cancelling asks why, like postponing; restoring forgets it.
+    const cancelling = data.status === 'CANCELLED' && task.status !== 'CANCELLED';
+    if (data.status === 'CANCELLED' || (task.status === 'CANCELLED' && data.status === undefined && data.cancelReason !== undefined)) {
+      const reason = cleanCancelReason(data.cancelReason ?? task.cancelReason);
+      if (!reason) return NextResponse.json({ error: 'Say why you’re cancelling this task.' }, { status: 400 });
+      updateData.cancelReason = reason;
+      if (cancelling) updateData.cancelledAt = new Date();
+    } else if (data.status !== undefined && task.status === 'CANCELLED') {
+      updateData.cancelReason = null;
+      updateData.cancelledAt = null;
+    }
     if (data.notes !== undefined) updateData.notes = data.notes;
     if (data.postponeHistory !== undefined) updateData.postponeHistory = data.postponeHistory;
     if (data.postpone && data.date !== undefined) {
@@ -169,6 +184,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       data: updateData
     });
 
+    // A cancelled task gives back its unfinished time: those slots leave the
+    // planner. Slots already ticked off stay - that work was done.
+    if (cancelling) {
+      await db.calendarEvent.deleteMany({ where: { userId: task.userId, taskId: id, completed: false } });
+    }
+
     const finalDate = updated.date;
     const taskDateStr = getLocalDateString(finalDate, tz);
     
@@ -218,7 +239,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // doing that N times for a single status toggle is what caused the hang).
       const eventRelevantFieldsChanged =
         data.name !== undefined || data.detail !== undefined || data.sessionType !== undefined || data.date !== undefined;
-      const cascadeCompleted = existingEvents.length <= 1;
+      // (Never for a cancelled task: its remaining slots are the finished ones.)
+      const cascadeCompleted = existingEvents.length <= 1 && updated.status !== 'CANCELLED';
 
       if (existingEvents.length <= 1 || eventRelevantFieldsChanged) {
         for (const e of existingEvents) {
@@ -325,6 +347,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         sourceType: 'Task',
         sourceId: finalUpdated.id,
         dedupeKey: `task:${finalUpdated.id}:blocked`
+      });
+    }
+
+    // Whoever assigned the task hears that it was cancelled, and why.
+    if (cancelling && task.assignedById && task.assignedById !== session.userId) {
+      const actor = await db.user.findUnique({ where: { id: session.userId } });
+      const actorName = actor?.name || actor?.email || 'A teammate';
+      await createNotification({
+        userId: task.assignedById,
+        type: 'TASK_CANCELLED',
+        title: `${actorName} cancelled a task you assigned`,
+        body: `“${finalUpdated.name}”: ${finalUpdated.cancelReason}`,
+        sourceType: 'Task',
+        sourceId: finalUpdated.id,
+        dedupeKey: `task:${finalUpdated.id}:cancelled:${finalUpdated.cancelledAt?.toISOString() ?? ''}`
       });
     }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect } from 'react';
 import { LoadError } from '@/components/LoadError';
 import Link from 'next/link';
@@ -166,7 +167,7 @@ export default function ProjectsPage() {
         ]);
         setLoadFailed(![projectsRes, tasksRes].every((r) => r.ok));
         if (projectsRes.ok) setProjects(await projectsRes.json());
-        if (tasksRes.ok) setTasks(await tasksRes.json());
+        if (tasksRes.ok) setTasks(withoutCancelled(await tasksRes.json()));
         if (settingsRes.ok) {
           const s = await settingsRes.json();
           if (s.timezone) setUserTimezone(s.timezone);

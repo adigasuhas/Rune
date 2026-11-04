@@ -22,7 +22,8 @@ const createSchema = z.object({
   context: z.string().max(100).optional(),
   effort: z.union([z.string(), z.number()]).optional(),
   impact: z.union([z.string(), z.number()]).optional(),
-  status: z.string().max(50).optional(),
+  // A new task can't start out cancelled - cancelling asks for a reason.
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'BLOCKED']).optional(),
   notes: z.string().max(10_000).nullable().optional(),
   startTime: z.string().max(20).nullable().optional(),
   endTime: z.string().max(20).nullable().optional(),

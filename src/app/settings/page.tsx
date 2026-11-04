@@ -51,6 +51,7 @@ const NOTIFICATION_PREFERENCE_GROUPS: { label: string; items: { type: string; la
       { type: 'TASK_ASSIGNED', label: 'Assigned to you', description: 'Someone on your team hands you a task.' },
       { type: 'TASK_ACCEPTED', label: 'Assignment accepted', description: 'A task you assigned to someone is accepted.' },
       { type: 'TASK_DECLINED', label: 'Assignment declined', description: 'A task you assigned to someone is declined.' },
+      { type: 'TASK_CANCELLED', label: 'Assignment cancelled', description: 'A task you assigned to someone is cancelled, with the reason.' },
       { type: 'TASK_BLOCKED', label: 'Waiting on you', description: 'A teammate marks a task as blocked on you.' },
     ]
   },

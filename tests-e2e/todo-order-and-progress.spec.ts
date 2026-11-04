@@ -99,7 +99,8 @@ test('in-progress tasks show elapsed time; a strip only when there is an estimat
   const today = fmt(new Date(now)).date;
   test.skip(start.date !== today || end.date !== today, 'too close to midnight');
 
-  const withEst = await make(page, { name: uniqueName('E2E running est'), date: today, estimatedTime: 1, slots: [{ startTime: start.time, endTime: end.time }] });
+  // An estimate longer than the slot (a longer slot would raise the estimate to match).
+  const withEst = await make(page, { name: uniqueName('E2E running est'), date: today, estimatedTime: 2, slots: [{ startTime: start.time, endTime: end.time }] });
   const noEst = await make(page, { name: uniqueName('E2E running noest'), date: today, estimatedTime: 0, slots: [{ startTime: start.time, endTime: end.time }] });
   const noSlot = await make(page, { name: uniqueName('E2E running noslot'), date: today, estimatedTime: 1 });
   for (const t of [withEst, noEst, noSlot]) {
@@ -109,9 +110,9 @@ test('in-progress tasks show elapsed time; a strip only when there is an estimat
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/tasks');
   const row = (id: string) => page.locator(`#task-row-${id}`);
-  await expect(row(withEst.id)).toContainText(/(29|30|31)m elapsed of 1h/);
+  await expect(row(withEst.id)).toContainText(/(29|30|31)m elapsed of 2h/);
   const bar = row(withEst.id).getByRole('progressbar');
-  await expect(bar).toHaveAttribute('aria-valuemax', '60');
+  await expect(bar).toHaveAttribute('aria-valuemax', '120');
   expect(Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(29);
 
   // The scheduled window sits beside the elapsed time, on the user's clock.
@@ -130,10 +131,10 @@ test('in-progress tasks show elapsed time; a strip only when there is an estimat
 
   // Same after a reload; and it's on Today's Up next too.
   await page.reload();
-  await expect(row(withEst.id)).toContainText(/(29|30|31)m elapsed of 1h/);
+  await expect(row(withEst.id)).toContainText(/(29|30|31)m elapsed of 2h/);
   await page.goto('/');
   const card = page.locator('div[draggable="true"]').filter({ hasText: withEst.name });
-  await expect(card).toContainText(/(29|30|31)m elapsed of 1h/);
+  await expect(card).toContainText(/(29|30|31)m elapsed of 2h/);
   await expect(card.getByRole('progressbar')).toHaveCount(1);
 });
 

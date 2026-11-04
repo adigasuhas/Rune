@@ -42,7 +42,7 @@ export interface TaskReportOptions {
 
 const PRIORITY_WEIGHT: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-const STATUS_LABEL: Record<string, string> = { PENDING: 'To do', IN_PROGRESS: 'In progress', COMPLETED: 'Done', BLOCKED: 'Blocked' };
+const STATUS_LABEL: Record<string, string> = { PENDING: 'To do', IN_PROGRESS: 'In progress', COMPLETED: 'Done', BLOCKED: 'Blocked', CANCELLED: 'Cancelled' };
 const PRIORITY_LABEL: Record<string, string> = { CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' };
 const STATUS_FILTER_LABEL: Record<string, string> = { ALL: 'All', COMPLETED: 'Done', UNFINISHED: 'Not done', POSTPONED: 'Postponed' };
 const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/_/g, ' ');
@@ -72,7 +72,7 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
     }
 
     if (status === 'COMPLETED' && t.status !== 'COMPLETED') return false;
-    if (status === 'UNFINISHED' && t.status === 'COMPLETED') return false;
+    if (status === 'UNFINISHED' && (t.status === 'COMPLETED' || t.status === 'CANCELLED')) return false;
 
     if (priority !== 'ALL' && t.priority !== priority) return false;
 

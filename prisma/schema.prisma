@@ -39,6 +39,10 @@ enum TaskStatus {
   // the blocker's "Needs attention" so the dependency is visible to the one
   // person who can clear it (Theory of Constraints).
   BLOCKED
+  // Dropped on purpose, with a reason (Task.cancelReason). Kept for the
+  // record but out of every plan: not open, not done, not in completion
+  // rates or hours planned. Its unfinished time slots are removed.
+  CANCELLED
 }
 
 // Assignment state is separate from execution state (TaskStatus above) - a
@@ -341,6 +345,9 @@ model Task {
   // task is waiting on (nullable - a task can be blocked on an external thing
   // with no owner); SetNull so deleting that account just clears the pointer.
   blockedReason    String?
+  // Set while status is CANCELLED: why, and when. Cleared on restore.
+  cancelReason     String?
+  cancelledAt      DateTime?
   blockedOnUserId  String?
   blockedOn        User?                 @relation("TaskBlockedOn", fields: [blockedOnUserId], references: [id], onDelete: SetNull)
   postponeHistory  String?               @default("[]")
@@ -601,6 +608,8 @@ enum NotificationType {
   TASK_ACCEPTED
   // The assignee declined a task you assigned them.
   TASK_DECLINED
+  // A task you assigned was cancelled (by its assignee or a project editor).
+  TASK_CANCELLED
   // Someone @mentioned you in team chat.
   CHAT_MENTION
 }

@@ -37,7 +37,7 @@ export async function computeWeeklyDigest(userId: string): Promise<WeeklyDigest>
   const lastWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
 
-  const tasks = await db.task.findMany({ where: { userId } });
+  const tasks = await db.task.findMany({ where: { userId, status: { not: 'CANCELLED' as const } } });
 
   // Last week's completions (by task date, which is when the work was planned/done).
   let completedTasks = 0;

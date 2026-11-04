@@ -76,8 +76,8 @@ describe('postponement is attributed to the day it was moved from', () => {
     const moved = postpone({ id: 'a', status: 'IN_PROGRESS', date: on(TODAY) }, TOMORROW);
     const other: T = { id: 'b', status: 'COMPLETED', date: on(TODAY) };
     const c = counts([moved, other], TODAY);
-    expect(c).toEqual({ ALL: 1, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 1, POSTPONED: 1 });
-    expect(counts([moved, other], TOMORROW)).toEqual({ ALL: 1, PENDING: 0, IN_PROGRESS: 1, BLOCKED: 0, COMPLETED: 0, POSTPONED: 0 });
+    expect(c).toEqual({ ALL: 1, PENDING: 0, IN_PROGRESS: 0, BLOCKED: 0, COMPLETED: 1, POSTPONED: 1, CANCELLED: 0 });
+    expect(counts([moved, other], TOMORROW)).toEqual({ ALL: 1, PENDING: 0, IN_PROGRESS: 1, BLOCKED: 0, COMPLETED: 0, POSTPONED: 0, CANCELLED: 0 });
     expect(counts([moved, other], D14).POSTPONED).toBe(0);
     expect(counts([moved, other], D18).POSTPONED).toBe(0);
   });

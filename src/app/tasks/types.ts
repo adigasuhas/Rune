@@ -34,9 +34,11 @@ export interface Task {
   context: string;
   effort: number;
   impact: number;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED';
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED' | 'CANCELLED';
   notes?: string;
   blockedReason?: string | null;
+  cancelReason?: string | null;
+  cancelledAt?: string | null;
   blockedOnUserId?: string | null;
   blockedOnName?: string | null;
   postponeHistory?: string;

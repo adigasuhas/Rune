@@ -59,7 +59,8 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
 export async function updateProjectMetrics(projectId: string | null | undefined): Promise<void> {
   if (!projectId) return;
   try {
-    const tasks = await prisma.task.findMany({ where: { projectId } });
+    // Cancelled tasks are out of the project's plan: neither done nor remaining.
+    const tasks = await prisma.task.findMany({ where: { projectId, status: { not: 'CANCELLED' as const } } });
     const total = tasks.length;
     const completed = tasks.filter((t) => t.status === 'COMPLETED').length;
     const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -88,14 +89,22 @@ export async function recalculateTaskActualTime(taskId: string | null | undefine
   try {
     const task = await prisma.task.findUnique({ where: { id: taskId } });
     if (!task) return;
-    const events = await prisma.calendarEvent.findMany({ where: { taskId, completed: true } });
-    const actualTime = events.reduce(
-      (sum, e) => sum + (e.end.getTime() - e.start.getTime()) / 3_600_000,
-      0
-    );
+    const allEvents = await prisma.calendarEvent.findMany({ where: { taskId } });
+    const hoursOf = (e: { start: Date; end: Date }) => (e.end.getTime() - e.start.getTime()) / 3_600_000;
+    const actualTime = allEvents.filter((e) => e.completed).reduce((sum, e) => sum + hoursOf(e), 0);
+    // Planned keeps up with the schedule: when an open task's time slots add
+    // up to more than its estimate (a 2h task given 2h30 of slots), the
+    // estimate grows to match. Never shrinks - the estimate can cover work
+    // beyond today's slots - never on a finished task, whose estimate is
+    // what its actual time is measured against, and never on a task with no
+    // estimate (0 means "not estimated", which stays its own thing).
+    const scheduled = Math.round(allEvents.reduce((sum, e) => sum + hoursOf(e), 0) * 100) / 100;
+    const estimatedTime = task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && task.estimatedTime > 0 && scheduled > task.estimatedTime + 1e-6
+      ? scheduled
+      : task.estimatedTime;
     await prisma.task.update({
       where: { id: taskId },
-      data: { actualTime, timeDifference: actualTime - task.estimatedTime },
+      data: { actualTime, timeDifference: actualTime - estimatedTime, ...(estimatedTime !== task.estimatedTime ? { estimatedTime } : {}) },
     });
     if (task.projectId) await updateProjectMetrics(task.projectId);
   } catch (e) {

@@ -36,7 +36,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // one (that's the point of shared visibility); personal projects keep the
   // original userId-scoped behavior.
   const rawTasks = await db.task.findMany({
-    where: project.teamId ? { projectId: id } : { projectId: id, userId: session.userId }
+    // Cancelled tasks stay on the Tasks page (with their reason), not in the project's plan.
+    where: project.teamId ? { projectId: id, status: { not: 'CANCELLED' as const } } : { projectId: id, userId: session.userId, status: { not: 'CANCELLED' as const } }
   });
 
   // On a team project, task.userId is "who this task belongs to" (the

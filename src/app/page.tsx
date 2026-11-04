@@ -1,5 +1,6 @@
 'use client';
 
+import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { setDayTypes } from '@/lib/timeOff';
 import { LoadError } from '@/components/LoadError';
@@ -534,7 +535,8 @@ function DashboardPage() {
         ]);
         setLoadFailed(![tasksRes, projectsRes, eventsRes].every((r) => r.ok));
 
-        if (tasksRes.ok) setTasks(await tasksRes.json());
+        // Cancelled tasks are out of every plan (Tasks -> Cancelled keeps them).
+        if (tasksRes.ok) setTasks(withoutCancelled(await tasksRes.json()));
         if (projectsRes.ok) setProjects(await projectsRes.json());
         if (eventsRes.ok) setEvents(await eventsRes.json());
         if (jobsRes.ok) setJobs(await jobsRes.json());

@@ -46,7 +46,7 @@ export async function GET() {
 
     const [people, tasks] = await Promise.all([
       db.user.findMany({ where: { id: { in: memberIds } } }),
-      db.task.findMany({ where: { userId: { in: memberIds } } })
+      db.task.findMany({ where: { userId: { in: memberIds }, status: { not: 'CANCELLED' as const } } })
     ]);
     const tasksByUser = new Map<string, any[]>();
     for (const t of tasks as any[]) {

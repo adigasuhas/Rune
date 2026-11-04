@@ -14,7 +14,8 @@ const getSessionUser = vi.fn();
 vi.mock('@/lib/auth', () => ({
   getSessionUser: (...a: unknown[]) => getSessionUser(...a),
 }));
-vi.mock('@/lib/notify', () => ({ createNotification: vi.fn() }));
+const createNotification = vi.fn();
+vi.mock('@/lib/notify', () => ({ createNotification: (...a: unknown[]) => createNotification(...a) }));
 
 let seq = 0;
 const nextId = () => `id${++seq}`;
@@ -56,6 +57,11 @@ const db = {
     create: async ({ data }: any) => { const row = { id: nextId(), ...data }; calendarEvents.push(row); return row; },
     update: async ({ where, data }: any) => { const e = calendarEvents.find((c) => c.id === where.id); Object.assign(e, data); return e; },
     delete: async ({ where }: any) => { const idx = calendarEvents.findIndex((c) => c.id === where.id); calendarEvents.splice(idx, 1); },
+    deleteMany: async ({ where }: any) => {
+      const gone = calendarEvents.filter((c) => c.taskId === where.taskId && (where.completed === undefined || c.completed === where.completed));
+      for (const g of gone) calendarEvents.splice(calendarEvents.indexOf(g), 1);
+      return { count: gone.length };
+    },
   },
   user: {
     findUnique: async ({ where }: any) => users.find((u) => u.id === where.id) ?? null,
@@ -254,5 +260,64 @@ describe('DELETE /api/tasks/[id]', () => {
     expect(res.status).toBe(200);
     expect(tasks).toHaveLength(0);
     expect(calendarEvents).toHaveLength(0);
+  });
+});
+
+describe('cancelling a task', () => {
+  const day = new Date('2026-11-04T00:00:00Z');
+
+  it('needs a reason', async () => {
+    const task = seedTask({ userId: 'u1' });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    for (const body of [{ status: 'CANCELLED' }, { status: 'CANCELLED', cancelReason: '   ' }]) {
+      const res = await PUT(req(body), p({ id: task.id }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/why/i);
+    }
+    expect(tasks[0].status).toBe('PENDING');
+  });
+
+  it('keeps the reason and date, drops unfinished slots, keeps finished ones', async () => {
+    users.push({ id: 'u1', timezone: 'UTC' });
+    const task = seedTask({ userId: 'u1', date: day });
+    calendarEvents.push(
+      { id: 'done', taskId: task.id, userId: 'u1', start: new Date('2026-11-04T08:00:00Z'), end: new Date('2026-11-04T09:00:00Z'), completed: true },
+      { id: 'open', taskId: task.id, userId: 'u1', start: new Date('2026-11-04T14:00:00Z'), end: new Date('2026-11-04T15:00:00Z'), completed: false },
+    );
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    const res = await PUT(req({ status: 'CANCELLED', cancelReason: '  Plans   changed ' }), p({ id: task.id }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ status: 'CANCELLED', cancelReason: 'Plans changed' });
+    expect(body.cancelledAt).toBeTruthy();
+    expect(calendarEvents.map((e) => e.id)).toEqual(['done']);
+    expect(calendarEvents[0].completed).toBe(true); // not un-ticked by the status sync
+  });
+
+  it('the reason can be edited while cancelled, and restoring clears it', async () => {
+    const task = seedTask({ userId: 'u1', status: 'CANCELLED', cancelReason: 'Old', cancelledAt: day });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    expect((await (await PUT(req({ cancelReason: 'Done some other way' }), p({ id: task.id }))).json()).cancelReason).toBe('Done some other way');
+    const restored = await (await PUT(req({ status: 'PENDING' }), p({ id: task.id }))).json();
+    expect(restored).toMatchObject({ status: 'PENDING', cancelReason: null, cancelledAt: null });
+  });
+
+  it('tells whoever assigned the task, with the reason', async () => {
+    const task = seedTask({ userId: 'u1', assignedById: 'lead1' });
+    users.push({ id: 'u1', name: 'Asha' });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    await PUT(req({ status: 'CANCELLED', cancelReason: 'Duplicate of another task' }), p({ id: task.id }));
+    expect(createNotification).toHaveBeenCalledWith(expect.objectContaining({ userId: 'lead1', type: 'TASK_CANCELLED', body: expect.stringContaining('Duplicate of another task') }));
+  });
+
+  it('rejects an unknown status', async () => {
+    const task = seedTask({ userId: 'u1' });
+    getSessionUser.mockResolvedValue({ userId: 'u1' });
+    const { PUT } = await import('@/app/api/tasks/[id]/route');
+    expect((await PUT(req({ status: 'ARCHIVED' }), p({ id: task.id }))).status).toBe(400);
   });
 });

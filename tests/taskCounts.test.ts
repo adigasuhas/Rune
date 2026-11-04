@@ -51,7 +51,7 @@ describe('task counts follow the selected date', () => {
       { id: '7', status: 'BLOCKED', date: on(TOMORROW), postponeHistory: moved([TODAY, TOMORROW]) },
     ];
     const c = counts(tasks, TODAY);
-    expect(c).toEqual({ ALL: 6, PENDING: 3, IN_PROGRESS: 1, BLOCKED: 1, COMPLETED: 1, POSTPONED: 1 });
+    expect(c).toEqual({ ALL: 6, PENDING: 3, IN_PROGRESS: 1, BLOCKED: 1, COMPLETED: 1, POSTPONED: 1, CANCELLED: 0 });
     expect(c.PENDING + c.IN_PROGRESS + c.BLOCKED + c.COMPLETED).toBe(c.ALL);
   });
 

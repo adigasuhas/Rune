@@ -60,7 +60,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // task.userId is "whose task this is" (see Task.assignedById) - so this is
   // exactly the target's own workload, whether self-created or assigned to
   // them by someone else.
-  const ownTasks = await db.task.findMany({ where: { userId: targetUserId } });
+  const ownTasks = await db.task.findMany({ where: { userId: targetUserId, status: { not: 'CANCELLED' as const } } });
   const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
   const scopedTasks = ownTasks.filter((t: any) => t.projectId && visibleProjectIds.has(t.projectId));
 

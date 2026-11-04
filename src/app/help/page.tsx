@@ -196,6 +196,17 @@ const DOCS_DATA: DocSection[] = [
         ]
       },
       {
+        title: 'Cancelling a task',
+        description: 'Drop a task on purpose, and say why. Rune keeps the record.',
+        details: [
+          'Select Cancel on a task (the slashed circle). Pick a suggested reason or write your own. A reason is required.',
+          'The task leaves To do and every plan: it doesn’t count as open or done, toward completion rates, hours planned, reminders or the weekly digest.',
+          'Its unfinished time slots leave your planner. Time you already ticked off stays as work done.',
+          'Find it under Tasks → Cancelled, with the reason and the date. You can edit the reason, or select Restore to put it back in To do.',
+          'If someone assigned you the task, they get a notification with your reason.'
+        ]
+      },
+      {
         title: 'Session types',
         description: 'Every task and time slot is deep work, focus, or regular work.',
         details: [
@@ -206,7 +217,7 @@ const DOCS_DATA: DocSection[] = [
         ]
       }
     ],
-    keywords: ['tasks', 'status', 'postpone', 'move task', 'deep work', 'focus', 'session type', 'to do', 'done', 'blocked']
+    keywords: ['tasks', 'status', 'postpone', 'move task', 'cancel', 'cancelled', 'reason', 'deep work', 'focus', 'session type', 'to do', 'done', 'blocked']
   },
   {
     id: 'notebooks',

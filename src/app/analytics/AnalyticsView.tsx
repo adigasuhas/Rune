@@ -1,5 +1,6 @@
 'use client';
 
+import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect } from 'react';
 import { LoadError } from '@/components/LoadError';
 import {
@@ -25,7 +26,8 @@ import {
   calculateOccupiedHoursFromItems,
   getIntervalUnionDuration,
   calculateProductivityScore,
-  getPostponeCount
+  getPostponeCount,
+  settledDays
 } from '@/lib/analyticsUtils';
 import { getCurrentDateInTimezone, getLocalDateString, isDefaultWorking, parseDateTimeInTimezone } from '@/lib/dateUtils';
 import { Button, PageHeader, SectionHeader } from '@/components/ui';
@@ -72,7 +74,8 @@ export default function AnalyticsPage() {
       ]);
       setLoadFailed(![tasksRes, projectsRes, calendarRes].every((r) => r.ok));
 
-      if (tasksRes.ok) setTasks(await tasksRes.json());
+      // A cancelled task is neither planned nor done: it counts nowhere here.
+      if (tasksRes.ok) setTasks(withoutCancelled(await tasksRes.json()));
       if (projectsRes.ok) setProjects(await projectsRes.json());
       if (accomplishmentsRes.ok) setAccomplishments(await accomplishmentsRes.json());
       if (settingsRes.ok) setSettings(await settingsRes.json());
@@ -380,6 +383,19 @@ export default function AnalyticsPage() {
     return baseLast30Days;
   }, [baseLast30Days, activeDays, accountCreationDateStr, rangeEndStr, showOffDaysWork]);
 
+  // Averages only count days that are over. Today joins them once you've
+  // reviewed it (Review the day saves a record for it) or once it ends -
+  // until then a half-done day would drag every average down (n days of
+  // work divided by n + 1).
+  const todayReviewed = React.useMemo(
+    () => rawAccomplishments.some((a: any) => a?.date === todayStr && (a.reviewedAt || a.wentWell != null || a.firstFocus != null)),
+    [rawAccomplishments, todayStr]
+  );
+  const isSettled = React.useCallback((d: string) => settledDays([d], todayStr, todayReviewed).length > 0, [todayStr, todayReviewed]);
+  const settledAllWorkingDays = React.useMemo(() => settledDays(allWorkingDays, todayStr, todayReviewed), [allWorkingDays, todayStr, todayReviewed]);
+  const settledLast7Days = React.useMemo(() => settledDays(last7Days, todayStr, todayReviewed), [last7Days, todayStr, todayReviewed]);
+  const settledLast30Days = React.useMemo(() => settledDays(last30Days, todayStr, todayReviewed), [last30Days, todayStr, todayReviewed]);
+
   const todayTime = new Date(rangeEndStr).getTime();
   const creationTime = new Date(accountCreationDateStr).getTime();
   const allCalendarDaysCount = (!isNaN(todayTime) && !isNaN(creationTime))
@@ -432,8 +448,8 @@ export default function AnalyticsPage() {
     // correct, always-fresh invalidation signal, and grouping by date once
     // (see groupByLocalDate in analyticsUtils.ts) keeps the underlying
     // computation cheap enough that no extra caching is needed.
-    return calculateWorkingDayMetrics(allWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone);
-  }, [allWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone]);
+    return calculateWorkingDayMetrics(settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone);
+  }, [settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone]);
 
   // Entire current month statistics
   const currentMonthStats = React.useMemo(() => {
@@ -485,12 +501,12 @@ export default function AnalyticsPage() {
   }, [getCompletionRateForDate, getTasksForDate]);
 
   const avg7DaysCompletionRate = React.useMemo(() => {
-    return getAverageCompletionRate(last7Days);
-  }, [getAverageCompletionRate, last7Days]);
+    return getAverageCompletionRate(settledLast7Days);
+  }, [getAverageCompletionRate, settledLast7Days]);
 
   const avg30DaysCompletionRate = React.useMemo(() => {
-    return getAverageCompletionRate(last30Days);
-  }, [getAverageCompletionRate, last30Days]);
+    return getAverageCompletionRate(settledLast30Days);
+  }, [getAverageCompletionRate, settledLast30Days]);
 
   // 2. Deep Work Hours Stats
   const getDeepWorkHoursForDate = React.useCallback((date: string) => {
@@ -557,16 +573,16 @@ export default function AnalyticsPage() {
   }, [getWorkingHoursForDate, todayStr]);
 
   const avgWeeklyWorkingHours = React.useMemo(() => {
-    return last7Days.length > 0
-      ? Math.round((last7Days.reduce((sum, d) => sum + getWorkingHoursForDate(d), 0) / last7Days.length) * 10) / 10
+    return settledLast7Days.length > 0
+      ? Math.round((settledLast7Days.reduce((sum, d) => sum + getWorkingHoursForDate(d), 0) / settledLast7Days.length) * 10) / 10
       : 0;
-  }, [last7Days, getWorkingHoursForDate]);
+  }, [settledLast7Days, getWorkingHoursForDate]);
 
   const avgMonthlyWorkingHours = React.useMemo(() => {
-    return last30Days.length > 0
-      ? Math.round((last30Days.reduce((sum, d) => sum + getWorkingHoursForDate(d), 0) / last30Days.length) * 10) / 10
+    return settledLast30Days.length > 0
+      ? Math.round((settledLast30Days.reduce((sum, d) => sum + getWorkingHoursForDate(d), 0) / settledLast30Days.length) * 10) / 10
       : 0;
-  }, [last30Days, getWorkingHoursForDate]);
+  }, [settledLast30Days, getWorkingHoursForDate]);
 
   // Target configured hours
   const parseTime = (t: string) => {
@@ -702,10 +718,13 @@ export default function AnalyticsPage() {
   );
 
   const selectedWeekProductivityScore = React.useMemo(() => {
-    if (selectedWeekDates.length === 0) return 0;
-    const scores = selectedWeekDates.map(d => getProductivityScoreForDate(d));
+    // Only the week's days that are over (and today once reviewed) - not
+    // days still to come, which have no score yet.
+    const days = selectedWeekDates.filter(isSettled);
+    if (days.length === 0) return 0;
+    const scores = days.map(d => getProductivityScoreForDate(d));
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
-  }, [selectedWeekDates, getProductivityScoreForDate]);
+  }, [selectedWeekDates, getProductivityScoreForDate, isSettled]);
 
   const selectedWeekHasActivity = React.useMemo(
     () => selectedWeekDates.some(getDayHasActivity),

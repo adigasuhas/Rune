@@ -199,6 +199,18 @@ export function orderSlotDrafts<T extends { startTime?: string | null; endTime?:
     .map(({ s }) => s);
 }
 
+/** Hours covered by a set of "HH:MM" slots (an end at or before its start runs past midnight). */
+export function slotDraftHours(slots: Array<{ startTime?: string | null; endTime?: string | null }>): number {
+  let mins = 0;
+  for (const s of slots) {
+    const m = (t?: string | null) => (/^\d{2}:\d{2}$/.test(t || '') ? Number(t!.slice(0, 2)) * 60 + Number(t!.slice(3)) : null);
+    const a = m(s.startTime), b = m(s.endTime);
+    if (a === null || b === null) continue;
+    mins += b > a ? b - a : b + 24 * 60 - a;
+  }
+  return Math.round((mins / 60) * 100) / 100;
+}
+
 /** "HH:MM" now in `timezone` (the browser's zone when not given). */
 export function nowHHMM(timezone?: string, now: Date = new Date()): string {
   try {

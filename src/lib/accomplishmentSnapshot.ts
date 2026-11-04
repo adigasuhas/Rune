@@ -10,7 +10,7 @@ import { calculateOccupiedHoursForDay, calculateProductivityScore, getPostponeCo
  */
 export async function computeDaySnapshot(userId: string, date: string, tz: string) {
   const allTasks = await db.task.findMany({
-    where: { userId }
+    where: { userId, status: { not: 'CANCELLED' as const } }
   });
 
   const dayTasks = allTasks.filter((t: any) => {

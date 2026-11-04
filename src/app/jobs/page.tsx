@@ -1,5 +1,6 @@
 'use client';
 
+import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect, useRef } from 'react';
 import { LoadError } from '@/components/LoadError';
 import Link from 'next/link';
@@ -188,7 +189,7 @@ export default function JobMonitorPage() {
           // Sort list such that pinned items are always at top
           setJobs(list);
         }
-        if (tasksRes.ok) setTasks(await tasksRes.json());
+        if (tasksRes.ok) setTasks(withoutCancelled(await tasksRes.json()));
         if (pagesRes.ok) setNotebookPages(await pagesRes.json());
         fetch('/api/teams').then(r => r.ok ? r.json() : []).then((d: any[]) => setMyTeams(Array.isArray(d) ? d.map(t => ({ id: t.id, name: t.name })) : [])).catch(() => {});
         if (settingsRes.ok) {
