@@ -18,10 +18,13 @@ import {
   BookOpen,
   Eye,
   Ban,
+  Pencil,
+  ChevronLeft,
   X as XIcon
 } from 'lucide-react';
 import { SectionHeader } from '@/components/ui';
 import { ProjectBackups } from '@/components/backups/BackupPanels';
+import { formatHoursValue } from '@/lib/numberFormat';
 
 interface Task {
   id: string;
@@ -100,6 +103,8 @@ export default function ProjectDetailPage({ params }: PageProps) {
   const [showDone, setShowDone] = useState(false);
   const [blockingTask, setBlockingTask] = useState<Task | null>(null);
   const [openingNotebook, setOpeningNotebook] = useState(false);
+  // The moment the page opened - for how far through its dates the project is.
+  const [now] = useState(() => Date.now());
 
   // Team collaborators
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -388,362 +393,307 @@ export default function ProjectDetailPage({ params }: PageProps) {
   }
 
   const canEdit = !!project.canEdit;
-  const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString([], { day: 'numeric', month: 'short' }) : null;
-  const deadlineStr = project.deadline
-    ? new Date(project.deadline).toLocaleDateString([], { day: 'numeric', month: 'short' })
+  const tasks = project.tasks || [];
+  const settled = project.status === 'COMPLETED' || project.status === 'ARCHIVED';
+  const start = project.startDate ? new Date(project.startDate) : null;
+  const due = project.deadline ? new Date(project.deadline) : null;
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString([], { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}) });
+  const dueRel = settled ? null : formatRelativeDeadline(project.deadline);
+  const overdue = !!dueRel && dueRel.includes('overdue');
+  const timeline = start && due ? `${fmtDate(start)} – ${fmtDate(due)}` : due ? `Due ${fmtDate(due)}` : start ? `From ${fmtDate(start)}` : null;
+  // How far through its dates the project is - drawn, not written out.
+  const elapsedPct = start && due && due > start && !settled
+    ? Math.min(100, Math.max(0, ((now - start.getTime()) / (due.getTime() - start.getTime())) * 100))
     : null;
-  const projectSettled = project.status === 'COMPLETED' || project.status === 'ARCHIVED';
-  const deadlineRel = projectSettled ? null : formatRelativeDeadline(project.deadline);
-  const deadlineOverdue = !projectSettled && project.deadline
-    ? new Date(project.deadline).getTime() < Date.now()
-    : false;
-  const startStr = fmtDate(project.startDate);
-  const workingDaysIn = project.startDate
-    ? Math.max(0, Math.round((Date.now() - new Date(project.startDate).getTime()) / 86400000 * (5 / 7)))
-    : null;
+  const workingDaysIn = start ? Math.max(0, Math.round(((now - start.getTime()) / 86400000) * (5 / 7))) : null;
 
   const doneGoals = goals.filter(g => g.completed).length;
   const goalPct = goals.length > 0 ? Math.round((doneGoals / goals.length) * 100) : 0;
-  const estTotalH = project.timeSpent + project.estimatedTimeRemaining;
-  const timePct = estTotalH > 0 ? Math.min(100, Math.round((project.timeSpent / estTotalH) * 100)) : 0;
-  const inProgTasks = (project.tasks || []).filter(t => t.status === 'IN_PROGRESS').length;
-  const todoTasks = (project.tasks || []).filter(t => t.status === 'PENDING').length;
+  const totalTasks = project.tasksCompleted + project.tasksRemaining;
+  const plannedH = project.timeSpent + project.estimatedTimeRemaining;
+  const timePct = plannedH > 0 ? Math.min(100, (project.timeSpent / plannedH) * 100) : 0;
+  const completedCount = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const notebookCount = project.linkedNotebooks?.length || 0;
+  const hasAside = canEdit || !!project.teamId;
 
-  const statusTone =
-    project.status === 'ACTIVE' ? 'border-primary text-primary bg-primary-soft' :
-    project.status === 'COMPLETED' ? 'border-border-strong text-ink-secondary bg-surface-sunken' :
-    project.status === 'ARCHIVED' ? 'border-border-strong text-ink-faint bg-surface-sunken' :
-    'border-border-strong text-ink-secondary bg-surface-sunken';
+  const status = STATUS[project.status] || { label: project.status, dot: 'bg-border-strong' };
+  const priority = PRIORITY[project.priority || 'MEDIUM'] || PRIORITY.MEDIUM;
+
+  const actionClass = 'flex h-9 items-center gap-1.5 rounded-[9px] border border-border-strong bg-surface px-3.5 text-[14px] font-semibold text-foreground transition-colors hover:bg-surface-raised disabled:opacity-50';
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Breadcrumb + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5 text-[13.5px] min-w-0">
-          <Link href="/projects" className="text-ink-faint hover:text-foreground transition-colors">Projects</Link>
-          <span className="text-ink-faint">·</span>
-          <span className="text-foreground truncate">{project.name}</span>
-        </div>
+        {/* Back to the list; the project's own name is the title just below. */}
+        <Link href="/projects" className="-ml-1 inline-flex items-center gap-0.5 rounded-[6px] py-1 pl-0.5 pr-1.5 text-[13.5px] text-ink-faint transition-colors hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Projects
+        </Link>
         <div className="flex flex-wrap items-center gap-2">
-          {!!project.linkedNotebooks?.length && (
-            <Link
-              href="/notebook"
-              className="flex h-9 items-center gap-1.5 px-3.5 bg-surface border border-border-strong hover:bg-surface-raised text-foreground text-[14px] font-semibold rounded-[9px] transition-colors"
-            >
-              <BookOpen className="w-4 h-4 text-ink-faint" /> Open notebook
-            </Link>
-          )}
-          <Link
-            href={`/wall?projectId=${project.id}`}
-            className="flex h-9 items-center gap-1.5 px-3.5 bg-surface border border-border-strong hover:bg-surface-raised text-foreground text-[14px] font-semibold rounded-[9px] transition-colors"
-          >
-            <StickyNote className="w-4 h-4 text-ink-faint" /> Open wall
+          <button type="button" onClick={handleOpenNotebook} disabled={openingNotebook} className={actionClass}>
+            <BookOpen className="h-4 w-4 text-ink-faint" aria-hidden="true" />
+            {openingNotebook ? 'Opening…' : notebookCount > 1 ? `${notebookCount} notebooks` : 'Notebook'}
+          </button>
+          <Link href={`/wall?projectId=${project.id}`} className={actionClass}>
+            <StickyNote className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Wall
           </Link>
           {canEdit && (
             <Link
               href="/tasks"
-              className="flex h-9 items-center gap-1.5 px-3.5 bg-primary hover:bg-primary-hover text-primary-foreground text-[14px] font-semibold rounded-[9px] transition-colors"
+              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-primary px-3.5 text-[14px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
             >
-              <Plus className="w-4 h-4" /> New task
+              <Plus className="h-4 w-4" aria-hidden="true" /> New task
             </Link>
           )}
         </div>
       </div>
 
-      {/* Title block */}
-      <div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: project.color || 'var(--border-strong)' }} />
+      {/* Title */}
+      <div className="mt-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: project.color || 'var(--border-strong)' }} aria-hidden="true" />
           <h1 className="app-title text-foreground">{project.name}</h1>
-          {project.status !== 'ACTIVE' && (
-            <span className="badge badge-neutral">{project.status === 'ON_HOLD' ? 'On hold' : project.status.charAt(0) + project.status.slice(1).toLowerCase()}</span>
-          )}
-          {(project.priority === 'HIGH' || project.priority === 'CRITICAL') && (
-            <span className={`text-[13px] font-medium ${project.priority === 'CRITICAL' ? 'text-danger' : 'text-warning'}`}>
-              {project.priority === 'CRITICAL' ? 'Critical' : 'High priority'}
-            </span>
-          )}
           {!canEdit && (
             <span className="flex items-center gap-1 text-[13px] text-ink-faint">
-              <Eye className="w-3 h-3" /> View only
+              <Eye className="h-3 w-3" aria-hidden="true" /> View only
             </span>
           )}
         </div>
         {project.description && project.description !== 'Demo project' && (
-          <p className="text-ink-secondary text-[15px] mt-2 max-w-2xl leading-relaxed">{project.description}</p>
+          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-ink-secondary">{project.description}</p>
         )}
-        <p className="text-[13.5px] text-ink-secondary mt-2">
-          {startStr && `Started ${startStr}`}
-          {workingDaysIn !== null && ` · ${workingDaysIn} working days in`}
-          {deadlineStr && ' · due '}
-          {deadlineStr && (
-            <span className={deadlineOverdue ? 'text-danger' : projectSettled ? '' : 'text-foreground'}>
-              {deadlineStr}{deadlineRel && ` (${deadlineRel})`}
-            </span>
-          )}
-          {!startStr && !deadlineStr && 'No dates set'}
-        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: objectives + tasks */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* The project at a glance: one ruled row of facts, each said once. */}
+      <dl aria-label="Project details" className="mt-6 grid grid-cols-2 gap-x-6 border-b border-border lg:grid-cols-6 lg:gap-x-0 lg:border-t">
+        <Fact label="Status">
+          <span className="flex items-center gap-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${status.dot}`} aria-hidden="true" />
+            {status.label}
+          </span>
+        </Fact>
+        <Fact label="Priority">
+          <span className={priority.cls}>{priority.label}</span>
+        </Fact>
+        <Fact
+          label="Timeline"
+          className="col-span-2"
+          meter={elapsedPct !== null ? <Meter pct={elapsedPct} tone={overdue ? 'bg-danger' : 'bg-ink-faint'} /> : undefined}
+          title={workingDaysIn !== null && !settled ? `${workingDaysIn} working days in` : undefined}
+        >
+          {timeline ? (
+            <span className="flex items-baseline justify-between gap-3">
+              <span className="truncate">{timeline}</span>
+              {dueRel && <span className={`shrink-0 text-[12.5px] font-normal ${overdue ? 'text-danger' : 'text-ink-faint'}`}>{dueRel}</span>}
+            </span>
+          ) : (
+            <span className="font-normal text-ink-faint">No dates set</span>
+          )}
+        </Fact>
+        <Fact label="Tasks done" meter={totalTasks > 0 ? <Meter pct={project.progress} /> : undefined}>
+          {totalTasks > 0 ? (
+            <>{project.tasksCompleted}<span className="font-normal text-ink-faint"> of {totalTasks}</span></>
+          ) : (
+            <span className="font-normal text-ink-faint">None yet</span>
+          )}
+        </Fact>
+        <Fact label="Hours" meter={plannedH > 0 ? <Meter pct={timePct} /> : undefined}>
+          {plannedH > 0 ? (
+            <>{formatHoursValue(project.timeSpent)}<span className="font-normal text-ink-faint"> of {formatHoursValue(plannedH)}</span></>
+          ) : (
+            <span className="font-normal text-ink-faint">None yet</span>
+          )}
+        </Fact>
+      </dl>
+
+      <div className={`mt-10 grid grid-cols-1 gap-x-12 gap-y-10 ${hasAside ? 'lg:grid-cols-3' : 'max-w-3xl'}`}>
+        <div className="space-y-10 lg:col-span-2">
           {/* Objectives */}
-          <div>
-            <SectionHeader title="Objectives" meta={goals.length > 0 ? `${doneGoals} of ${goals.length} · ${goalPct}%` : undefined} />
+          <section>
+            <SectionHeader title="Objectives" meta={goals.length > 0 ? `${doneGoals} of ${goals.length}` : undefined} />
             {goals.length > 0 && (
-              <div className="h-[3px] bg-surface-sunken">
+              <div className="h-[3px] bg-surface-sunken" aria-hidden="true">
                 <div className="h-full bg-primary transition-[width] duration-[var(--duration-standard)]" style={{ width: `${goalPct}%` }} />
               </div>
             )}
-            <div className="py-3 space-y-3">
-              {goals.length === 0 ? (
-                <p className="text-ink-secondary text-[13px]">
-                  {canEdit
-                    ? 'No objectives yet. Add the milestones this project has to hit.'
-                    : 'No objectives have been set for this project yet.'}
-                </p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {goals.map((goal) => {
-                    const isEditing = editingGoalId === goal.id;
-                    return (
-                      <div key={goal.id} className="group flex items-center gap-3 py-2.5">
-                        {canEdit ? (
-                          <button type="button" onClick={() => toggleGoal(goal.id)} className="shrink-0 text-ink-faint hover:text-foreground transition-colors" aria-label={goal.completed ? 'Mark objective incomplete' : 'Mark objective complete'}>
-                            {goal.completed ? <CheckCircle2 className="w-4 h-4 text-primary" /> : <Circle className="w-4 h-4" />}
+            {goals.length === 0 && !canEdit && (
+              <p className="py-4 text-[13.5px] text-ink-secondary">No objectives set.</p>
+            )}
+            {goals.length > 0 && (
+              <ul className="divide-y divide-border">
+                {goals.map((goal) => {
+                  const isEditing = editingGoalId === goal.id;
+                  const mark = goal.completed ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <Circle className="h-4 w-4" />;
+                  return (
+                    <li key={goal.id} className="group flex min-h-[44px] items-center gap-3 py-2">
+                      {canEdit ? (
+                        <button type="button" onClick={() => toggleGoal(goal.id)} className="shrink-0 text-ink-faint transition-colors hover:text-foreground" aria-label={goal.completed ? 'Mark objective incomplete' : 'Mark objective complete'}>
+                          {mark}
+                        </button>
+                      ) : (
+                        <span className="shrink-0 text-ink-faint">{mark}</span>
+                      )}
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onBlur={() => handleSaveEdit(goal.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(goal.id); if (e.key === 'Escape') setEditingGoalId(null); }}
+                          autoFocus
+                          aria-label="Objective"
+                          className="flex-1 border-none bg-transparent p-0 text-[14px] text-foreground focus:outline-none"
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={canEdit ? () => { setEditingGoalId(goal.id); setEditingText(goal.text); } : undefined}
+                          className={`flex-1 truncate text-[14px] ${canEdit ? 'cursor-text' : ''} ${goal.completed ? 'text-ink-faint line-through' : 'text-foreground'}`}
+                        >
+                          {goal.text}
+                        </span>
+                      )}
+                      {canEdit && !isEditing && (
+                        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          <button type="button" onClick={() => { setEditingGoalId(goal.id); setEditingText(goal.text); }} className="rounded-[4px] p-1.5 text-ink-faint transition-colors hover:bg-surface-sunken hover:text-foreground" aria-label="Edit objective">
+                            <Pencil className="h-3.5 w-3.5" />
                           </button>
-                        ) : (
-                          <span className="shrink-0 text-ink-faint">
-                            {goal.completed ? <CheckCircle2 className="w-4 h-4 text-primary" /> : <Circle className="w-4 h-4" />}
-                          </span>
-                        )}
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editingText}
-                            onChange={(e) => setEditingText(e.target.value)}
-                            onBlur={() => handleSaveEdit(goal.id)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(goal.id); if (e.key === 'Escape') setEditingGoalId(null); }}
-                            autoFocus
-                            className="flex-1 bg-transparent border-none text-[13px] text-foreground focus:outline-none p-0"
-                          />
-                        ) : (
-                          <span
-                            onDoubleClick={canEdit ? () => { setEditingGoalId(goal.id); setEditingText(goal.text); } : undefined}
-                            className={`flex-1 text-[13px] select-none truncate ${canEdit ? 'cursor-text' : ''} ${goal.completed ? 'line-through text-ink-faint' : 'text-foreground'}`}
-                            title={canEdit ? 'Double-click to edit' : undefined}
-                          >
-                            {goal.text}
-                          </span>
-                        )}
-                        {canEdit && (
-                          <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-                            <button type="button" onClick={() => { setEditingGoalId(goal.id); setEditingText(goal.text); }} className="p-1 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" aria-label="Edit objective">
-                              <span className="text-[11px] font-medium px-1">Edit</span>
-                            </button>
-                            <button type="button" onClick={() => deleteGoal(goal.id)} className="p-1 text-ink-faint hover:text-danger rounded-[3px] hover:bg-danger-soft transition-colors" aria-label="Delete objective">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {canEdit && (
-                <form onSubmit={handleAddGoal} className="flex gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={newGoalText}
-                    onChange={(e) => setNewGoalText(e.target.value)}
-                    placeholder="Add an objective…"
-                    aria-label="New objective"
-                    className="flex-1 bg-surface-raised border border-border rounded-md px-3 py-1.5 text-foreground text-xs focus:outline-none focus:border-border-strong"
-                  />
-                  <button type="submit" className="px-3 py-1.5 border border-border-strong text-ink-secondary hover:text-foreground hover:bg-surface-sunken text-xs font-semibold rounded-md transition-colors flex items-center gap-1 shrink-0">
-                    <Plus className="w-3.5 h-3.5" /> Add
+                          <button type="button" onClick={() => deleteGoal(goal.id)} className="rounded-[4px] p-1.5 text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger" aria-label="Delete objective">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {canEdit && (
+              <form
+                onSubmit={handleAddGoal}
+                className={`-mx-2 flex min-h-[44px] items-center gap-3 rounded-[8px] px-2 transition-colors focus-within:bg-surface-raised ${goals.length > 0 ? 'mt-1' : 'mt-2'}`}
+              >
+                <Plus className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden="true" />
+                <input
+                  type="text"
+                  value={newGoalText}
+                  onChange={(e) => setNewGoalText(e.target.value)}
+                  placeholder="Add an objective"
+                  aria-label="New objective"
+                  className="flex-1 border-0 bg-transparent p-0 text-[14px] text-foreground placeholder-ink-faint shadow-none outline-none ring-0 focus:outline-none focus:ring-0"
+                />
+                {newGoalText.trim() && (
+                  <button type="submit" className="shrink-0 text-[13px] font-semibold text-primary hover:text-primary-hover">
+                    Add
                   </button>
-                </form>
-              )}
-            </div>
-          </div>
+                )}
+              </form>
+            )}
+          </section>
 
           {/* Tasks */}
-          <div>
-            <SectionHeader
-              title="Tasks"
-              meta={
-                <>
-                  {inProgTasks > 0 && `${inProgTasks} in progress`}{inProgTasks > 0 && todoTasks > 0 && ' · '}{todoTasks > 0 && `${todoTasks} to do`}
-                  {inProgTasks === 0 && todoTasks === 0 && `${(project.tasks || []).length} total`}
-                </>
-              }
-            />
-            {!project.tasks || project.tasks.length === 0 ? (
-              <p className="py-6 text-ink-secondary text-[14px]">
-                No tasks on this project yet.{canEdit && <> <Link href="/tasks" className="text-primary hover:text-primary-hover">Add one</Link>.</>}
-              </p>
+          <section>
+            <SectionHeader title="Tasks" />
+            {tasks.length === 0 ? (
+              <p className="py-4 text-[13.5px] text-ink-secondary">No tasks on this project yet.</p>
             ) : (
-              <div className="divide-y divide-border">
-                {[...project.tasks]
+              <ul className="divide-y divide-border">
+                {[...tasks]
                   .sort((x, y) => Number(x.status === 'COMPLETED') - Number(y.status === 'COMPLETED'))
                   .filter((t) => showDone || t.status !== 'COMPLETED')
                   .map((task) => {
-                  const isCompleted = task.status === 'COMPLETED';
-                  const isInProgress = task.status === 'IN_PROGRESS';
-                  const isBlocked = task.status === 'BLOCKED';
-                  const marker = isCompleted
-                    ? <CheckCircle2 className="w-4 h-4 text-primary" />
-                    : isBlocked
-                      ? <Ban className="w-4 h-4 text-[var(--color-data-slate)]" />
-                      : <Circle className="w-4 h-4" />;
-                  return (
-                    <div key={task.id} className="group flex items-center gap-3 py-2.5">
-                      {canEdit && !isBlocked ? (
-                        <button onClick={() => toggleTaskStatus(task)} className="shrink-0 text-ink-faint hover:text-foreground transition-colors" aria-label={isCompleted ? 'Mark task incomplete' : 'Mark task complete'}>
-                          {marker}
-                        </button>
-                      ) : (
-                        <span className="shrink-0 text-ink-faint" title={isBlocked ? 'Blocked' : undefined}>{marker}</span>
-                      )}
-                      <span className={`flex-1 min-w-0 text-[14px] truncate ${isCompleted ? 'line-through text-ink-faint' : 'text-foreground font-medium'}`}>
-                        {task.name}
-                      </span>
-                      {isBlocked && (task.blockedOnName || task.blockedReason) && (
-                        <span className="hidden sm:inline text-[10px] text-[var(--color-data-slate)] truncate max-w-[12rem] shrink-0" title={task.blockedReason || undefined}>
-                          waiting on {task.blockedOnName || task.blockedReason}
+                    const isCompleted = task.status === 'COMPLETED';
+                    const isInProgress = task.status === 'IN_PROGRESS';
+                    const isBlocked = task.status === 'BLOCKED';
+                    const marker = isCompleted
+                      ? <CheckCircle2 className="h-4 w-4 text-primary" />
+                      : isBlocked
+                        ? <Ban className="h-4 w-4 text-[var(--color-data-slate)]" />
+                        : <Circle className="h-4 w-4" />;
+                    const waitingOn = task.blockedOnName || task.blockedReason;
+                    const owner = project.teamId ? task.ownerName || task.ownerEmail : null;
+                    return (
+                      <li key={task.id} className="group flex min-h-[44px] items-center gap-3 py-2">
+                        {canEdit && !isBlocked ? (
+                          <button onClick={() => toggleTaskStatus(task)} className="shrink-0 text-ink-faint transition-colors hover:text-foreground" aria-label={isCompleted ? 'Mark task incomplete' : 'Mark task complete'}>
+                            {marker}
+                          </button>
+                        ) : (
+                          <span className="shrink-0 text-ink-faint" title={isBlocked ? 'Blocked' : undefined}>{marker}</span>
+                        )}
+                        <span className={`min-w-0 flex-1 truncate text-[14px] ${isCompleted ? 'text-ink-faint line-through' : 'font-medium text-foreground'}`}>
+                          {task.name}
                         </span>
-                      )}
-                      {project.teamId && (task.ownerName || task.ownerEmail) && (
-                        <span className="hidden sm:inline text-[10px] text-ink-secondary border border-border px-1.5 py-0.5 rounded-[3px] shrink-0">
-                          {task.ownerName || task.ownerEmail}
-                        </span>
-                      )}
-                      {canEdit && !isCompleted && (
-                        <button
-                          onClick={() => setBlockingTask(task)}
-                          className={`hidden group-hover:inline-flex p-1 rounded-[3px] hover:bg-surface-sunken transition-colors shrink-0 ${isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint hover:text-foreground'}`}
-                          title={isBlocked ? 'Edit block' : 'Mark blocked'}
-                          aria-label={isBlocked ? 'Edit block' : 'Mark blocked'}
+                        {owner && (
+                          <span className="hidden max-w-[10rem] shrink-0 truncate text-[12px] text-ink-faint sm:inline">{owner}</span>
+                        )}
+                        {canEdit && !isCompleted && (
+                          <button
+                            onClick={() => setBlockingTask(task)}
+                            className={`shrink-0 rounded-[4px] p-1.5 opacity-0 transition-[opacity,colors] hover:bg-surface-sunken focus-visible:opacity-100 group-hover:opacity-100 ${isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint hover:text-foreground'}`}
+                            title={isBlocked ? 'Edit block' : 'Mark blocked'}
+                            aria-label={isBlocked ? 'Edit block' : 'Mark blocked'}
+                          >
+                            <Ban className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <span
+                          className={`max-w-[8.5rem] shrink-0 truncate text-right sm:max-w-[14rem] text-[13px] tabular-nums ${isInProgress ? 'font-medium text-primary' : isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint'}`}
+                          title={isBlocked && task.blockedReason ? task.blockedReason : undefined}
                         >
-                          <Ban className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <span className={`text-[13px] tabular-nums shrink-0 ${isInProgress ? 'text-primary' : 'text-ink-faint'}`}>
-                        {isInProgress ? 'In progress' : isBlocked ? 'Blocked' : `${task.estimatedTime}h`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                          {isInProgress
+                            ? 'In progress'
+                            : isBlocked
+                              ? waitingOn ? `Waiting on ${waitingOn}` : 'Blocked'
+                              : task.estimatedTime > 0 ? formatHoursValue(task.estimatedTime) : ''}
+                        </span>
+                      </li>
+                    );
+                  })}
+              </ul>
             )}
-            {(project.tasks || []).some((t) => t.status === 'COMPLETED') && (
+            {completedCount > 0 && (
               <button type="button" onClick={() => setShowDone((v) => !v)} className="mt-3 text-[13.5px] font-medium text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-foreground">
-                {showDone ? 'Hide completed tasks' : `Show ${(project.tasks || []).filter((t) => t.status === 'COMPLETED').length} completed`}
+                {showDone ? 'Hide completed' : `Show ${completedCount} completed`}
               </button>
             )}
-          </div>
+          </section>
         </div>
 
-        {/* Right: Pulse */}
-        <div>
-          <div>
-            <SectionHeader title="Summary" />
-            <div className="pt-4 space-y-6">
-              {/* Time invested */}
-              <div>
-                <p className="text-[13px] text-ink-secondary mb-2">Time spent</p>
-                <p className="font-serif text-[26px] font-medium leading-none text-foreground tabular-nums">
-                  {project.timeSpent}h <span className="font-sans text-[13px] text-ink-faint">of ~{estTotalH}h estimated</span>
-                </p>
-                <div className="h-[3px] bg-surface-sunken rounded-full mt-2 overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${timePct}%` }} />
-                </div>
-              </div>
+        {hasAside && (
+          <aside className="space-y-10">
+            {canEdit && <ProjectBackups projectId={project.id} />}
 
-              {/* Progress - explicitly "Task Progress" (not "Progress") so it
-                  doesn't read as a duplicate of the Objectives checklist's
-                  own percentage above; the two track different things and
-                  can legitimately disagree (e.g. every objective done but
-                  clean-up tasks still open, or vice versa). */}
-              <div>
-                <p className="text-[13px] text-ink-secondary mb-2">Task progress</p>
-                <p className="font-serif text-[26px] font-medium leading-none text-foreground tabular-nums">
-                  {project.tasksCompleted} <span className="font-sans text-[13px] text-ink-faint">of {project.tasksCompleted + project.tasksRemaining} tasks · {project.progress}%</span>
-                </p>
-                <div className="h-[3px] bg-surface-sunken rounded-full mt-2 overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${project.progress}%` }} />
-                </div>
-              </div>
-
-              {/* Linked */}
-              <div className="border-t border-border pt-4 space-y-2">
-                <p className="text-[11.5px] font-semibold text-ink-faint">Notebook</p>
-                <button
-                  type="button"
-                  onClick={handleOpenNotebook}
-                  disabled={openingNotebook}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-surface-raised hover:bg-surface-sunken border border-border-strong rounded-md text-[13px] font-semibold text-foreground transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-primary" />
-                    {openingNotebook
-                      ? 'Opening…'
-                      : (project.linkedNotebooks?.length || 0) > 1
-                        ? 'View notebooks'
-                        : 'Open notebook'}
-                  </span>
-                  {(project.linkedNotebooks?.length || 0) > 1 ? (
-                    <span className="text-[12.5px] text-ink-faint">
-                      {project.linkedNotebooks!.length} notebooks
-                    </span>
-                  ) : project.linkedNotebooks?.[0]?.updatedAt ? (
-                    <span className="text-[12.5px] text-ink-faint">
-                      Updated {new Date(project.linkedNotebooks[0].updatedAt as string).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                    </span>
-                  ) : null}
-                </button>
-                <div className="flex items-center justify-between text-[13px]">
-                  <span className="text-ink-secondary">Next deadline</span>
-                  <span className={`text-[12.5px] ${deadlineOverdue && project.status !== 'COMPLETED' ? 'text-danger' : 'text-ink-faint'}`}>
-                    {deadlineStr ? (deadlineRel ? `${deadlineStr} · ${deadlineRel}` : deadlineStr) : '–'}
-                  </span>
-                </div>
-              </div>
-
-              {canEdit && <ProjectBackups projectId={project.id} />}
-
-              {/* People — team projects only */}
-              {project.teamId && (
-                <div className="border-t border-border pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11.5px] font-semibold text-ink-faint">People</p>
-                    {project.canEdit && (
-                      <button type="button" onClick={openAddCollaborator} className="p-0.5 text-ink-faint hover:text-foreground rounded-[3px] hover:bg-surface-sunken transition-colors" aria-label="Add collaborator" title="Add collaborator">
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+            {/* People - team projects only */}
+            {project.teamId && (
+              <section>
+                <SectionHeader
+                  title="People"
+                  right={project.canEdit ? (
+                    <button type="button" onClick={openAddCollaborator} className="rounded-[4px] p-1 text-ink-faint transition-colors hover:bg-surface-sunken hover:text-foreground" aria-label="Add collaborator" title="Add collaborator">
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  ) : undefined}
+                />
+                <div className="pt-3">
                   {collaborators.length === 0 ? (
-                    <p className="text-[13px] text-ink-faint">Everyone with team access can work here.</p>
+                    <p className="text-[13px] text-ink-faint">Everyone on the team can work here.</p>
                   ) : (
-                    <div className="space-y-1.5">
+                    <ul className="space-y-1.5">
                       {collaborators.map((c) => (
-                        <div key={c.userId} className="flex items-center justify-between gap-2 text-[13px]">
-                          <span className="text-ink-secondary truncate">{c.name || c.email}</span>
+                        <li key={c.userId} className="flex items-center justify-between gap-2 text-[13px]">
+                          <span className="truncate text-ink-secondary">{c.name || c.email}</span>
                           {project.canEdit && (
-                            <button type="button" onClick={() => handleRemoveCollaborator(c.userId)} className="text-ink-faint hover:text-danger shrink-0" aria-label="Remove collaborator">
-                              <XIcon className="w-3.5 h-3.5" />
+                            <button type="button" onClick={() => handleRemoveCollaborator(c.userId)} className="shrink-0 text-ink-faint hover:text-danger" aria-label="Remove collaborator">
+                              <XIcon className="h-3.5 w-3.5" />
                             </button>
                           )}
-                        </div>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                   {showAddCollaborator && (
-                    <div className="mt-3 pt-3 border-t border-border space-y-1.5">
+                    <div className="mt-3 space-y-1.5 border-t border-border pt-3">
                       {addableMembers.length === 0 ? (
                         <p className="text-[13px] text-ink-faint">No more team members to add.</p>
                       ) : (
@@ -753,48 +703,43 @@ export default function ProjectDetailPage({ params }: PageProps) {
                             type="button"
                             disabled={addingCollaborator}
                             onClick={() => handleAddCollaborator(m.userId)}
-                            className="w-full flex items-center justify-between px-2.5 py-1.5 bg-surface-raised hover:bg-surface-sunken rounded-md text-[13px] text-foreground text-left disabled:opacity-50 transition-colors"
+                            className="flex w-full items-center justify-between rounded-md bg-surface-raised px-2.5 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-surface-sunken disabled:opacity-50"
                           >
                             {m.name || m.email}
-                            <Plus className="w-3.5 h-3.5 text-ink-faint" />
+                            <Plus className="h-3.5 w-3.5 text-ink-faint" />
                           </button>
                         ))
                       )}
-                      <button type="button" onClick={() => setShowAddCollaborator(false)} className="text-[11px] text-ink-faint hover:text-foreground font-medium">
+                      <button type="button" onClick={() => setShowAddCollaborator(false)} className="text-[12px] font-medium text-ink-faint hover:text-foreground">
                         Close
                       </button>
                     </div>
                   )}
-
                   {project.canEdit && (
-                    <label className="mt-3 pt-3 border-t border-border flex items-start gap-2 text-[12px] text-ink-secondary cursor-pointer">
+                    <label className="mt-4 flex cursor-pointer items-start gap-2 text-[12.5px] leading-snug text-ink-secondary">
                       <input
                         type="checkbox"
                         checked={!!project.visibleToSubgroup}
                         onChange={(e) => toggleSubgroupVisibility(e.target.checked)}
                         className="mt-0.5 rounded-[3px] border-border-strong text-primary focus:ring-ring"
                       />
-                      <span>
-                        Visible to team leaders whose group works on this
-                        <span className="block text-[11px] text-ink-faint">Read-only. Only leaders who have someone from their group on the project.</span>
-                      </span>
+                      Leaders of groups on this project can view it (read-only)
                     </label>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
+              </section>
+            )}
 
-          {project.teamId && user?.id && (
-            <ObjectChat
-              teamId={project.teamId}
-              objectType="project"
-              objectId={project.id}
-              currentUserId={user.id}
-              className="mt-6"
-            />
-          )}
-        </div>
+            {project.teamId && user?.id && (
+              <ObjectChat
+                teamId={project.teamId}
+                objectType="project"
+                objectId={project.id}
+                currentUserId={user.id}
+              />
+            )}
+          </aside>
+        )}
       </div>
 
       {blockingTask && (
@@ -804,6 +749,42 @@ export default function ProjectDetailPage({ params }: PageProps) {
           onSaved={() => setRefreshTrigger(prev => prev + 1)}
         />
       )}
+    </div>
+  );
+}
+
+const STATUS: Record<string, { label: string; dot: string }> = {
+  ACTIVE: { label: 'Active', dot: 'bg-primary' },
+  ON_HOLD: { label: 'On hold', dot: 'bg-warning' },
+  COMPLETED: { label: 'Completed', dot: 'bg-ink-secondary' },
+  ARCHIVED: { label: 'Archived', dot: 'bg-border-strong' },
+};
+
+const PRIORITY: Record<string, { label: string; cls: string }> = {
+  CRITICAL: { label: 'Critical', cls: 'text-danger' },
+  HIGH: { label: 'High', cls: 'text-warning' },
+  MEDIUM: { label: 'Medium', cls: '' },
+  LOW: { label: 'Low', cls: 'text-ink-secondary' },
+};
+
+/** One cell of the facts row: a small label over its value, and an optional meter. */
+function Fact({ label, children, meter, className = '', title }: { label: string; children: React.ReactNode; meter?: React.ReactNode; className?: string; title?: string }) {
+  return (
+    <div
+      title={title}
+      className={`min-w-0 border-t border-border py-3.5 lg:border-t-0 lg:px-5 lg:first:pl-0 lg:last:pr-0 lg:[&:not(:first-child)]:border-l ${className}`}
+    >
+      <dt className="text-[11.5px] font-medium text-ink-faint">{label}</dt>
+      <dd className="mt-1 text-[15px] font-medium tabular-nums text-foreground">{children}</dd>
+      {meter}
+    </div>
+  );
+}
+
+function Meter({ pct, tone = 'bg-primary' }: { pct: number; tone?: string }) {
+  return (
+    <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-surface-sunken" aria-hidden="true">
+      <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
     </div>
   );
 }

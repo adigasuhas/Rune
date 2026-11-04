@@ -108,8 +108,11 @@ export function ObjectChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, objectType, objectId]);
 
+  // Keep the newest message in view by scrolling the list itself -
+  // scrollIntoView would also drag the whole page down to the chat on load.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const list = messagesEndRef.current?.parentElement;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async (e: React.FormEvent) => {

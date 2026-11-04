@@ -47,6 +47,7 @@ import { TodayHeader } from '@/components/today/TodayHeader';
 
 type TaskStatusValue = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 import { SessionType, normalizeSessionType, durationLabel, sessionTypeLabel, SESSION_TYPE_META } from '@/lib/sessionType';
+import { formatHoursValue, formatNumber } from '@/lib/numberFormat';
 
 interface Goal {
   id: string;
@@ -1992,7 +1993,7 @@ function DashboardPage() {
                 <span className="truncate text-ink-secondary">{proj.name}</span>
               </span>
             )}
-            <span className="tabular-nums" title={durationLabel(task.sessionType)}>{task.estimatedTime}h</span>
+            <span className="tabular-nums" title={durationLabel(task.sessionType)}>{formatHoursValue(task.estimatedTime)}</span>
             {priority && <span className={`font-medium ${priority.cls}`}>{priority.label}</span>}
             {postponeCount > 0 && <span>moved {postponeCount}×</span>}
             {task.status === 'IN_PROGRESS' && <InProgressLabel task={task} events={events} timezone={userTimezone} />}
@@ -3093,7 +3094,7 @@ function DashboardPage() {
                 <div>
                   <span className="text-[11.5px] font-mono text-muted-foreground block">Estimated time</span>
                   <span className="inline-block mt-1 px-2.5 py-0.5 bg-surface-raised border border-border-strong rounded-lg text-xs font-semibold font-mono text-ink-secondary">
-                    {viewingTask.estimatedTime} hrs
+                    {formatNumber(viewingTask.estimatedTime)} hrs
                   </span>
                 </div>
               </div>

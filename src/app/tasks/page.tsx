@@ -53,6 +53,7 @@ import { TaskCalendar, type DayInfo } from '@/components/tasks/TaskCalendar';
 import { DayAgenda } from '@/components/tasks/DayAgenda';
 import { groupTasksByDay, monthGrid, monthOf } from './taskCalendar';
 import { anchorForToday, getHourInTimezone, getTimeInTimezone, validateInternalSlots, getOverlaps, tasksOnDate, countByStatusTab } from './taskHelpers';
+import { formatNumber } from '@/lib/numberFormat';
 
 export default function TasksPage() {
   const { user } = useSession();
@@ -398,7 +399,7 @@ export default function TasksPage() {
     setTaskPriority(task.priority);
     setTaskDate(task.date ? getLocalDateString(task.date, userTimezone) : getCurrentDateInTimezone(userTimezone));
     setTaskSessionType(normalizeSessionType(task.sessionType));
-    setTaskEst(String(task.estimatedTime));
+    setTaskEst(formatNumber(task.estimatedTime));
     
     setTaskContexts(parseContexts(task.context));
     

@@ -1,6 +1,7 @@
 import { getLocalDateString } from '@/lib/dateUtils';
 import { parsePostponeHistory, postponeDayKey } from '@/lib/postpone';
 import { contextsText } from '@/lib/taskContext';
+import { formatHoursValue } from '@/lib/numberFormat';
 
 /**
  * Builds the printable task report and opens it in a new window that
@@ -132,7 +133,7 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
             <span style="font-size: 9pt; font-weight: 500; color: ${t.status === 'COMPLETED' ? '#16a34a' : t.status === 'IN_PROGRESS' ? '#d97706' : '#4b5563'};">${STATUS_LABEL[t.status] || sentenceCase(t.status)}</span>
           </td>
           <td style="text-align: center;">${t.sessionType === 'DEEP_WORK' ? 'Yes' : 'No'}</td>
-          <td>${t.estimatedTime}h</td>
+          <td>${formatHoursValue(t.estimatedTime)}</td>
           <td>${escapeHtml(contextsText(t.context)) || '–'}</td>
           <td>${t.notes || '-'}</td>
         </tr>
@@ -219,7 +220,7 @@ export function generateTaskPdfReport(opts: TaskReportOptions): void {
             </div>
             <div class="summary-card">
               <div class="summary-lbl">Estimated hours</div>
-              <div class="summary-val">${totalHours}h</div>
+              <div class="summary-val">${formatHoursValue(totalHours)}</div>
             </div>
           </div>
 

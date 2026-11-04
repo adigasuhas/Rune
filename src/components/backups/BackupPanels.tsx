@@ -334,9 +334,9 @@ export function ProjectBackups({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section aria-labelledby="project-backups-title" className="border-t border-border pt-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p id="project-backups-title" className="text-[11.5px] font-semibold text-ink-faint">Backups</p>
+    <section aria-labelledby="project-backups-title">
+      <div className="app-section">
+        <h2 id="project-backups-title">Backups</h2>
         <button
           type="button"
           onClick={backUpNow}
@@ -346,16 +346,15 @@ export function ProjectBackups({ projectId }: { projectId: string }) {
           {working ? <><RefreshCw className="h-3 w-3 animate-spin" /> Backing up…</> : 'Back up now'}
         </button>
       </div>
-      <FrequencyPicker value={frequency} onChange={setFrequency} label="How often to back up this project" disabled={loading} />
-      <p className="text-[12px] text-ink-faint leading-relaxed">
-        {frequency === 'OFF'
-          ? 'A .zip of this project’s notebooks and tasks, whenever you ask.'
-          : `${scheduleNote(frequency)} What goes in follows Settings → Backups.`}
-      </p>
-      <div aria-live="polite" className="text-[12.5px]">
-        {error ? <span className="text-danger">{error}</span> : notice ? <span className="text-success">{notice}</span> : null}
+      <div className="space-y-3 pt-3">
+        <FrequencyPicker value={frequency} onChange={setFrequency} label="How often to back up this project" disabled={loading} />
+        {/* The picker already says how often; this says when. */}
+        {frequency !== 'OFF' && <p className="text-[12px] text-ink-faint">Made early in the morning, or when you next open Rune.</p>}
+        <div aria-live="polite" className="text-[12.5px] empty:hidden">
+          {error ? <span className="text-danger">{error}</span> : notice ? <span className="text-success">{notice}</span> : null}
+        </div>
+        {loading ? <div className="h-10 animate-pulse rounded-md bg-surface-raised" /> : <BackupList backups={backups.slice(0, 5)} onDelete={remove} compact />}
       </div>
-      {loading ? <div className="h-10 animate-pulse rounded-md bg-surface-raised" /> : <BackupList backups={backups.slice(0, 5)} onDelete={remove} compact />}
     </section>
   );
 }

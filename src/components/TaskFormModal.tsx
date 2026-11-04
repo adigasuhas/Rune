@@ -8,6 +8,7 @@ import { ContextPicker } from '@/components/tasks/ContextPicker';
 import { SessionTypeSelector } from '@/components/SessionTypeSelector';
 import { SessionType, durationLabel } from '@/lib/sessionType';
 import { Modal } from '@/components/Modal';
+import { formatNumber } from '@/lib/numberFormat';
 
 interface TaskFormModalProps {
   title: string;
@@ -88,8 +89,8 @@ export function TaskFormModal(props: TaskFormModalProps) {
     if (slotHours <= 0) return;
     const est = Number(estimatedTime);
     // An empty field follows; an explicit 0 ("no estimate") is left alone.
-    if (followSlots || estimatedTime.trim() === '' || (est > 0 && slotHours > est + 1e-6)) {
-      if (!(Math.abs(est - slotHours) < 1e-6)) onEstimatedTimeChange(String(slotHours));
+    if (followSlots || estimatedTime.trim() === '' || (est > 0 && slotHours > est + 0.005)) {
+      if (!(Math.abs(est - slotHours) < 0.005)) onEstimatedTimeChange(formatNumber(slotHours));
       if (!followSlots) setFollowSlots(true);
     }
     // Only the slots drive this; the estimate changing on its own is the writer's say.
