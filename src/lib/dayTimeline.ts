@@ -1,23 +1,26 @@
 /**
  * Where each event sits on Today's planner.
  *
- * Two rules keep blocks from running into each other:
- *  - Every block is inset by half of EVENT_GAP_PX at its top and bottom, so
- *    one that ends at 12:00 and the next that starts at 12:00 have a clear
- *    gap between them instead of sharing an edge.
- *  - A short event is still drawn at least MIN_EVENT_PX tall (one line of
- *    text). If that drawn height would reach into the next event, the two
- *    are laid out side by side, as if they overlapped, instead of one
- *    covering the other.
+ * Every block's top edge sits just under its start-time line, so blocks
+ * line up with the hour grid and with each other. The block stops
+ * EVENT_GAP_PX short of its end time, so one that ends at 12:00 and the next
+ * that starts at 12:00 have a clear gap between them.
+ *
+ * At 64px an hour a 15-minute event still fits one line of text, so only
+ * events shorter than that are drawn taller than their time. If that extra
+ * height would reach into the next event, the two go side by side instead of
+ * one covering the other. Everything else stays full width.
  *
  * `overlaps` only means the times really overlap; side-by-side placement
  * for a short block alone isn't flagged as a clash.
  */
 
 /** The space between blocks that meet in time, and between side-by-side columns. */
-export const EVENT_GAP_PX = 6;
-/** The smallest a block is drawn: a single line of text. */
-export const MIN_EVENT_PX = 24;
+export const EVENT_GAP_PX = 4;
+/** How far a block's top sits below its start-time line, clear of the grid line. */
+export const TOP_INSET_PX = 1;
+/** The smallest a block is drawn: one line of small text (a 15-minute event). */
+export const MIN_EVENT_PX = 12;
 
 export interface TimelineItem {
   id: string;
@@ -72,8 +75,8 @@ export function layoutDayEvents(items: TimelineItem[], hourHeight: number): Time
         id: item.id,
         startMins: item.startMins,
         endMins: item.endMins,
-        top: (item.startMins / 60) * hourHeight + EVENT_GAP_PX / 2,
-        height: Math.max(pxHeight, MIN_EVENT_PX + EVENT_GAP_PX) - EVENT_GAP_PX,
+        top: (item.startMins / 60) * hourHeight + TOP_INSET_PX,
+        height: Math.max(pxHeight - EVENT_GAP_PX, MIN_EVENT_PX),
         column: columnOf.get(item.id) ?? 0,
         columns: columns.length,
         overlaps: cluster.some((o) => o.id !== item.id && item.startMins < o.endMins && item.endMins > o.startMins),

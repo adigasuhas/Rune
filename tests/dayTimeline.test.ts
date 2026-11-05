@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { columnPlacement, layoutDayEvents, EVENT_GAP_PX, MIN_EVENT_PX } from '@/lib/dayTimeline';
+import { columnPlacement, layoutDayEvents, EVENT_GAP_PX, MIN_EVENT_PX, TOP_INSET_PX } from '@/lib/dayTimeline';
 
 const H = 64; // px per hour, as on Today's planner
 const at = (h: number, m = 0) => h * 60 + m;
@@ -26,10 +26,31 @@ describe('Today planner layout', () => {
     expect(a.columns).toBe(1);
   });
 
-  it('puts a short event beside the next one instead of under it', () => {
+  it('starts every block on its start-time line', () => {
     const [a, b] = layoutDayEvents([
-      { id: 'a', startMins: at(13), endMins: at(13, 15) },
-      { id: 'b', startMins: at(13, 15), endMins: at(13, 45) },
+      { id: 'a', startMins: at(9), endMins: at(9, 30) },
+      { id: 'b', startMins: at(9, 30), endMins: at(10, 15) },
+    ], H);
+    expect(a.top).toBe(9 * H + TOP_INSET_PX);
+    expect(b.top).toBe(9.5 * H + TOP_INSET_PX);
+  });
+
+  it('keeps a 15-minute event full width, in line with the rest', () => {
+    const blocks = layoutDayEvents([
+      { id: 'a', startMins: at(12), endMins: at(13) },
+      { id: 'b', startMins: at(13), endMins: at(13, 15) },
+      { id: 'c', startMins: at(13, 15), endMins: at(14) },
+    ], H);
+    for (const b of blocks) expect(b).toMatchObject({ column: 0, columns: 1, overlaps: false });
+    const [, b, c] = blocks;
+    expect(b.height).toBe(H / 4 - EVENT_GAP_PX);
+    expect(c.top - bottom(b)).toBe(EVENT_GAP_PX);
+  });
+
+  it('puts an event shorter than 15 minutes beside the next one instead of under it', () => {
+    const [a, b] = layoutDayEvents([
+      { id: 'a', startMins: at(13), endMins: at(13, 10) },
+      { id: 'b', startMins: at(13, 10), endMins: at(13, 45) },
     ], H);
     expect(a.height).toBe(MIN_EVENT_PX);
     expect([a.column, b.column].sort()).toEqual([0, 1]);

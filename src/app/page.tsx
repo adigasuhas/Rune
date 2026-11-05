@@ -48,7 +48,7 @@ import { TodayHeader } from '@/components/today/TodayHeader';
 type TaskStatusValue = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 import { SessionType, normalizeSessionType, durationLabel, sessionTypeLabel, SESSION_TYPE_META } from '@/lib/sessionType';
 import { formatHoursValue, formatNumber } from '@/lib/numberFormat';
-import { columnPlacement, layoutDayEvents, MIN_EVENT_PX } from '@/lib/dayTimeline';
+import { columnPlacement, EVENT_GAP_PX, layoutDayEvents, TOP_INSET_PX } from '@/lib/dayTimeline';
 
 interface Goal {
   id: string;
@@ -2285,10 +2285,9 @@ function DashboardPage() {
                     const SessionIcon = event.sessionType === 'DEEP_WORK' ? Flame : event.sessionType === 'FOCUS' ? Brain : null;
                     const eventTask = event.taskId ? tasks.find(t => t.id === event.taskId) : null;
                     const eventProj = eventTask?.projectId ? projects.find(p => p.id === eventTask.projectId) : null;
-                    const isOverlapping = overlaps;
-                    const borderStyle = eventProj
-                      ? { borderLeft: `3px solid ${eventProj.color}` }
-                      : (isOverlapping ? { borderLeft: `3px solid var(--warning)` } : undefined);
+                    // Drawn inside the block, so text starts at the same place
+                    // whether or not a block has a stripe.
+                    const stripeColor = eventProj ? eventProj.color : overlaps ? 'var(--warning)' : null;
 
                     const formatTimeStr = (totalMins: number) => {
                       const h = Math.floor(totalMins / 60) % 24;
@@ -2297,6 +2296,9 @@ function DashboardPage() {
                     };
 
                     const renderHeight = height;
+                    // A 15-minute event: one line of small text.
+                    const isTiny = renderHeight < 20;
+                    const isCompact = renderHeight < 40;
 
                     // FOCUS uses the data-viz slate, not warning-amber - a
                     // focus block is a normal planned session, not something
@@ -2310,8 +2312,9 @@ function DashboardPage() {
                     return (
                       <div
                         key={event.id}
-                        className={`absolute rounded-lg border flex flex-col justify-between overflow-hidden group select-none pointer-events-auto transition-colors duration-[var(--duration-micro)]
-                          ${renderHeight < 40 ? 'p-1' : 'p-2'}
+                        data-event-block
+                        className={`absolute border flex flex-col justify-between overflow-hidden group select-none pointer-events-auto transition-colors duration-[var(--duration-micro)] pl-2.5 pr-2
+                          ${isTiny ? 'rounded-[5px] py-0' : isCompact ? 'rounded-lg py-0.5' : 'rounded-lg py-2'}
                           ${event.completed
                             ? 'bg-surface-sunken/75 border-border/80 opacity-60'
                             : sessionBgClass}`}
@@ -2322,7 +2325,6 @@ function DashboardPage() {
                           width: width,
                           zIndex: activeEventOperation?.eventId === event.id ? 20 : 10,
                           cursor: activeEventOperation ? 'grabbing' : 'grab',
-                          ...borderStyle
                         }}
                         onMouseDown={(e) => {
                           if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.resize-handle')) {
@@ -2331,9 +2333,13 @@ function DashboardPage() {
                           handleStartEventOperation(e, event.id, 'drag');
                         }}
                       >
+                        {stripeColor && (
+                          <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ background: stripeColor }} />
+                        )}
+
                         {/* Top Resize Handle */}
                         <div 
-                          className="resize-handle absolute top-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-primary/50 z-30"
+                          className={`resize-handle absolute top-0 left-0 right-0 ${isTiny ? 'h-[3px]' : 'h-1.5'} cursor-ns-resize hover:bg-primary/50 z-30`}
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleStartEventOperation(e, event.id, 'resize-top');
@@ -2342,13 +2348,13 @@ function DashboardPage() {
 
                         {/* Event Content */}
                         <div className="min-w-0 flex-1 flex flex-col justify-center h-full">
-                          {renderHeight < 40 ? (
-                            <div className="flex items-center gap-1.5 leading-none w-full overflow-hidden pr-12">
-                              <span className="text-[11.5px] text-ink-secondary font-medium tabular-nums shrink-0">
+                          {isCompact ? (
+                            <div className={`flex items-center gap-1.5 leading-none w-full overflow-hidden ${isTiny ? 'text-[10px]' : 'text-[11.5px]'}`}>
+                              <span className="text-ink-secondary font-medium tabular-nums shrink-0">
                                 {formatTimeStr(startMins)} - {formatTimeStr(endMins)}
                               </span>
-                              {SessionIcon && !event.completed && <SessionIcon className={`w-3 h-3 shrink-0 ${sessionMeta.colorClass}`} />}
-                              <h4 className={`text-[10px] md:text-[11px] font-bold tracking-tight truncate flex-1 ${event.completed ? 'line-through text-muted-foreground font-medium' : isFocus ? 'text-foreground' : 'text-foreground'}`}>
+                              {SessionIcon && !event.completed && <SessionIcon className={`${isTiny ? 'w-2.5 h-2.5' : 'w-3 h-3'} shrink-0 ${sessionMeta.colorClass}`} />}
+                              <h4 className={`font-bold tracking-tight truncate flex-1 ${event.completed ? 'line-through text-muted-foreground font-medium' : isFocus ? 'text-foreground' : 'text-foreground'}`}>
                                 {event.title}
                               </h4>
                             </div>
@@ -2368,8 +2374,8 @@ function DashboardPage() {
                         </div>
 
                         {/* Action buttons */}
-                        {renderHeight >= MIN_EVENT_PX && (
-                          <div className="absolute bottom-0.5 right-0.5 flex items-center gap-0.5 bg-surface-sunken/80 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                        <div className={`absolute right-0.5 flex items-center gap-0.5 bg-surface-sunken/90 rounded opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-40
+                            ${isCompact ? 'top-1/2 -translate-y-1/2' : 'bottom-0.5 p-0.5'} ${isTiny ? '[&_button]:p-0 [&_svg]:w-2.5 [&_svg]:h-2.5' : ''}`}>
                             <button
                               type="button"
                               onClick={() => toggleEventCompletion(event)}
@@ -2392,11 +2398,10 @@ function DashboardPage() {
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
-                        )}
 
                         {/* Bottom Resize Handle */}
                         <div 
-                          className="resize-handle absolute bottom-0 left-0 right-0 h-1.5 cursor-ns-resize hover:bg-primary/50 z-30"
+                          className={`resize-handle absolute bottom-0 left-0 right-0 ${isTiny ? 'h-[3px]' : 'h-1.5'} cursor-ns-resize hover:bg-primary/50 z-30`}
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             handleStartEventOperation(e, event.id, 'resize-bottom');
@@ -2409,10 +2414,10 @@ function DashboardPage() {
                   {/* dragOverPreview block */}
                   {dragOverPreview && (
                     <div 
-                      className="absolute left-1 right-1 rounded-lg border border-dashed border-primary bg-primary-soft pointer-events-none z-30 p-2 flex flex-col justify-between"
+                      className="absolute left-0 right-0 rounded-lg border border-dashed border-primary bg-primary-soft pointer-events-none z-30 pl-2.5 pr-2 py-2 flex flex-col justify-between overflow-hidden"
                       style={{
-                        top: `${dragOverPreview.top}px`,
-                        height: `${dragOverPreview.height}px`
+                        top: `${dragOverPreview.top + TOP_INSET_PX}px`,
+                        height: `${Math.max(dragOverPreview.height - EVENT_GAP_PX, 12)}px`
                       }}
                     >
                       <div className="text-[12px] font-medium text-primary tabular-nums">
