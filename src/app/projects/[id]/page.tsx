@@ -638,7 +638,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
                           </button>
                         )}
                         <span
-                          className={`max-w-[8.5rem] shrink-0 truncate text-right sm:max-w-[14rem] text-[13px] tabular-nums ${isInProgress ? 'font-medium text-primary' : isBlocked ? 'text-[var(--color-data-slate)]' : 'text-ink-faint'}`}
+                          className={`max-w-[8.5rem] shrink-0 truncate text-right sm:max-w-[14rem] text-[13px] tabular-nums ${isInProgress ? 'font-medium text-primary' : isBlocked ? 'text-ink-secondary' : 'text-ink-faint'}`}
                           title={isBlocked && task.blockedReason ? task.blockedReason : undefined}
                         >
                           {isInProgress

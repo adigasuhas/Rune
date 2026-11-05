@@ -48,6 +48,7 @@ import { TodayHeader } from '@/components/today/TodayHeader';
 type TaskStatusValue = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 import { SessionType, normalizeSessionType, durationLabel, sessionTypeLabel, SESSION_TYPE_META } from '@/lib/sessionType';
 import { formatHoursValue, formatNumber } from '@/lib/numberFormat';
+import { columnPlacement, layoutDayEvents, MIN_EVENT_PX } from '@/lib/dayTimeline';
 
 interface Goal {
   id: string;
@@ -854,6 +855,8 @@ function DashboardPage() {
     height: number;
     left: string;
     width: string;
+    /** The times really clash with another event (not just drawn side by side). */
+    overlaps: boolean;
     startMins: number;
     endMins: number;
   }
@@ -895,69 +898,21 @@ function DashboardPage() {
       };
     }).sort((a, b) => a.startMins - b.startMins || (b.endMins - b.startMins) - (a.endMins - a.startMins));
 
-    const clusters: (typeof sorted)[] = [];
-    let currentCluster: typeof sorted = [];
-    let clusterEnd = 0;
-
-    sorted.forEach(item => {
-      if (item.startMins >= clusterEnd) {
-        if (currentCluster.length > 0) {
-          clusters.push(currentCluster);
-        }
-        currentCluster = [item];
-        clusterEnd = item.endMins;
-      } else {
-        currentCluster.push(item);
-        clusterEnd = Math.max(clusterEnd, item.endMins);
-      }
-    });
-    if (currentCluster.length > 0) {
-      clusters.push(currentCluster);
-    }
-
-    const positioned: PositionedEvent[] = [];
-
-    clusters.forEach(cluster => {
-      const columns: (typeof sorted)[] = [];
-      const itemCols = new Map<string, number>();
-
-      cluster.forEach(item => {
-        let colIndex = 0;
-        while (true) {
-          if (!columns[colIndex]) {
-            columns[colIndex] = [];
-          }
-          const hasOverlap = columns[colIndex].some(colItem => {
-            return item.startMins < colItem.endMins && item.endMins > colItem.startMins;
-          });
-          if (!hasOverlap) {
-            columns[colIndex].push(item);
-            itemCols.set(item.event.id, colIndex);
-            break;
-          }
-          colIndex++;
-        }
-      });
-
-      const numCols = columns.length;
-      cluster.forEach(item => {
-        const colIndex = itemCols.get(item.event.id) ?? 0;
-        const top = (item.startMins / 60) * HOUR_HEIGHT;
-        const height = ((item.endMins - item.startMins) / 60) * HOUR_HEIGHT;
-        const width = `${100 / numCols}%`;
-        const left = `${(colIndex * 100) / numCols}%`;
-
-        positioned.push({
-          event: item.event,
-          top,
-          height,
-          left,
-          width,
-          startMins: item.startMins,
-          endMins: item.endMins
-        });
-      });
-    });
+    // Gaps between blocks, and short blocks side by side rather than stacked
+    // on top of the next one - see src/lib/dayTimeline.ts.
+    const byId = new Map(sorted.map((item) => [item.event.id, item.event]));
+    const positioned: PositionedEvent[] = layoutDayEvents(
+      sorted.map((item) => ({ id: item.event.id, startMins: item.startMins, endMins: item.endMins })),
+      HOUR_HEIGHT
+    ).map((b) => ({
+      event: byId.get(b.id)!,
+      top: b.top,
+      height: b.height,
+      ...columnPlacement(b.column, b.columns),
+      overlaps: b.overlaps,
+      startMins: b.startMins,
+      endMins: b.endMins
+    }));
 
     return positioned;
   };
@@ -2324,13 +2279,13 @@ function DashboardPage() {
                     </div>
                   )}
 
-                  {getPositionedEvents(dayEvents).map(({ event, top, height, left, width, startMins, endMins }) => {
+                  {getPositionedEvents(dayEvents).map(({ event, top, height, left, width, overlaps, startMins, endMins }) => {
                     const sessionMeta = SESSION_TYPE_META[normalizeSessionType(event.sessionType)];
                     const isFocus = event.sessionType !== 'REGULAR';
                     const SessionIcon = event.sessionType === 'DEEP_WORK' ? Flame : event.sessionType === 'FOCUS' ? Brain : null;
                     const eventTask = event.taskId ? tasks.find(t => t.id === event.taskId) : null;
                     const eventProj = eventTask?.projectId ? projects.find(p => p.id === eventTask.projectId) : null;
-                    const isOverlapping = width !== '100%';
+                    const isOverlapping = overlaps;
                     const borderStyle = eventProj
                       ? { borderLeft: `3px solid ${eventProj.color}` }
                       : (isOverlapping ? { borderLeft: `3px solid var(--warning)` } : undefined);
@@ -2341,7 +2296,7 @@ function DashboardPage() {
                       return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                     };
 
-                    const renderHeight = Math.max(height - 4, 32);
+                    const renderHeight = height;
 
                     // FOCUS uses the data-viz slate, not warning-amber - a
                     // focus block is a normal planned session, not something
@@ -2413,7 +2368,7 @@ function DashboardPage() {
                         </div>
 
                         {/* Action buttons */}
-                        {renderHeight >= 30 && (
+                        {renderHeight >= MIN_EVENT_PX && (
                           <div className="absolute bottom-0.5 right-0.5 flex items-center gap-0.5 bg-surface-sunken/80 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-20">
                             <button
                               type="button"
