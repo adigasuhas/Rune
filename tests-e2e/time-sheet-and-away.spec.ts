@@ -29,6 +29,13 @@ function at(day: string, hhmm: string, timeZone: string): Date {
   return new Date(guess.getTime() - (local.getTime() - utc.getTime()));
 }
 
+/** The time sheet is folded away by default (and remembered); open it. */
+async function openTimeManagement(page: Page) {
+  const toggle = page.getByRole('button', { name: /^Time management/ });
+  await expect(toggle).toBeVisible({ timeout: 20_000 });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+}
+
 async function stopAnyRunning(request: APIRequestContext) {
   const running = await (await request.get('/api/activity-sessions?running=1')).json();
   for (const s of running) await request.patch(`/api/activity-sessions/${s.id}`, { data: { stop: true } });
@@ -90,9 +97,11 @@ test('overlapping entries are refused, and a fix can be made by hand', async ({ 
 });
 
 test('Analytics: active hours are working + break + brain drain', async ({ page }) => {
+  // The old Hours tab link opens the Overview's hours section.
   await page.goto('/analytics?tab=hours');
-  await expect(page.getByRole('heading', { name: 'Where your active time went' })).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('radio', { name: '30 days' }).click();
+  const section = page.locator('[data-section="hours"]');
+  await expect(section).toHaveAttribute('data-open', 'true', { timeout: 20_000 });
+  await section.getByRole('radio', { name: '30 days' }).click();
   const minutes = async (id: string) => {
     const t = (await page.getByTestId(id).textContent()) || '';
     const h = /(\d+)h/.exec(t);
@@ -127,6 +136,7 @@ test('the project time sheet fills itself in from the project’s tasks, and ref
   }
 
   await page.goto(`/analytics?tab=projects&project=${project.id}&date=${day}`);
+  await openTimeManagement(page);
   const sheet = page.getByTestId('time-sheet');
   await expect(sheet).toBeVisible({ timeout: 20_000 });
   await expect(sheet.getByRole('heading', { name: 'TIME MANAGEMENT' })).toBeVisible();
@@ -177,6 +187,7 @@ test('the project time sheet fills itself in from the project’s tasks, and ref
   // It shows on that day's sheet.
   const today = ymd(new Date(), zone);
   await page.goto(`/analytics?tab=projects&project=${project.id}&date=${today}`);
+  await openTimeManagement(page);
   await expect(page.getByTestId('sheet-reflection')).toContainText('The first quiet hour', { timeout: 20_000 });
 });
 

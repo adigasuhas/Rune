@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Coffee, CloudFog, PencilLine, Square } from 'lucide-react';
-import { ACTIVITY_LABEL, type ActivityKind } from '@/lib/activityTime';
+import { AlertTriangle, ChevronDown, ClockArrowDown, Coffee, CloudFog, ListChecks, Square } from 'lucide-react';
+import { ACTIVITY_LABEL, isLongRunning, type ActivityKind } from '@/lib/activityTime';
 import { awayActions, useAwaySessions, type AwaySession } from '@/lib/useAwaySessions';
 import { useNotifications } from '@/context/NotificationContext';
 import { AwaySessionsDialog } from './AwaySessionsDialog';
+import { EndSessionDialog } from './EndSessionDialog';
 
 const ICON: Record<ActivityKind, typeof Coffee> = { BREAK: Coffee, BRAIN_DRAIN: CloudFog };
 
@@ -25,29 +26,47 @@ export function useElapsed(start: string | null): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
-/** The running break or brain drain, with its clock and a Stop button. */
-export function RunningAway({ session, compact = false }: { session: AwaySession; compact?: boolean }) {
+/**
+ * The running break or brain drain, with its clock and a Stop button. Past
+ * two hours it turns into a question - still going? - and Stop asks when it
+ * really ended, so a forgotten timer is easy to correct.
+ */
+export function RunningAway({ session, compact = false, timezone }: { session: AwaySession; compact?: boolean; timezone?: string }) {
   const { toast } = useNotifications();
   const elapsed = useElapsed(session.start);
+  const [ending, setEnding] = useState(false);
+  const tz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const Icon = ICON[session.kind];
   const label = ACTIVITY_LABEL[session.kind];
+  // Re-evaluated each second along with the clock.
+  const long = elapsed !== '' && isLongRunning(session);
   const stop = async () => {
+    if (long) return setEnding(true);
     const r = await awayActions.stop(session.id);
     if (!r.ok) toast('Couldn’t stop it', r.error, 'error');
   };
   return (
     <div
       role="status"
-      aria-label={`${label} running, ${elapsed}`}
-      className={`inline-flex items-center gap-2 rounded-[9px] border border-border-strong bg-surface-sunken pl-2.5 pr-1 ${compact ? 'h-8' : 'h-9'}`}
+      aria-label={`${label} running, ${elapsed}${long ? '. It has been going a long time' : ''}`}
+      className={`inline-flex items-center gap-2 rounded-[9px] border pl-2.5 pr-1 ${compact ? 'h-8' : 'h-9'} ${long ? 'border-warning bg-warning-soft' : 'border-border-strong bg-surface-sunken'}`}
     >
-      <span className="relative flex h-2 w-2" aria-hidden="true">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ink-faint opacity-40 motion-reduce:hidden" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-ink-secondary" />
-      </span>
+      {long ? (
+        <AlertTriangle className="h-3.5 w-3.5 text-warning" aria-hidden="true" />
+      ) : (
+        <span className="relative flex h-2 w-2" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ink-faint opacity-40 motion-reduce:hidden" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-ink-secondary" />
+        </span>
+      )}
       <Icon className="h-3.5 w-3.5 text-ink-secondary" aria-hidden="true" />
-      <span className="text-[13px] font-medium text-foreground">{label}</span>
+      <span className="text-[13px] font-medium text-foreground">{long ? `Still on ${session.kind === 'BREAK' ? 'a break' : 'brain drain'}?` : label}</span>
       <span className="font-mono text-[12.5px] text-ink-secondary tabular-nums">{elapsed}</span>
+      {long && (
+        <button type="button" onClick={() => setEnding(true)} className="inline-flex h-7 items-center rounded-[7px] px-2 text-[12.5px] font-semibold text-foreground underline decoration-border-strong underline-offset-4 hover:bg-surface">
+          Set end time
+        </button>
+      )}
       <button
         type="button"
         onClick={stop}
@@ -55,6 +74,7 @@ export function RunningAway({ session, compact = false }: { session: AwaySession
       >
         <Square className="h-3 w-3 fill-current" aria-hidden="true" /> Stop
       </button>
+      {ending && <EndSessionDialog session={session} timezone={tz} onClose={() => setEnding(false)} />}
     </div>
   );
 }
@@ -91,7 +111,7 @@ export function AwayControl({ timezone, date }: { timezone: string; date?: strin
   return (
     <div ref={ref} className="relative flex items-center gap-1.5">
       {running ? (
-        <RunningAway session={running} />
+        <RunningAway session={running} timezone={timezone} />
       ) : (
         <button
           type="button"
@@ -103,12 +123,15 @@ export function AwayControl({ timezone, date }: { timezone: string; date?: strin
           <Coffee className="h-4 w-4" aria-hidden="true" /> Step away <ChevronDown className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />
         </button>
       )}
-      {running && (
-        <button type="button" onClick={() => setEditing(true)} className="grid h-9 w-9 place-items-center rounded-[9px] text-ink-faint hover:bg-surface-sunken hover:text-foreground" aria-label="Fix break and brain drain times" title="Fix times">
-          <PencilLine className="h-4 w-4" />
-        </button>
-      )}
-
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="grid h-9 w-9 place-items-center rounded-[9px] text-ink-faint transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        aria-label="Log or edit breaks and brain drain"
+        title="Log or edit breaks and brain drain"
+      >
+        <ClockArrowDown className="h-4 w-4" />
+      </button>
       {open && (
         <div role="menu" aria-label="Step away" className="absolute right-0 top-full z-40 mt-1.5 w-[17rem] rounded-[12px] border border-border bg-surface p-1.5 shadow-[0_16px_36px_-18px_rgb(0_0_0/0.35)]">
           <button role="menuitem" type="button" className={item} onClick={() => start('BREAK')} autoFocus>
@@ -126,9 +149,17 @@ export function AwayControl({ timezone, date }: { timezone: string; date?: strin
             </span>
           </button>
           <div className="my-1 h-px bg-border" />
+          <p className="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold text-ink-faint">Already happened?</p>
           <button role="menuitem" type="button" className={item} onClick={() => { setOpen(false); setEditing(true); }}>
-            <PencilLine className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
-            <span className="block text-[14px] text-foreground">Add or fix times…</span>
+            <ClockArrowDown className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
+            <span>
+              <span className="block text-[14px] font-medium text-foreground">Log one with start and end times</span>
+              <span className="block text-[12.5px] text-ink-faint">For any day. The duration works itself out.</span>
+            </span>
+          </button>
+          <button role="menuitem" type="button" className={item} onClick={() => { setOpen(false); setEditing(true); }}>
+            <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
+            <span className="block text-[14px] text-foreground">Review and edit entries…</span>
           </button>
         </div>
       )}

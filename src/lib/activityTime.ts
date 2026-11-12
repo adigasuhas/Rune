@@ -28,10 +28,25 @@ export interface Span { start: Date; end: Date }
 
 export const ACTIVITY_LABEL: Record<ActivityKind, string> = { BREAK: 'Break', BRAIN_DRAIN: 'Brain drain' };
 
-/** The session as an interval; a running one ends now. Null when malformed or not started yet. */
+/** A running session this old is probably forgotten: Today asks whether it's still going. */
+export const LONG_RUNNING_MS = 2 * 3_600_000;
+/**
+ * While a session is still running it counts for at most this long, so a
+ * forgotten timer can't keep inflating active hours. Nothing is cut off or
+ * changed: the moment it's stopped (or its real end time is set), the
+ * recorded times count in full.
+ */
+export const RUNNING_COUNT_CAP_MS = 4 * 3_600_000;
+
+/** True when a running session has gone on long enough to ask about. */
+export function isLongRunning(s: ActivityLike, now: Date = new Date()): boolean {
+  return !s.end && now.getTime() - new Date(s.start).getTime() >= LONG_RUNNING_MS;
+}
+
+/** The session as an interval; a running one ends now (counted for at most RUNNING_COUNT_CAP_MS). Null when malformed or not started yet. */
 export function sessionSpan(s: ActivityLike, now: Date = new Date()): Span | null {
   const start = new Date(s.start);
-  const end = s.end ? new Date(s.end) : now;
+  const end = s.end ? new Date(s.end) : new Date(Math.min(now.getTime(), start.getTime() + RUNNING_COUNT_CAP_MS));
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return null;
   return { start, end };
 }
@@ -142,8 +157,9 @@ export function findOverlap<T extends ActivityLike>(
 ): T | null {
   for (const s of sessions) {
     if (exceptId && s.id === exceptId) continue;
-    const span = sessionSpan(s, now);
-    if (!span) continue;
+    // A running session blocks everything up to now (not just what it counts for).
+    const span = s.end ? sessionSpan(s, now) : { start: new Date(s.start), end: now };
+    if (!span || span.end <= span.start) continue;
     if (span.start < end && start < span.end) return s;
   }
   return null;

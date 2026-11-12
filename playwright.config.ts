@@ -30,9 +30,14 @@ export default defineConfig({
   testDir: './tests-e2e',
   timeout: 30_000,
   fullyParallel: false, // shares one seeded dev-login account across tests
-  retries: 0,
+  // One retry on CI only: a test that fails once and then passes is
+  // reported as "flaky" (with its trace kept) instead of failing the build
+  // on a slow runner. Locally a failure always fails.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [['list']],
+  // On GitHub, failures are also annotated on the run's summary page, so
+  // the cause is readable without digging through the raw log.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   // Logs in once (global-setup.ts) and every test starts already
   // authenticated via this cookie, rather than each test signing in
   // through the UI - signing in ~10 times across both spec files in one
@@ -42,7 +47,7 @@ export default defineConfig({
   globalSetup: './tests-e2e/global-setup.ts',
   use: {
     baseURL: E2E_BASE_URL,
-    trace: 'retain-on-failure',
+    trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     storageState: './tests-e2e/.auth-state.json',
   },

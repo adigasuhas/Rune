@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Modal } from '@/components/Modal';
+import { Modal, useModalTitleId } from '@/components/Modal';
 import { AlertTriangle } from 'lucide-react';
 
 /**
@@ -108,7 +108,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                 </span>
               )}
               <div className="min-w-0">
-                <h2 className="font-display text-base font-bold text-foreground">{opts.title}</h2>
+                <ModalTitle className="font-display text-base font-bold text-foreground">{opts.title}</ModalTitle>
                 {opts.message && (
                   <p className="text-[13px] text-ink-secondary mt-1.5 leading-relaxed">{opts.message}</p>
                 )}
@@ -148,4 +148,10 @@ export function usePrompt(): PromptFn {
   const ctx = useContext(ConfirmContext);
   if (!ctx) return async (o) => window.prompt([o.title, o.message].filter(Boolean).join('\n\n'), o.defaultValue ?? '');
   return ctx.prompt;
+}
+
+/** A heading that names its dialog (the Modal labels itself by this id). */
+function ModalTitle({ className, children }: { className?: string; children: React.ReactNode }) {
+  const id = useModalTitleId();
+  return <h2 id={id} className={className}>{children}</h2>;
 }

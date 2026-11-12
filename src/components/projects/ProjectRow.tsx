@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Archive, CheckCircle, Edit3, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Archive, BarChart3, CheckCircle, Edit3, RefreshCw, Trash2, Users } from 'lucide-react';
 import { projectEmphasis, tint, INVESTMENT_WINDOW_DAYS, type Emphasis } from '@/lib/projectEmphasis';
 
 export interface ProjectInvestment {
@@ -184,8 +184,12 @@ export function ProjectRow({
         </div>
       </div>
 
-      {/* Time invested */}
-      <div className="order-4 flex items-end justify-between gap-4 @5xl:order-3 @5xl:justify-start">
+      {/* Time invested - also the way into this project's analytics */}
+      <Link
+        href={`/analytics?tab=projects&project=${project.id}`}
+        title="Open this project’s analytics"
+        className="order-4 -m-1.5 flex items-end justify-between gap-4 rounded-[8px] p-1.5 transition-colors hover:bg-surface/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 @5xl:order-3 @5xl:justify-start"
+      >
         <div className="min-w-0">
           <p className="flex items-baseline gap-1.5">
             <span className="font-serif text-[22px] font-medium leading-none tracking-[-0.02em] text-foreground tabular-nums" data-testid="project-hours">{hoursLabel(investment?.totalMs || 0)}</span>
@@ -196,7 +200,7 @@ export function ProjectRow({
           </p>
         </div>
         <ActivityStrip daily={investment?.daily ?? strip.map(() => 0)} days={strip} color={color} max={stripMax} />
-      </div>
+      </Link>
 
       {/* Deadline and actions */}
       <div className="order-5 flex items-center justify-between gap-3 @2xl:order-2 @2xl:items-start @2xl:justify-end @5xl:order-4 @5xl:items-center">
@@ -204,6 +208,9 @@ export function ProjectRow({
           {dueLabel}
         </span>
         <div className="flex items-center gap-0.5 opacity-100 [@media(hover:hover)]:opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <Link href={`/analytics?tab=projects&project=${project.id}`} className={btn} title="Analytics" aria-label={`Analytics for ${project.name}`}>
+            <BarChart3 className="h-4 w-4" />
+          </Link>
           {project.status !== 'COMPLETED' && (
             <button onClick={() => onStatus('COMPLETED')} className={`${btn} hover:text-primary`} title="Mark completed" aria-label={`Mark ${project.name} completed`}>
               <CheckCircle className="h-4 w-4" />

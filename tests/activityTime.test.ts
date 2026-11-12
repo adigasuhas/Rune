@@ -38,6 +38,16 @@ describe('activity time accounting', () => {
     expect(a.activeMs).toBe(60 * MIN);
   });
 
+  it('counts a forgotten running session for at most 4 hours until it is stopped', async () => {
+    const { isLongRunning, RUNNING_COUNT_CAP_MS } = await import('@/lib/activityTime');
+    const running = { kind: 'BREAK', start: at('08:00'), end: null };
+    expect(sessionSpan(running, at('20:00'))).toEqual({ start: at('08:00'), end: new Date(at('08:00').getTime() + RUNNING_COUNT_CAP_MS) });
+    expect(isLongRunning(running, at('09:59'))).toBe(false);
+    expect(isLongRunning(running, at('10:00'))).toBe(true);
+    // Once stopped, the recorded times count in full.
+    expect(sessionSpan({ ...running, end: at('15:00') }, at('20:00'))?.end).toEqual(at('15:00'));
+  });
+
   it('runs an unfinished session up to now', () => {
     expect(sessionSpan({ kind: 'BREAK', start: at('10:00'), end: null }, at('10:25'))).toEqual({ start: at('10:00'), end: at('10:25') });
     expect(sessionSpan({ kind: 'BREAK', start: at('10:00'), end: null }, at('09:00'))).toBeNull();

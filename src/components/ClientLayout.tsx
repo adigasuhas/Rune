@@ -629,7 +629,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         {/* A running break or brain drain, stoppable from any page (Today has its own). */}
         {pathname !== '/' && (
           <>
-            <RunningAwayIndicator className={`px-3 pb-3 shrink-0 ${isGlobalSidebarCollapsed ? 'md:hidden' : ''}`} />
+            <RunningAwayIndicator timezone={user.timezone || undefined} className={`px-3 pb-3 shrink-0 ${isGlobalSidebarCollapsed ? 'md:hidden' : ''}`} />
             {isGlobalSidebarCollapsed && <RunningAwayIndicator iconOnly className="hidden md:grid mx-auto mb-2 shrink-0" />}
           </>
         )}

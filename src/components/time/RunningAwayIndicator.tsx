@@ -11,7 +11,7 @@ import { RunningAway, useElapsed } from './AwayControl';
  * stopped without going back to Today. Nothing shows when none is running.
  * `iconOnly` is for the collapsed sidebar: the icon and clock, click to stop.
  */
-export function RunningAwayIndicator({ iconOnly = false, className = '' }: { iconOnly?: boolean; className?: string }) {
+export function RunningAwayIndicator({ iconOnly = false, className = '', timezone }: { iconOnly?: boolean; className?: string; timezone?: string }) {
   const { running } = useAwaySessions({ runningOnly: true });
   const elapsed = useElapsed(running?.start ?? null);
   if (!running) return null;
@@ -32,7 +32,7 @@ export function RunningAwayIndicator({ iconOnly = false, className = '' }: { ico
   }
   return (
     <div className={className}>
-      <RunningAway session={running} compact />
+      <RunningAway session={running} compact timezone={timezone} />
     </div>
   );
 }

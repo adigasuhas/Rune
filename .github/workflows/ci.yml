@@ -5,6 +5,13 @@ on:
     branches: [main, master]
   pull_request:
 
+# onnxruntime-node (via transformers.js, used for dictation on the CPU) would
+# otherwise download several hundred MB of CUDA libraries from nuget.org on
+# every Linux install. Rune never uses the GPU, and that download timing out
+# was failing `npm ci` (run 43250191486).
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -65,7 +72,9 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite alone takes ~8-9 minutes on a 2-core runner against a cold
+    # dev server; 15 left too little room for install time on a slow day.
+    timeout-minutes: 25
     # Signs in as the built-in developer account, which a development
     # server creates on first boot (src/lib/devAccount.ts) - no secrets needed.
     services:
@@ -99,11 +108,13 @@ jobs:
       # axe-core accessibility pass (tests-e2e/accessibility.spec.ts).
       - name: E2E + accessibility suite
         run: npx playwright test
+      # Kept for a failure, and also when a test only passed on its retry
+      # (playwright.config.ts), so a flaky test can still be looked into.
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always() && hashFiles('test-results/**') != ''
         with:
           name: playwright-results
           # The list reporter writes no HTML report; screenshots and traces
           # of failed tests land in test-results/.
           path: test-results/
-          retention-days: 7
+          retention-days: 14

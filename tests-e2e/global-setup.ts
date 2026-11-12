@@ -35,5 +35,29 @@ export default async function globalSetup() {
   const page = await browser.newPage({ baseURL: E2E_BASE_URL });
   await signInAsDevUser(page);
   await page.context().storageState({ path: outPath });
+
+  // On an empty database (CI) the developer account sees "Create the first
+  // user" in place of every page until some other account exists. Specs
+  // used to rely on auth.spec.ts signing one up first, which only held while
+  // nothing sorted before it alphabetically. Make one up front instead.
+  const me = await (await page.request.get('/api/auth/me')).json().catch(() => null);
+  if (me?.user?.showCreateFirstUser) {
+    await page.request.post('/api/developer/users', {
+      headers: { Origin: E2E_BASE_URL },
+      data: { name: 'E2E colleague', email: `e2e-first-user-${Date.now()}@example.com`, password: 'e2e-colleague-password-1' },
+    });
+  }
+
+  // CI runs against a cold `next dev`, which compiles each page and API route
+  // the first time it's hit - long enough on a 2-core runner to blow a
+  // test's 5-second expectation. Compile the main ones once, up front.
+  if (process.env.CI) {
+    for (const route of ['/api/tasks', '/api/projects', '/api/calendar', '/api/settings', '/api/accomplishments', '/api/notebooks', '/api/activity-sessions', '/api/reflections', '/api/projects/investment', '/api/notifications']) {
+      await page.request.get(route, { timeout: 120_000 }).catch(() => {});
+    }
+    for (const route of ['/', '/tasks', '/projects', '/analytics', '/wall', '/notebook', '/settings']) {
+      await page.goto(route, { timeout: 120_000, waitUntil: 'load' }).catch(() => {});
+    }
+  }
   await browser.close();
 }

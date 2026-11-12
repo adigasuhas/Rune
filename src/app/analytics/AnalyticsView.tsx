@@ -3,19 +3,7 @@
 import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect } from 'react';
 import { LoadError } from '@/components/LoadError';
-import {
-  TrendingUp,
-  Brain,
-  Clock,
-  Flame,
-  FolderGit2,
-  Download,
-  Percent,
-  Calendar,
-  RefreshCw,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   getWorkingDaysBetween,
   getLastNWorkingDays,
@@ -24,28 +12,38 @@ import {
   getAnalyticsDays,
   shiftOffDaysWork,
   calculateOccupiedHoursFromItems,
-  getIntervalUnionDuration,
   calculateProductivityScore,
   getPostponeCount,
   settledDays
 } from '@/lib/analyticsUtils';
-import { getCurrentDateInTimezone, getLocalDateString, isDefaultWorking, parseDateTimeInTimezone } from '@/lib/dateUtils';
-import { Button, PageHeader, SectionHeader } from '@/components/ui';
+import { getCurrentDateInTimezone, getLocalDateString, isDefaultWorking } from '@/lib/dateUtils';
+import { Button, PageHeader } from '@/components/ui';
 import { ActivityGraph } from '@/components/activity/ActivityGraph';
 import { ReviewHistory } from './ReviewHistory';
-import { ActiveHours } from './ActiveHours';
-import { ProjectTimeSheet } from './ProjectTimeSheet';
-import { ProjectComparison } from './ProjectComparison';
+import { ActiveHours, ACTIVE_RANGES, last30, sumAccounts, useActiveAccounts, type ActiveRange } from './ActiveHours';
+import { ProjectAnalyticsView, ProjectsAnalyticsList } from './ProjectsAnalytics';
+import { ActivityInsights } from './ActivityInsights';
+import { AnalyticsSection, DayBars, Fact, Facts, ShareRow, prefKey } from './parts';
+import { setUiPreference, setUiPreferences } from '@/lib/useUiPreference';
+import type { ProjectInvestment } from '@/components/projects/ProjectRow';
 import { AwaySessionsDialog } from '@/components/time/AwaySessionsDialog';
 import { AWAY_CHANGED } from '@/lib/useAwaySessions';
 import { REFLECTION_SAVED } from '@/components/time/CompletionReflectionPrompt';
-import { sessionSpan, type ActivityLike } from '@/lib/activityTime';
+import { accountDays, sessionSpan, type ActivityLike } from '@/lib/activityTime';
 import type { SheetReflection } from '@/lib/projectTimeSheet';
 import { useSpotlightCards } from '@/hooks/useSpotlightCards';
 interface Goal {
   id: string;
   text: string;
   completed: boolean;
+}
+
+type AnalyticsTab = 'overview' | 'projects' | 'activity' | 'reviews';
+
+function shiftYmd(ymd: string, n: number) {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 export default function AnalyticsPage() {
@@ -58,16 +56,24 @@ export default function AnalyticsPage() {
   const [settings, setSettings] = useState<any>(null);
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [notebooks, setNotebooks] = useState<any[]>([]);
-  const [selectedAnalyticsProjectId, setSelectedAnalyticsProjectId] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
-  // ?tab=reviews (linked from Today's first-focus card) opens Reflections.
-  // Client-only view (page.tsx loads it with ssr: false), so window is there.
-  const [activeTab, setActiveTab] = useState<'overview' | 'completion' | 'focus' | 'hours' | 'projects' | 'reviews'>(
-    () => {
-      const t = new URLSearchParams(window.location.search).get('tab');
-      return t === 'reviews' || t === 'projects' || t === 'hours' ? t : 'overview';
-    }
-  );
+  // Four places: Overview, Projects, Breaks and brain drain, Reflections.
+  // The old ?tab= links still land in the right spot: completion, focus and
+  // hours are Overview sections now, so they open (and scroll to) that section.
+  const [legacySection] = useState<string | null>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    // Today's "Full year" link (#activity) is the year of work, in "Since you started".
+    if (window.location.hash === '#activity') return 'history';
+    return t === 'completion' ? 'completion' : t === 'focus' ? 'deep' : t === 'hours' ? 'hours' : null;
+  });
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t === 'reviews' || t === 'projects' || t === 'activity' ? t : 'overview';
+  });
+  // ?project= opens that project's analytics (the Projects page links here).
+  const [openProjectId, setOpenProjectId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('project'));
+  const [hoursRange, setHoursRange] = useState<ActiveRange>('week');
+  const [investment, setInvestment] = useState<{ days: string[]; projects: Record<string, ProjectInvestment> }>({ days: [], projects: {} });
 
   // AI Insights States
 
@@ -75,19 +81,18 @@ export default function AnalyticsPage() {
   const [awaySessions, setAwaySessions] = useState<ActivityLike[]>([]);
   const [reflections, setReflections] = useState<SheetReflection[]>([]);
   const [editingAway, setEditingAway] = useState(false);
-  // ?project=&date= open a specific time sheet (linked from a project's page).
+  // ?project=&date= open a project's time sheet on a given day.
   const [sheetTarget] = useState(() => {
     const q = new URLSearchParams(window.location.search);
     return { project: q.get('project'), date: q.get('date') };
   });
-  const [sheetKey, setSheetKey] = useState(0);
-  const [sheetProject, setSheetProject] = useState<string | null>(sheetTarget.project);
 
   const fetchTimeRecords = async () => {
     try {
-      const [sessionsRes, reflectionsRes] = await Promise.all([fetch('/api/activity-sessions'), fetch('/api/reflections')]);
+      const [sessionsRes, reflectionsRes, investmentRes] = await Promise.all([fetch('/api/activity-sessions'), fetch('/api/reflections'), fetch('/api/projects/investment')]);
       if (sessionsRes.ok) setAwaySessions(await sessionsRes.json());
       if (reflectionsRes.ok) setReflections(await reflectionsRes.json());
+      if (investmentRes.ok) setInvestment(await investmentRes.json());
     } catch {
       /* the rest of Analytics still works */
     }
@@ -174,6 +179,21 @@ export default function AnalyticsPage() {
     () => awaySessions.map(s => sessionSpan(s)).filter((x): x is NonNullable<typeof x> => !!x),
     [awaySessions]
   );
+
+  // Working, break and brain-drain time per day for the last 30 days: one
+  // calculation shared by the Overview and the Breaks and brain drain tab.
+  const activeAccounts = useActiveAccounts(tasks, calendarEvents, awaySessions, userTimezone, todayStr);
+  const dayAccount = React.useMemo(
+    () => accountDays([selectedDate || todayStr], tasks, calendarEvents, awaySessions, userTimezone).get(selectedDate || todayStr)!,
+    [selectedDate, todayStr, tasks, calendarEvents, awaySessions, userTimezone]
+  );
+
+  // An old link to the Completion, Deep work or Hours tab: open that section and bring it into view.
+  useEffect(() => {
+    if (!legacySection || loading) return;
+    setUiPreference(prefKey(legacySection), true);
+    requestAnimationFrame(() => document.querySelector(`[data-section="${legacySection}"]`)?.scrollIntoView({ block: 'start' }));
+  }, [legacySection, loading]);
 
   // Initialize selectedDate once todayStr is resolved
   useEffect(() => {
@@ -775,26 +795,6 @@ export default function AnalyticsPage() {
     [selectedWeekDates, getDayHasActivity]
   );
 
-  // Sparkline coordinates helper (for SVG line charts)
-  const generateChartPoints = (dates: string[], getValue: (date: string) => number) => {
-    if (!dates || dates.length === 0) return '';
-    const values = dates.map(d => getValue(d));
-    const max = Math.max(...values, 100);
-    const width = 500;
-    const height = 120;
-    if (dates.length === 1) {
-      const y = height - (values[0] / max) * (height - 10) - 5;
-      return `0,${y} 500,${y}`;
-    }
-    const stepX = width / (dates.length - 1);
-    
-    return values.map((val, idx) => {
-      const x = idx * stepX;
-      const y = height - (val / max) * (height - 10) - 5;
-      return `${x},${y}`;
-    }).join(' ');
-  };
-
   // Calendar Snapshot Visualizer helper
   const renderWorkCalendarSnapshot = () => {
     if (!todayStr) return null;
@@ -920,16 +920,58 @@ export default function AnalyticsPage() {
     );
   };
 
+  // ---------------------------------------------------------------------
+  // Layout. Every figure below comes from the calculations above; nothing
+  // here changes what a metric means.
+  // ---------------------------------------------------------------------
+  const goTab = (tab: AnalyticsTab, project: string | null = null) => {
+    setActiveTab(tab);
+    setOpenProjectId(project);
+    try {
+      const q = new URLSearchParams();
+      if (tab !== 'overview') q.set('tab', tab);
+      if (project) q.set('project', project);
+      window.history.replaceState(null, '', `${window.location.pathname}${q.size ? `?${q}` : ''}`);
+    } catch { /* fine without the URL */ }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="w-10 h-10 border-4 border-primary/20 border-t-blue-500 rounded-full animate-spin"></div>
+      <div className="max-w-6xl space-y-8 pb-16" aria-busy="true" aria-label="Loading analytics">
+        <div className="h-10 w-48 animate-pulse rounded-[8px] bg-surface-sunken" />
+        <div className="h-9 w-96 max-w-full animate-pulse rounded-[8px] bg-surface-sunken" />
+        <div className="grid grid-cols-2 gap-6 border-y border-border py-5 lg:grid-cols-5">
+          {[0, 1, 2, 3, 4].map(i => <div key={i} className="h-12 animate-pulse rounded-[6px] bg-surface-sunken" />)}
+        </div>
+        {[0, 1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-[8px] bg-surface-sunken" />)}
       </div>
     );
   }
 
+  const hmh = (h: number) => {
+    const total = Math.round(h * 60);
+    const hh = Math.floor(total / 60);
+    const mm = total % 60;
+    return hh === 0 ? `${mm}m` : mm === 0 ? `${hh}h` : `${hh}h ${String(mm).padStart(2, '0')}m`;
+  };
+  const hmMs = (ms: number) => hmh(ms / 3_600_000);
+
+  const dayTasks = getTasksForDate(selectedDate);
+  const dayDone = dayTasks.filter(t => t && t.status === 'COMPLETED').length;
+  const dayLabel = selectedDate === todayStr ? 'Today' : new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const trendDays = last30Days.slice(-14);
+  const deepSessions = {
+    short: deepWorkSessionDurations.filter(d => d < 1).length,
+    standard: deepWorkSessionDurations.filter(d => d >= 1 && d <= 2).length,
+    long: deepWorkSessionDurations.filter(d => d > 2).length,
+  };
+  const deepShare = (n: number) => (deepWorkSessionDurations.length > 0 ? (n / deepWorkSessionDurations.length) * 100 : 0);
+  const hoursTotal = sumAccounts(activeAccounts, last30(todayStr).slice(-(ACTIVE_RANGES.find(r => r.id === hoursRange)!.days)));
+  const openProject = openProjectId ? safeProjects.find(p => p.id === openProjectId) : null;
+  const overviewIds = ['day', 'hours', 'completion', 'deep', 'history'];
+
   return (
-    <div className="space-y-10 max-w-6xl pb-16">
+    <div className="max-w-6xl space-y-8 pb-16">
       <PageHeader
         className=""
         title="Analytics"
@@ -937,13 +979,13 @@ export default function AnalyticsPage() {
         actions={
           <>
             <label
-              className="flex h-9 items-center gap-2 cursor-pointer text-[13px] text-ink-secondary hover:text-foreground select-none"
+              className="flex h-9 cursor-pointer select-none items-center gap-2 text-[13px] text-ink-secondary hover:text-foreground"
               title={showOffDaysWork ? 'On: work logged on an off day counts toward that day.' : 'Off: work logged on an off day is merged into the nearest working day.'}
             >
               <input type="checkbox" checked={showOffDaysWork} onChange={(e) => handleToggleOffDaysWork(e.target.checked)} className="rounded-[3px] border-border-strong text-primary focus:ring-ring" />
               <span>Count off-day work on that day</span>
             </label>
-            <Button variant="ghost" onClick={fetchAllData}><RefreshCw className="w-3.5 h-3.5 text-ink-faint" /> Refresh</Button>
+            <Button variant="ghost" onClick={fetchAllData}><RefreshCw className="h-3.5 w-3.5 text-ink-faint" /> Refresh</Button>
           </>
         }
       />
@@ -955,839 +997,264 @@ export default function AnalyticsPage() {
           <span className="font-medium text-foreground tabular-nums">
             {availFrom ? formatAvailDate(availFrom) : 'from the start'} – {availUntil ? formatAvailDate(availUntil) : 'onward'}
           </span>
-          <a href="/settings?section=calendar" className="underline decoration-border-strong underline-offset-2 hover:text-foreground">Change</a>
+          <a href="/settings?section=calendar" className="underline decoration-border-strong underline-offset-4 hover:text-foreground">Change</a>
         </p>
       )}
 
-      <div className="space-y-6">
-        {/* Section tabs */}
-        <div className="flex gap-1 border-b border-border overflow-x-auto" role="tablist">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Analytics">
           {([
             ['overview', 'Overview'],
-            ['completion', 'Completion'],
-            ['focus', 'Deep work'],
-            ['hours', 'Hours'],
             ['projects', 'Projects'],
+            ['activity', 'Breaks and brain drain'],
             ['reviews', 'Reflections'],
           ] as const).map(([val, label]) => (
             <button
               key={val}
-              onClick={() => setActiveTab(val)}
+              onClick={() => goTab(val)}
               role="tab"
               aria-selected={activeTab === val}
-              className={`-mb-px border-b-2 px-2.5 pb-2 pt-1 text-[14px] whitespace-nowrap transition-colors ${
-                activeTab === val ? 'border-foreground font-semibold text-foreground' : 'border-transparent text-ink-secondary hover:text-foreground'
-              }`}
+              className={`-mb-px whitespace-nowrap border-b-2 px-2.5 pb-2 pt-1 text-[14px] transition-colors ${activeTab === val ? 'border-foreground font-semibold text-foreground' : 'border-transparent text-ink-secondary hover:text-foreground'}`}
             >
               {label}
             </button>
           ))}
         </div>
-
+        {activeTab === 'overview' && (
+          <div className="flex items-center gap-3 pb-2 text-[12.5px]">
+            <button type="button" onClick={() => setUiPreferences(Object.fromEntries(overviewIds.map(id => [prefKey(id), true])))} className="font-medium text-ink-secondary hover:text-foreground">Expand all</button>
+            <span className="text-ink-faint" aria-hidden="true">·</span>
+            <button type="button" onClick={() => setUiPreferences(Object.fromEntries(overviewIds.map(id => [prefKey(id), false])))} className="font-medium text-ink-secondary hover:text-foreground">Collapse all</button>
+          </div>
+        )}
+      </div>
 
       {activeTab === 'overview' && (
-        <>
-          {/* A year of work, one cell per day */}
-          <section id="activity" className="scroll-mt-24">
-            <SectionHeader title="A year of work" />
-            <div className="pt-5">
-              <ActivityGraph
-                tasks={tasks}
-                events={calendarEvents}
-                timezone={settings?.timezone || 'UTC'}
-                today={getCurrentDateInTimezone(settings?.timezone || 'UTC')}
-                availability={{ from: settings?.availableFrom, until: settings?.availableUntil }}
-              />
-            </div>
-          </section>
+        <div>
+          {/* The day: the one place to read a day whole */}
+          <AnalyticsSection
+            id="day"
+            title={selectedDate === todayStr ? 'Your day' : 'One day'}
+            summary={`${dayLabel} · ${dayDone} of ${dayTasks.length} tasks done · ${hmMs(dayAccount.workingMs)} worked`}
+            actions={
+              <div className="flex items-center">
+                <button type="button" onClick={() => setSelectedDate(shiftYmd(selectedDate, -1))} aria-label="Previous day" className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-foreground">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <input type="date" aria-label="Day to look at" value={selectedDate} onChange={(e) => e.target.value && setSelectedDate(e.target.value)} className="h-8 rounded-[8px] border border-border bg-surface px-2 text-[13px] text-foreground tabular-nums focus:border-border-strong focus:outline-none" />
+                <button type="button" onClick={() => setSelectedDate(shiftYmd(selectedDate, 1))} aria-label="Next day" className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-foreground">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                {selectedDate !== todayStr && (
+                  <button type="button" onClick={() => setSelectedDate(todayStr)} className="h-8 rounded-[8px] px-2 text-[13px] font-medium text-ink-secondary hover:bg-surface-sunken hover:text-foreground">Today</button>
+                )}
+              </div>
+            }
+          >
+            <Facts cols="lg:grid-cols-6" label={`${dayLabel} at a glance`}>
+              <Fact label="Tasks done" sub={dayTasks.length ? `${getCompletionRateForDate(selectedDate)}% of planned` : 'nothing planned'} testId="day-done">
+                {dayDone}<span className="text-[16px] text-ink-secondary"> of {dayTasks.length}</span>
+              </Fact>
+              <Fact label="Working hours" testId="day-working">{hmMs(dayAccount.workingMs)}</Fact>
+              <Fact label="Active hours" sub={dayAccount.activeMs > dayAccount.workingMs ? `${hmMs(dayAccount.breakMs)} break · ${hmMs(dayAccount.drainMs)} drain` : undefined} testId="day-active">{hmMs(dayAccount.activeMs)}</Fact>
+              <Fact label="Deep work" testId="day-deep">{hmh(getDeepWorkHoursForDate(selectedDate))}</Fact>
+              <Fact label="Day score" sub="out of 100">{selectedDayHasActivity ? selectedDateProductivityScore : '–'}</Fact>
+              <Fact label="Week average" sub="days that are over">{selectedWeekHasActivity ? selectedWeekProductivityScore : '–'}</Fact>
+            </Facts>
+            <p className="mt-3 text-[12px] leading-relaxed text-ink-secondary">
+              Day score = task completion (50%) + deep work time (30%) + total logged time (20%). Rescheduling a task isn’t penalised, and a day with nothing tracked shows a dash.
+            </p>
+          </AnalyticsSection>
 
-          <section>
-            <SectionHeader title="Since you started" />
-            <dl className="grid grid-cols-2 gap-x-8 gap-y-6 pt-5 md:grid-cols-4">
+          <AnalyticsSection
+            id="hours"
+            title="Working and active hours"
+            summary={`${ACTIVE_RANGES.find(r => r.id === hoursRange)!.label}: ${hmMs(hoursTotal.workingMs)} working of ${hmMs(hoursTotal.activeMs)} active`}
+          >
+            <ActiveHours accounts={activeAccounts} today={todayStr} range={hoursRange} onRange={setHoursRange} onEditTimes={() => setEditingAway(true)} />
+            <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-3 border-t border-border pt-4 text-[13px]">
               {[
-                [`${Number(lifetimeMetrics.totalWorkingHours || 0).toFixed(0)}h`, 'worked in total'],
-                [`${Number(lifetimeMetrics.avgWorkingHours || 0).toFixed(1)}h`, 'on an average working day'],
-                [`${Number(lifetimeMetrics.totalDeepWorkHours || 0).toFixed(0)}h`, 'of it deep work'],
-                [`${Number(lifetimeMetrics.completionRate || 0).toFixed(0)}%`, 'of planned tasks completed'],
-              ].map(([value, label]) => (
-                <div key={label} className="flex flex-col-reverse">
-                  <dt className="mt-1.5 text-[13px] text-ink-secondary">{label}</dt>
-                  <dd className="font-serif text-[34px] font-medium leading-none tracking-[-0.02em] text-foreground tabular-nums">{value}</dd>
+                ['Weekly average', `${Number(avgWeeklyWorkingHours || 0).toFixed(1)}h a day`],
+                ['Monthly average', `${Number(avgMonthlyWorkingHours || 0).toFixed(1)}h a day`],
+                ['Your configured workday', `${Number(targetWorkingHours || 0).toFixed(1)}h`],
+              ].map(([l, v]) => (
+                <div key={l} className="flex items-baseline gap-2">
+                  <dt className="text-ink-secondary">{l}</dt>
+                  <dd className="font-medium text-foreground tabular-nums">{v}</dd>
                 </div>
               ))}
             </dl>
-            <p className="mt-5 text-[12.5px] leading-relaxed text-ink-faint">
-              Averages use your {baseAllWorkingDays.length} working days since you joined ({allWorkingDays.length} with something tracked, {allCalendarDaysCount} calendar days in all). Work logged on an off day still counts.{' '}
-              <button type="button" onClick={() => setShowMethodology(v => !v)} className="font-medium text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-foreground">
-                {showMethodology ? 'Hide' : 'How the daily score works'}
-              </button>
-              {showMethodology && (
-                <span className="block pt-1">
-                  Daily score = task completion rate (50%) + deep work time (30%) + total logged time (20%). Rescheduling a task isn’t penalized. A restored backup shows as one continuous timeline.
-                </span>
-              )}
-            </p>
-          </section>
+            <p className="mt-2 text-[12px] text-ink-secondary">Averages are working hours over your working days that are over; today joins once you’ve reviewed it.</p>
+          </AnalyticsSection>
 
-          {/* Day inspector */}
-          <div className="bg-surface border border-border rounded-[14px]">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <span className="text-[14px] font-semibold text-foreground">Look at one day</span>
-              <button
-                onClick={() => setSelectedDate(todayStr)}
-                className="font-mono text-[11px] text-primary hover:text-primary-hover transition-colors"
-              >
-                Jump to today
-              </button>
-            </div>
-            <div className="p-4 space-y-4">
-              <div className="flex gap-2 items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const prev = new Date(selectedDate + 'T12:00:00');
-                    prev.setDate(prev.getDate() - 1);
-                    setSelectedDate(prev.toISOString().split('T')[0]);
-                  }}
-                  aria-label="Previous day"
-                  className="p-1.5 border border-border-strong text-ink-faint hover:text-foreground hover:bg-surface-sunken rounded-md transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <input
-                  type="date"
-                  aria-label="Day to look at"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="flex-1 bg-surface-raised border border-border rounded-md px-3 py-1.5 text-foreground text-xs focus:outline-none focus:border-border-strong font-mono text-center"
+          <AnalyticsSection
+            id="completion"
+            title="Task completion"
+            summary={`${avg7DaysCompletionRate}% over 7 days · ${completedTasksCount} of ${totalTasksCount} tasks done in all`}
+          >
+            <Facts cols="lg:grid-cols-6" label="Completion">
+              <Fact label="Today" testId="completion-today">{todayCompletionRate}%</Fact>
+              <Fact label="7-day average">{avg7DaysCompletionRate}%</Fact>
+              <Fact label="30-day average">{avg30DaysCompletionRate}%</Fact>
+              <Fact label="Done, all time" sub={`of ${totalTasksCount} planned`}>{completedTasksCount}</Fact>
+              <Fact label="Postponed" sub="moves to a later day">{postponedCount}</Fact>
+              <Fact label="Average task" sub="recorded time">{avgTaskCompletionTime}h</Fact>
+            </Facts>
+            <div className="mt-6 grid grid-cols-1 gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+              <div>
+                <h3 className="mb-3 text-[12.5px] font-semibold text-ink-secondary">Share of planned tasks done, by working day</h3>
+                <DayBars
+                  days={trendDays}
+                  values={trendDays.map(getCompletionRateForDate)}
+                  max={100}
+                  format={(v) => `${v}% of planned tasks done`}
+                  label="Completion rate by working day"
+                  emptyDays={new Set(trendDays.filter(d => getTasksForDate(d).length === 0))}
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = new Date(selectedDate + 'T12:00:00');
-                    next.setDate(next.getDate() + 1);
-                    setSelectedDate(next.toISOString().split('T')[0]);
-                  }}
-                  aria-label="Next day"
-                  className="p-1.5 border border-border-strong text-ink-faint hover:text-foreground hover:bg-surface-sunken rounded-md transition-colors"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  ['Day score', selectedDayHasActivity ? selectedDateProductivityScore : null, 'var(--primary)'],
-                  ['Week average', selectedWeekHasActivity ? selectedWeekProductivityScore : null, 'var(--color-data-slate)'],
-                ].map(([label, score, colour]) => (
-                  <div key={label as string} className="border border-border rounded-md p-4 flex flex-col items-center text-center">
-                    <span className="text-[11.5px] font-semibold text-ink-faint">{label}</span>
-                    <div className="relative w-20 h-20 flex items-center justify-center mt-3">
-                      <svg className="w-full h-full -rotate-90" viewBox="0 0 80 80">
-                        <circle cx="40" cy="40" r="34" stroke="var(--border-c)" strokeWidth="5" fill="transparent" />
-                        {score !== null && (
-                          <circle
-                            cx="40" cy="40" r="34"
-                            stroke={colour as string}
-                            strokeWidth="5"
-                            fill="transparent"
-                            strokeDasharray={`${2 * Math.PI * 34}`}
-                            strokeDashoffset={`${2 * Math.PI * 34 * (1 - ((score as number) || 0) / 100)}`}
-                          />
-                        )}
-                      </svg>
-                      <span className={`absolute font-mono font-bold ${score === null ? 'text-ink-faint text-lg' : 'text-foreground text-sm'}`}>
-                        {score === null ? '–' : score as number}
-                      </span>
-                    </div>
-                  </div>
+              <div>
+                <h3 className="mb-1 text-[12.5px] font-semibold text-ink-secondary">Completion by priority</h3>
+                {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const).map(p => (
+                  <ShareRow key={p} label={p.charAt(0) + p.slice(1).toLowerCase()} pct={priorityCompletionRates[p]} />
                 ))}
+                <p className="mt-2 text-[12px] text-ink-secondary">Completion is the share of planned tasks marked done. Blocked and cancelled tasks don’t count against you.</p>
               </div>
-
-              <p className="text-[11px] text-ink-faint leading-relaxed">
-                Score = task completion rate + deep work time + total logged time. Rescheduling a task isn’t penalized. A day with nothing tracked shows a dash.
-              </p>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+          </AnalyticsSection>
 
-      {activeTab === 'reviews' && <ReviewHistory timezone={settings?.timezone || 'UTC'} />}
-      {editingAway && <AwaySessionsDialog timezone={userTimezone} onClose={() => setEditingAway(false)} />}
-
-      {/* 2. COMPLETION METRICS */}
-      {activeTab === 'completion' && (
-        <div className="space-y-6">
-          <h2 className="font-display text-base font-bold tracking-tight text-foreground">Completion</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Task Completion Rate Card */}
-            <div className="mkt-card p-6 flex flex-col justify-between min-h-60 lg:col-span-1">
+          <AnalyticsSection
+            id="deep"
+            title="Deep work"
+            summary={`${hmh(weeklyDeepWorkHours)} in 7 days · ${deepWorkSessionCount} sessions in all`}
+            defaultOpen={false}
+          >
+            <Facts cols="lg:grid-cols-6" label="Deep work">
+              <Fact label="Today">{hmh(todayDeepWorkHours)}</Fact>
+              <Fact label="Last 7 days">{hmh(weeklyDeepWorkHours)}</Fact>
+              <Fact label="Last 30 days">{hmh(monthlyDeepWorkHours)}</Fact>
+              <Fact label="Sessions done">{deepWorkSessionCount}</Fact>
+              <Fact label="Average session">{averageDeepWorkSessionDuration}h</Fact>
+              <Fact label="Longest session">{longestDeepWorkSession}h</Fact>
+            </Facts>
+            <div className="mt-6 grid grid-cols-1 gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
               <div>
-                <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                  <Percent className="w-3.5 h-3.5 text-ink-faint" /> Completion rate
-                </span>
-                <div className="grid grid-cols-3 gap-2 mt-5 text-center">
-                  <div className="bg-surface-sunken/40 border border-border p-3 rounded-md">
-                    <p className="text-muted-foreground text-[11.5px] font-mono">Today</p>
-                    <p className="text-xl font-bold text-foreground mt-1">{todayCompletionRate}%</p>
-                  </div>
-                  <div className="bg-surface-sunken/40 border border-border p-3 rounded-md">
-                    <p className="text-muted-foreground text-[11.5px] font-mono">7 days</p>
-                    <p className="text-xl font-bold text-foreground mt-1">{avg7DaysCompletionRate}%</p>
-                  </div>
-                  <div className="bg-surface-sunken/40 border border-border p-3 rounded-md">
-                    <p className="text-muted-foreground text-[11.5px] font-mono">30 days</p>
-                    <p className="text-xl font-bold text-foreground mt-1">{avg30DaysCompletionRate}%</p>
-                  </div>
-                </div>
+                <h3 className="mb-3 text-[12.5px] font-semibold text-ink-secondary">Deep work by working day</h3>
+                <DayBars days={trendDays} values={trendDays.map(getDeepWorkHoursForDate)} color="var(--color-data-slate)" format={(v) => `${hmh(v)} of deep work`} label="Deep work hours by working day" />
               </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed mt-4">
-                Completion rate is the share of planned tasks marked done.
-              </p>
-            </div>
-
-            {/* Daily Completion Rate Line Chart */}
-            <div className="mkt-card p-6 space-y-4 lg:col-span-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-ink-faint" /> Daily completion rate, last 7 days
-                </span>
-                <span className="text-[10px] text-muted-foreground font-mono">Tasks done (%)</span>
-              </div>
-
-              <div className={`relative pt-4 bg-surface-sunken/40 rounded-md border border-border p-3 h-40 flex ${last7Days.length === 0 ? 'items-center justify-center' : 'items-end'}`}>
-                {last7Days.length === 0 ? (
-                  <span className="text-xs text-muted-foreground font-light">No data for this period.</span>
-                ) : (
-                  <>
-                    <svg className="w-full h-28 overflow-visible" viewBox="0 0 500 120">
-                      <line x1="0" y1="5" x2="500" y2="5" stroke="var(--border-c)" strokeWidth="1" strokeDasharray="4" />
-                      <line x1="0" y1="60" x2="500" y2="60" stroke="var(--border-c)" strokeWidth="1" strokeDasharray="4" />
-                      <line x1="0" y1="115" x2="500" y2="115" stroke="var(--border-strong)" strokeWidth="1" />
-                      
-                      <polyline
-                        fill="none"
-                        stroke="url(#gradient-green)"
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={generateChartPoints(last7Days, getCompletionRateForDate)}
-                      />
-                      
-                      <defs>
-                        <linearGradient id="gradient-green" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="var(--primary)" />
-                          <stop offset="100%" stopColor="var(--primary)" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-
-                    <div className="absolute bottom-2 left-3 right-3 flex justify-between text-[8px] font-mono text-ink-faint">
-                      {last7Days.map((dateStr, idx) => (
-                        <span key={idx}>
-                          {new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short' })}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. DEEP WORK METRICS */}
-      {activeTab === 'focus' && (
-        <div className="space-y-6">
-          <h2 className="font-display text-base font-bold tracking-tight text-foreground">Deep work</h2>
-          
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 space-y-6">
-              {/* Deep Work Summary Card */}
-              <div className="mkt-card p-6 flex flex-col justify-between">
+              <div className="space-y-6">
                 <div>
-                  <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                    <Flame className="w-3.5 h-3.5 text-ink-faint" /> Deep work hours
-                  </span>
-                  <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                    <div className="bg-surface-sunken/40 border border-border p-2.5 rounded-md">
-                      <p className="text-ink-faint text-[8px] font-mono">Today</p>
-                      <p className="text-lg font-bold text-foreground mt-1">{Number(todayDeepWorkHours || 0).toFixed(1)}h</p>
-                    </div>
-                    <div className="bg-surface-sunken/40 border border-border p-2.5 rounded-md">
-                      <p className="text-ink-faint text-[8px] font-mono">7 days</p>
-                      <p className="text-lg font-bold text-foreground mt-1">{Number(weeklyDeepWorkHours || 0).toFixed(1)}h</p>
-                    </div>
-                    <div className="bg-surface-sunken/40 border border-border p-2.5 rounded-md">
-                      <p className="text-ink-faint text-[8px] font-mono">30 days</p>
-                      <p className="text-lg font-bold text-foreground mt-1">{Number(monthlyDeepWorkHours || 0).toFixed(1)}h</p>
-                    </div>
-                  </div>
+                  <h3 className="mb-1 text-[12.5px] font-semibold text-ink-secondary">Session lengths</h3>
+                  <ShareRow label="Under 1 hour" pct={deepShare(deepSessions.short)} count={`${deepSessions.short}`} color="var(--color-data-slate)" />
+                  <ShareRow label="1 to 2 hours" pct={deepShare(deepSessions.standard)} count={`${deepSessions.standard}`} color="var(--color-data-slate)" />
+                  <ShareRow label="Over 2 hours" pct={deepShare(deepSessions.long)} count={`${deepSessions.long}`} color="var(--color-data-slate)" />
                 </div>
-                
-                <div className="space-y-3 pt-5 border-t border-border/50 mt-5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Deep work sessions completed</span>
-                    <span className="text-foreground font-bold font-mono">{deepWorkSessionCount}</span>
+                <div>
+                  <h3 className="mb-2 text-[12.5px] font-semibold text-ink-secondary">Deep and shallow work, all time</h3>
+                  <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-[4px]" role="img" aria-label={`Deep ${deepWorkPct}%, shallow ${100 - deepWorkPct}%`}>
+                    <div className="h-full rounded-l-[4px]" style={{ width: `${deepWorkPct}%`, backgroundColor: 'var(--color-data-slate)' }} />
+                    <div className="h-full flex-1 rounded-r-[4px] bg-border-strong" />
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Average session length</span>
-                    <span className="text-foreground font-bold font-mono">{averageDeepWorkSessionDuration}h</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Longest session</span>
-                    <span className="text-foreground font-bold font-mono">{longestDeepWorkSession}h</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Deep work this week</span>
-                    <span className="text-foreground font-bold font-mono">{weeklyDeepWorkTime}h</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Deep Work Duration Distribution Histogram Card */}
-              <div className="mkt-card p-6 space-y-4">
-                <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-ink-faint" /> Deep work session lengths
-                </span>
-
-                <div className="space-y-3 pt-2">
-                  {/* Under 1 hour */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-muted-foreground">Short sessions (under 1 h)</span>
-                      <span className="text-muted-foreground font-mono">
-                        {deepWorkSessionDurations.filter(d => d < 1).length} ({deepWorkSessionDurations.length > 0 ? Math.round((deepWorkSessionDurations.filter(d => d < 1).length / deepWorkSessionDurations.length) * 100) : 0}%)
-                      </span>
-                    </div>
-                    <div className="bg-surface-sunken h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-primary h-full rounded-full"
-                        style={{ width: `${deepWorkSessionDurations.length > 0 ? (deepWorkSessionDurations.filter(d => d < 1).length / deepWorkSessionDurations.length) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 1 - 2 hours */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-muted-foreground">Standard sessions (1–2 h)</span>
-                      <span className="text-muted-foreground font-mono">
-                        {deepWorkSessionDurations.filter(d => d >= 1 && d <= 2).length} ({deepWorkSessionDurations.length > 0 ? Math.round((deepWorkSessionDurations.filter(d => d >= 1 && d <= 2).length / deepWorkSessionDurations.length) * 100) : 0}%)
-                      </span>
-                    </div>
-                    <div className="bg-surface-sunken h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-primary h-full rounded-full"
-                        style={{ width: `${deepWorkSessionDurations.length > 0 ? (deepWorkSessionDurations.filter(d => d >= 1 && d <= 2).length / deepWorkSessionDurations.length) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Over 2 hours */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-muted-foreground">Long sessions (over 2 h)</span>
-                      <span className="text-muted-foreground font-mono">
-                        {deepWorkSessionDurations.filter(d => d > 2).length} ({deepWorkSessionDurations.length > 0 ? Math.round((deepWorkSessionDurations.filter(d => d > 2).length / deepWorkSessionDurations.length) * 100) : 0}%)
-                      </span>
-                    </div>
-                    <div className="bg-surface-sunken h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-success h-full rounded-full"
-                        style={{ width: `${deepWorkSessionDurations.length > 0 ? (deepWorkSessionDurations.filter(d => d > 2).length / deepWorkSessionDurations.length) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
+                  <p className="mt-2 flex justify-between text-[12.5px] text-ink-secondary tabular-nums">
+                    <span>Deep {deepWorkPct}% · {Number(totalFocusedHours || 0).toFixed(1)}h</span>
+                    <span>Shallow {100 - deepWorkPct}% · {Number(totalShallowHours || 0).toFixed(1)}h</span>
+                  </p>
                 </div>
               </div>
             </div>
+          </AnalyticsSection>
 
-            {/* Daily Focus Hours Trends Line Chart */}
-            <div className="mkt-card p-6 space-y-4 lg:col-span-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                  <TrendingUp className="w-3.5 h-3.5 text-primary" /> Daily focus hours, last 7 days
-                </span>
-                <span className="text-[10px] text-ink-faint font-mono">Focus hours</span>
-              </div>
-
-              <div className={`relative pt-4 bg-surface-sunken/40 rounded-md border border-border p-3 h-96 flex ${last7Days.length === 0 ? 'items-center justify-center' : 'items-end'}`}>
-                {last7Days.length === 0 ? (
-                  <span className="text-xs text-muted-foreground font-light">No data for this period.</span>
-                ) : (
-                  <>
-                    <svg className="w-full h-80 overflow-visible" viewBox="0 0 500 120">
-                      <line x1="0" y1="5" x2="500" y2="5" stroke="var(--border-c)" strokeWidth="1" strokeDasharray="4" />
-                      <line x1="0" y1="60" x2="500" y2="60" stroke="var(--border-c)" strokeWidth="1" strokeDasharray="4" />
-                      <line x1="0" y1="115" x2="500" y2="115" stroke="var(--border-strong)" strokeWidth="1" />
-                      
-                      <polyline
-                        fill="none"
-                        stroke="url(#gradient-purple)"
-                        strokeWidth="3.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={generateChartPoints(last7Days, getDeepWorkHoursForDate)}
-                      />
-                      
-                      <defs>
-                        <linearGradient id="gradient-purple" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="var(--color-data-slate)" />
-                          <stop offset="100%" stopColor="var(--color-data-slate)" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-
-                    <div className="absolute bottom-2 left-3 right-3 flex justify-between text-[8px] font-mono text-ink-faint">
-                      {last7Days.map((dateStr, idx) => (
-                        <span key={idx}>
-                          {new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short' })}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+          <AnalyticsSection
+            id="history"
+            title="Since you started"
+            summary={`${Number(lifetimeMetrics.totalWorkingHours || 0).toFixed(0)}h worked · ${Number(lifetimeMetrics.completionRate || 0).toFixed(0)}% of planned tasks done`}
+            defaultOpen={false}
+          >
+            <Facts cols="lg:grid-cols-4" label="Since you started">
+              <Fact label="Worked in total">{Number(lifetimeMetrics.totalWorkingHours || 0).toFixed(0)}h</Fact>
+              <Fact label="On an average working day">{Number(lifetimeMetrics.avgWorkingHours || 0).toFixed(1)}h</Fact>
+              <Fact label="Of it deep work">{Number(lifetimeMetrics.totalDeepWorkHours || 0).toFixed(0)}h</Fact>
+              <Fact label="Planned tasks completed">{Number(lifetimeMetrics.completionRate || 0).toFixed(0)}%</Fact>
+            </Facts>
+            <div className="mt-6">
+              <ActivityGraph
+                tasks={tasks}
+                events={calendarEvents}
+                timezone={userTimezone}
+                today={getCurrentDateInTimezone(userTimezone)}
+                availability={{ from: settings?.availableFrom, until: settings?.availableUntil }}
+              />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4. WORKING HOURS */}
-      {activeTab === 'hours' && (
-        <div className="space-y-6">
-          <ActiveHours
-            tasks={tasks}
-            events={calendarEvents}
-            sessions={awaySessions}
-            timezone={userTimezone}
-            today={todayStr}
-            onEditTimes={() => setEditingAway(true)}
-          />
-          <h2 className="pt-6 font-display text-base font-bold tracking-tight text-foreground">Working hours</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Working Hours Metrics */}
-            <div className="mkt-card p-6 space-y-4">
-              <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-ink-faint" /> Hours per day
-              </span>
-              <div className="space-y-3 pt-2">
-                <div className="flex justify-between py-2 border-b border-border/50">
-                  <span className="text-muted-foreground text-xs">Today</span>
-                  <span className="text-foreground text-xs font-bold font-mono">{Number(todayWorkingHours || 0).toFixed(1)}h</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-border/50">
-                  <span className="text-muted-foreground text-xs">Weekly average</span>
-                  <span className="text-foreground text-xs font-bold font-mono">{Number(avgWeeklyWorkingHours || 0).toFixed(1)}h/day</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-border/50">
-                  <span className="text-muted-foreground text-xs">Monthly average</span>
-                  <span className="text-foreground text-xs font-bold font-mono">{Number(avgMonthlyWorkingHours || 0).toFixed(1)}h/day</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground text-xs">Configured workday</span>
-                  <span className="text-muted-foreground text-xs font-bold font-mono">{Number(targetWorkingHours || 0).toFixed(1)}h/day</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Deep vs Shallow Split Chart */}
-            <div className="mkt-card p-6 space-y-5 flex flex-col justify-between">
+            <div className="mt-8 grid grid-cols-1 items-start gap-x-12 gap-y-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+              {renderWorkCalendarSnapshot()}
               <div>
-                <span className="text-[11.5px] font-mono text-muted-foreground flex items-center gap-1.5">
-                  <Brain className="w-3.5 h-3.5 text-primary" /> Deep versus shallow work
-                </span>
-
-                <div className="flex flex-col items-center justify-center py-4 space-y-4">
-                  <div className="w-full bg-surface-sunken h-5 rounded-full overflow-hidden border border-border flex relative">
-                    <div 
-                      className="bg-surface-sunken h-full transition-[width] duration-[var(--duration-standard)]"
-                      style={{ width: `${deepWorkPct}%` }}
-                      title={`Deep work: ${deepWorkPct}%`}
-                    />
-                    <div 
-                      className="bg-surface-sunken h-full flex-1 transition-[width] duration-[var(--duration-standard)]"
-                      title={`Shallow work: ${100 - deepWorkPct}%`}
-                    />
-                  </div>
-
-                  <div className="flex justify-between w-full text-[10px] font-mono">
-                    <div className="flex items-center gap-1.5 text-primary">
-                      <span className="w-2.5 h-2.5 bg-primary rounded-sm block" />
-                      <span>Deep: {deepWorkPct}% ({Number(totalFocusedHours || 0).toFixed(1)}h)</span>
+                <h3 className="mb-1 text-[12.5px] font-semibold text-ink-secondary">This month</h3>
+                <dl className="divide-y divide-border">
+                  {[
+                    [currentMonthStats.configured, 'Configured working days', 'days marked as working'],
+                    [currentMonthStats.additional, 'Extra days worked', 'rest days you logged work on'],
+                    [currentMonthStats.total, 'Productive days', 'used for this month’s averages'],
+                  ].map(([v, l, d]) => (
+                    <div key={l as string} className="flex items-baseline justify-between gap-4 py-2.5">
+                      <dt className="text-[13.5px] text-foreground">{l}<span className="block text-[12px] text-ink-secondary">{d}</span></dt>
+                      <dd className="font-serif text-[22px] font-medium tabular-nums text-foreground">{v}</dd>
                     </div>
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <span className="w-2.5 h-2.5 bg-surface-sunken rounded-sm block border border-border-strong" />
-                      <span>Shallow: {100 - deepWorkPct}% ({Number(totalShallowHours || 0).toFixed(1)}h)</span>
-                    </div>
-                  </div>
-                </div>
+                  ))}
+                </dl>
+                <p className="mt-3 text-[12px] leading-relaxed text-ink-secondary">
+                  Averages use your {baseAllWorkingDays.length} working days since you joined ({allWorkingDays.length} with something tracked, {allCalendarDaysCount} calendar days in all). Work logged on an off day still counts.{' '}
+                  <button type="button" onClick={() => setShowMethodology(v => !v)} className="font-medium text-ink-secondary underline decoration-border-strong underline-offset-4 hover:text-foreground">
+                    {showMethodology ? 'Hide' : 'How the daily score works'}
+                  </button>
+                  {showMethodology && (
+                    <span className="block pt-1">Daily score = task completion rate (50%) + deep work time (30%) + total logged time (20%). Rescheduling a task isn’t penalized. A restored backup shows as one continuous timeline.</span>
+                  )}
+                </p>
               </div>
-
-              <p className="text-[10px] text-ink-faint leading-normal">
-                Deep work is cognitively demanding. Shallow work is routine and administrative.
-              </p>
             </div>
-          </div>
+          </AnalyticsSection>
         </div>
       )}
 
-      {/* 5. PROJECT ANALYTICS */}
       {activeTab === 'projects' && (
-        <>
-          <section aria-labelledby="time-sheet-title" className="space-y-4">
-            <div>
-              <h2 id="time-sheet-title" className="font-display text-base font-bold tracking-tight text-foreground">Daily time sheet</h2>
-              <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-ink-secondary">
-                One project, one day, filled in from its tasks and the time you logged on them. The reflection comes from what you write when you finish a task.
-              </p>
-            </div>
-            <ProjectTimeSheet
-              key={`${sheetKey}:${sheetProject ?? ''}`}
-              projects={safeProjects}
-              tasks={tasks}
-              events={calendarEvents}
-              sessions={awaySessions}
-              reflections={reflections}
-              timezone={userTimezone}
-              today={todayStr}
-              initialProjectId={sheetProject}
-              initialDate={sheetKey === 0 ? sheetTarget.date : null}
-            />
-          </section>
-
-          <ProjectComparison
-            projects={safeProjects}
+        openProject ? (
+          <ProjectAnalyticsView
+            key={openProject.id}
+            project={openProject}
             tasks={tasks}
             events={calendarEvents}
             sessions={awaySessions}
             reflections={reflections}
+            investment={investment.projects[openProject.id]}
             timezone={userTimezone}
             today={todayStr}
-            onOpen={(id) => {
-              setSheetProject(id);
-              setSheetKey(k => k + 1);
-              document.getElementById('time-sheet-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
+            initialDate={sheetTarget.project === openProject.id ? sheetTarget.date : null}
+            objectives={getGoalsMetrics(openProject)}
+            onExportObjectives={() => handleExportGoalMetrics(openProject, getGoalsMetrics(openProject))}
+            onBack={() => goTab('projects')}
           />
-
-          <div className="space-y-6">
-            <h2 className="font-display text-base font-bold tracking-tight text-foreground">Projects and tasks</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Project Statistics */}
-              <div className="mkt-card p-6 space-y-5">
-                <h3 className="text-[12.5px] font-semibold text-muted-foreground">Project overview</h3>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-surface-sunken/40 border border-border rounded-md text-center">
-                    <span className="text-[11.5px] text-ink-faint">Active projects</span>
-                    <p className="text-2xl font-bold text-foreground mt-1">{activeProjects.length}</p>
-                  </div>
-                  <div className="p-4 bg-surface-sunken/40 border border-border rounded-md text-center">
-                    <span className="text-[11.5px] text-ink-faint">Average completion</span>
-                    <p className="text-2xl font-bold text-foreground mt-1">{Number(avgProjectCompletion || 0).toFixed(1)}%</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3 border-t border-border/60 pt-4">
-                  <h4 className="text-[11.5px] font-semibold text-muted-foreground mb-2">Project progress</h4>
-                  
-                  <div className="space-y-2.5">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Completed ({projectDistribution.completed})</span>
-                        <span>{safeProjects.length > 0 ? Math.round(projectDistribution.completed / safeProjects.length * 100) : 0}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-success h-full" style={{ width: `${safeProjects.length > 0 ? (projectDistribution.completed / safeProjects.length * 100) : 0}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Nearly done (80% or more) ({projectDistribution.nearCompletion})</span>
-                        <span>{safeProjects.length > 0 ? Math.round(projectDistribution.nearCompletion / safeProjects.length * 100) : 0}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-primary h-full" style={{ width: `${safeProjects.length > 0 ? (projectDistribution.nearCompletion / safeProjects.length * 100) : 0}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>In progress (20–80%) ({projectDistribution.inProgress})</span>
-                        <span>{safeProjects.length > 0 ? Math.round(projectDistribution.inProgress / safeProjects.length * 100) : 0}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-primary h-full" style={{ width: `${safeProjects.length > 0 ? (projectDistribution.inProgress / safeProjects.length * 100) : 0}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>At risk (under 20%) ({projectDistribution.atRisk})</span>
-                        <span>{safeProjects.length > 0 ? Math.round(projectDistribution.atRisk / safeProjects.length * 100) : 0}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-danger h-full" style={{ width: `${safeProjects.length > 0 ? (projectDistribution.atRisk / safeProjects.length * 100) : 0}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Task Statistics */}
-              <div className="mkt-card p-6 space-y-5">
-                <h3 className="text-[12.5px] font-semibold text-muted-foreground">Task overview</h3>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-3 bg-surface-sunken/40 border border-border rounded-md text-center">
-                    <span className="text-[11.5px] text-ink-faint">Created</span>
-                    <p className="text-xl font-bold text-foreground mt-0.5">{totalTasksCount}</p>
-                  </div>
-                  <div className="p-3 bg-surface-sunken/40 border border-border rounded-md text-center">
-                    <span className="text-[11.5px] text-ink-faint">Completed</span>
-                    <p className="text-xl font-bold text-success mt-0.5">{completedTasksCount}</p>
-                  </div>
-                  <div className="p-3 bg-surface-sunken/40 border border-border rounded-md text-center">
-                    <span className="text-[11.5px] text-ink-faint">Postponed</span>
-                    <p className="text-xl font-bold text-foreground mt-0.5">{postponedCount}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3 border-t border-border/60 pt-4">
-                  <h4 className="text-[11.5px] font-semibold text-muted-foreground mb-2">Completion rate by priority</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Critical</span>
-                        <span>{priorityCompletionRates.CRITICAL}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-danger h-full" style={{ width: `${priorityCompletionRates.CRITICAL}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>High</span>
-                        <span>{priorityCompletionRates.HIGH}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-warning h-full" style={{ width: `${priorityCompletionRates.HIGH}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Medium</span>
-                        <span>{priorityCompletionRates.MEDIUM}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-primary h-full" style={{ width: `${priorityCompletionRates.MEDIUM}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                        <span>Low</span>
-                        <span>{priorityCompletionRates.LOW}%</span>
-                      </div>
-                      <div className="w-full bg-surface-sunken h-1.5 rounded-full overflow-hidden border border-border">
-                        <div className="bg-ink-faint h-full" style={{ width: `${priorityCompletionRates.LOW}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="pt-2 text-[10px] text-ink-faint flex justify-between font-mono">
-                    <span>Average completion time</span>
-                    <span className="text-ink-secondary">{Number(avgTaskCompletionTime || 0).toFixed(1)} hours</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 6. PROJECT GOALS TIME DISTRIBUTION */}
-          <div className="mkt-card p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-4">
-              <div>
-                <h2 className="text-base font-bold text-foreground tracking-tight flex items-center">
-                  <FolderGit2 className="w-5 h-5 mr-2 text-primary" /> Time by objective
-                </h2>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Planned versus actual hours for each objective in a project.
-                </p>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <select
-                  aria-label="Project"
-                  value={selectedAnalyticsProjectId}
-                  onChange={(e) => setSelectedAnalyticsProjectId(e.target.value)}
-                  className="min-w-0 max-w-full truncate sm:max-w-[20rem] bg-surface-raised border border-border rounded-md px-4 py-2 text-foreground text-xs focus:outline-none focus:border-border-strong"
-                >
-                  <option value="">Select a project…</option>
-                  {safeProjects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                
-                {selectedAnalyticsProjectId && (
-                  <button
-                    onClick={() => {
-                      const proj = safeProjects.find(p => p.id === selectedAnalyticsProjectId);
-                      if (proj) {
-                        const metrics = getGoalsMetrics(proj);
-                        handleExportGoalMetrics(proj, metrics);
-                      }
-                    }}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2 bg-surface-raised border border-border-strong hover:bg-surface-sunken text-foreground text-xs font-semibold rounded-[9px] transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Export CSV
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {selectedAnalyticsProjectId ? (
-              (() => {
-                const proj = safeProjects.find(p => p.id === selectedAnalyticsProjectId);
-                if (!proj) return <p className="text-xs text-muted-foreground font-mono">Project not found.</p>;
-                const metrics = getGoalsMetrics(proj);
-
-                if (metrics.length === 0) {
-                  return (
-                    <div className="text-center py-10 bg-surface-raised/20 border border-dashed border-border rounded-md">
-                      <p className="text-xs text-muted-foreground font-mono">No objectives or scheduled tasks in this project yet.</p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="space-y-6">
-                    {/* Visual Cards Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Detailed Table */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="border-b border-border/80 text-muted-foreground font-mono text-[11.5px]">
-                              <th className="pb-3 font-semibold">Objective</th>
-                              <th className="pb-3 text-right font-semibold">Planned</th>
-                              <th className="pb-3 text-right font-semibold">Actual</th>
-                              <th className="pb-3 text-right font-semibold">Difference</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/60 font-mono">
-                            {metrics.map((m, idx) => {
-                              const diff = m.actual - m.planned;
-                              return (
-                                <tr key={idx} className="hover:bg-surface-raised/20">
-                                  <td className="py-3.5 pr-4 text-foreground font-sans font-medium">{m.text}</td>
-                                  <td className="py-3.5 text-right text-muted-foreground">{m.planned.toFixed(1)}h</td>
-                                  <td className="py-3.5 text-right text-success font-bold">{m.actual.toFixed(1)}h</td>
-                                  <td className={`py-3.5 text-right font-bold ${diff > 0 ? 'text-danger' : diff < 0 ? 'text-success' : 'text-muted-foreground'}`}>
-                                    {diff > 0 ? '+' : ''}{diff.toFixed(1)}h
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Horizontal Bar Chart representation */}
-                      <div className="space-y-4 bg-surface-raised/30 border border-border rounded-md p-5">
-                        <h4 className="text-[11.5px] font-semibold text-muted-foreground mb-1">Planned versus actual</h4>
-                        <p className="text-[9px] text-ink-faint leading-relaxed mb-4">
-                          PLN (gray) is planned time. ACT (green) is actual time.
-                        </p>
-                        
-                        <div className="space-y-4">
-                          {metrics.map((m, idx) => {
-                            const maxVal = Math.max(...metrics.map(x => Math.max(x.planned, x.actual, 1)));
-                            const plannedPct = (m.planned / maxVal) * 100;
-                            const actualPct = (m.actual / maxVal) * 100;
-                            
-                            return (
-                              <div key={idx} className="space-y-1">
-                                <span className="text-[11px] font-medium text-foreground block truncate">{m.text}</span>
-                                <div className="space-y-1 bg-surface-sunken/45 p-2 rounded-lg border border-border/40">
-                                  {/* Planned Bar */}
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[8px] font-mono text-ink-faint w-8">PLN</span>
-                                    <div className="flex-1 bg-surface-raised h-2.5 rounded-full overflow-hidden">
-                                      <div className="bg-border-strong h-full rounded-full transition-[width] duration-[var(--duration-standard)]" style={{ width: `${plannedPct}%` }} />
-                                    </div>
-                                    <span className="text-[9px] font-mono text-muted-foreground w-8 text-right">{m.planned.toFixed(1)}h</span>
-                                  </div>
-                                  {/* Actual Bar */}
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[8px] font-mono text-success w-8">ACT</span>
-                                    <div className="flex-1 bg-surface-raised h-2.5 rounded-full overflow-hidden">
-                                      <div className="bg-success h-full rounded-full transition-[width] duration-[var(--duration-standard)]" style={{ width: `${actualPct}%` }} />
-                                    </div>
-                                    <span className="text-[9px] font-mono text-success w-8 text-right">{m.actual.toFixed(1)}h</span>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()
-            ) : (
-              <div className="text-center py-10 bg-surface-raised/20 border border-dashed border-border rounded-md">
-                <p className="text-xs text-muted-foreground font-mono">Select a project above to compare planned and actual time by objective.</p>
-              </div>
-            )}
-          </div>
-        </>
+        ) : (
+          <ProjectsAnalyticsList
+            projects={safeProjects}
+            tasks={tasks}
+            investment={investment}
+            today={todayStr}
+            onOpen={(id) => { goTab('projects', id); window.scrollTo?.({ top: 0 }); document.querySelector('main')?.scrollTo({ top: 0 }); }}
+            portfolio={{ active: activeProjects.length, avgCompletion: avgProjectCompletion, distribution: projectDistribution }}
+          />
+        )
       )}
 
-      {/* 7. ACTIVE WORK DAY CALENDAR */}
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          <div className="lg:col-span-1">
-            {renderWorkCalendarSnapshot()}
-          </div>
-
-          <div className="lg:col-span-2 bg-surface border border-border rounded-md">
-            <div className="px-4 py-3 border-b border-border">
-              <span className="text-[12.5px] font-semibold text-ink-secondary">This month</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
-              <div className="p-4">
-                <p className="text-[11.5px] font-semibold text-ink-faint">Configured working days</p>
-                <p className="font-mono text-xl text-foreground tabular-nums mt-1">{currentMonthStats.configured}</p>
-                <p className="text-[11px] text-ink-faint mt-0.5">days marked as working</p>
-              </div>
-              <div className="p-4">
-                <p className="text-[11.5px] font-semibold text-ink-faint">Extra days worked</p>
-                <p className="font-mono text-xl text-foreground tabular-nums mt-1">{currentMonthStats.additional}</p>
-                <p className="text-[11px] text-ink-faint mt-0.5">rest days you logged work on</p>
-              </div>
-              <div className="p-4">
-                <p className="text-[11.5px] font-semibold text-ink-faint">Productive days</p>
-                <p className="font-mono text-xl text-foreground tabular-nums mt-1">{currentMonthStats.total}</p>
-                <p className="text-[11px] text-ink-faint mt-0.5">used for this month’s averages</p>
-              </div>
-            </div>
-          </div>
-        </div>
+      {activeTab === 'activity' && (
+        <ActivityInsights
+          accounts={activeAccounts}
+          sessions={awaySessions}
+          timezone={userTimezone}
+          today={todayStr}
+        />
       )}
 
+      {activeTab === 'reviews' && <ReviewHistory timezone={settings?.timezone || 'UTC'} />}
+      {editingAway && <AwaySessionsDialog timezone={userTimezone} onClose={() => setEditingAway(false)} />}
     </div>
   );
 }

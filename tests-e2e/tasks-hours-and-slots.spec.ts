@@ -103,6 +103,9 @@ test('Analytics and Recent weeks count only the available dates', async ({ page 
 
   await page.goto('/analytics');
   await expect(page.getByText('Counting only your available dates:')).toBeVisible({ timeout: 15_000 });
+  // The year of work sits in "Since you started", folded away by default.
+  const since = page.getByRole('button', { name: /^Since you started/ });
+  if ((await since.getAttribute('aria-expanded')) !== 'true') await since.click();
   const graph = page.locator('[role="grid"][aria-label^="Daily working time"]').first();
   await expect(graph).toBeVisible();
   // A day before the window is drawn but holds no time.

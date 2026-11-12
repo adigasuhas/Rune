@@ -6,7 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY prisma.config.ts ./
-# postinstall runs `prisma generate`
+# postinstall runs `prisma generate`. Skip onnxruntime's optional CUDA
+# download (hundreds of MB from nuget.org; dictation runs on the CPU).
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 RUN npm ci
 
 # ---------- build ----------

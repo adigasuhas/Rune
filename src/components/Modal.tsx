@@ -90,6 +90,11 @@ function useFocusTrapAndEscape(panelRef: React.RefObject<HTMLDivElement | null>,
 // The header's title names the dialog (aria-labelledby), WCAG 4.1.2.
 const TitleIdContext = createContext<string | undefined>(undefined);
 
+/** The id the dialog is labelled by: put it on a custom title (one not made with Modal.Header). */
+export function useModalTitleId() {
+  return useContext(TitleIdContext);
+}
+
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 const FIELDS = 'input:not([type=search]):not([type=hidden]), textarea, select';
 const fieldValue = (el: Field) => (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio') ? String(el.checked) : el.value);

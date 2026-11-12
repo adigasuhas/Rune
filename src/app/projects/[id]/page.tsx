@@ -16,7 +16,7 @@ import {
   Plus,
   Trash2,
   StickyNote,
-  ClipboardList,
+  BarChart3,
   BookOpen,
   Eye,
   Ban,
@@ -442,7 +442,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
             <StickyNote className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Wall
           </Link>
           <Link href={`/analytics?tab=projects&project=${project.id}`} className={actionClass}>
-            <ClipboardList className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Time sheet
+            <BarChart3 className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Analytics
           </Link>
           {canEdit && (
             <Link
