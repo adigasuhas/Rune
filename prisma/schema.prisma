@@ -122,6 +122,8 @@ model User {
   sentChatMessages            ChatMessage[]
   notebookComments            NotebookComment[]
   apiTokens                   ApiToken[]
+  activitySessions            ActivitySession[]
+  taskReflections             TaskReflection[]
 }
 
 model Project {
@@ -374,6 +376,7 @@ model Task {
   assignmentStatus TaskAssignmentStatus?
   declineReason    String?
   jobs             Job[]
+  reflection       TaskReflection?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -386,6 +389,58 @@ model Task {
   @@index([projectId])
   @@index([assignedById])
   @@index([blockedOnUserId])
+}
+
+// Time that is part of the active day but isn't work: a break taken on
+// purpose, or a stretch of brain drain (low focus despite being "at work").
+// Recorded with a start/stop control or entered by hand. Kept apart from
+// CalendarEvent on purpose - these never appear on any calendar - and read
+// only by Analytics: work that overlaps one of these stops counting as
+// working time (src/lib/activityTime.ts). `end` null = still running; at
+// most one runs at a time and two never overlap (enforced by the API).
+// A session belongs to the day it STARTED, like every other Rune interval.
+enum ActivityKind {
+  BREAK
+  BRAIN_DRAIN
+}
+
+model ActivitySession {
+  id        String       @id @default(uuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      ActivityKind
+  start     DateTime
+  end       DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId, start])
+}
+
+// What the owner wrote when a task was finished - the Reflection block of
+// the project time sheet. One per task (re-completing a task edits the same
+// one; reopening it keeps it). projectId and completedOn are the task's
+// project and local completion day when it was written, kept as history.
+// Every answer is optional.
+model TaskReflection {
+  id                String   @id @default(uuid())
+  taskId            String   @unique
+  task              Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId         String?
+  completedOn       String // YYYY-MM-DD in the owner's time zone
+  productiveMoment  String?
+  timeWaster        String?
+  gladFinished      String?
+  improvement       String?
+  planningRealistic String?
+  lesson            String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, completedOn])
+  @@index([projectId])
 }
 
 model AccomplishmentRecord {

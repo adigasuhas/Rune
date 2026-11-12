@@ -184,6 +184,8 @@ export const db = {
   notebookAttachment: passthrough(() => prisma.notebookAttachment),
   backup: passthrough(() => prisma.backup),
   notebookRevision: passthrough(() => prisma.notebookRevision),
+  activitySession: passthrough(() => prisma.activitySession),
+  taskReflection: passthrough(() => prisma.taskReflection),
 
   // Notebooks always come with their pages + sub-notebooks embedded (the UI
   // and the backup export both expect that shape). `page` (singular - one

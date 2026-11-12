@@ -33,6 +33,14 @@ import { getCurrentDateInTimezone, getLocalDateString, isDefaultWorking, parseDa
 import { Button, PageHeader, SectionHeader } from '@/components/ui';
 import { ActivityGraph } from '@/components/activity/ActivityGraph';
 import { ReviewHistory } from './ReviewHistory';
+import { ActiveHours } from './ActiveHours';
+import { ProjectTimeSheet } from './ProjectTimeSheet';
+import { ProjectComparison } from './ProjectComparison';
+import { AwaySessionsDialog } from '@/components/time/AwaySessionsDialog';
+import { AWAY_CHANGED } from '@/lib/useAwaySessions';
+import { REFLECTION_SAVED } from '@/components/time/CompletionReflectionPrompt';
+import { sessionSpan, type ActivityLike } from '@/lib/activityTime';
+import type { SheetReflection } from '@/lib/projectTimeSheet';
 import { useSpotlightCards } from '@/hooks/useSpotlightCards';
 interface Goal {
   id: string;
@@ -55,13 +63,39 @@ export default function AnalyticsPage() {
   // ?tab=reviews (linked from Today's first-focus card) opens Reflections.
   // Client-only view (page.tsx loads it with ssr: false), so window is there.
   const [activeTab, setActiveTab] = useState<'overview' | 'completion' | 'focus' | 'hours' | 'projects' | 'reviews'>(
-    () => (new URLSearchParams(window.location.search).get('tab') === 'reviews' ? 'reviews' : 'overview')
+    () => {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      return t === 'reviews' || t === 'projects' || t === 'hours' ? t : 'overview';
+    }
   );
 
   // AI Insights States
 
+  // Breaks and brain drain, and the reflections written when tasks were finished.
+  const [awaySessions, setAwaySessions] = useState<ActivityLike[]>([]);
+  const [reflections, setReflections] = useState<SheetReflection[]>([]);
+  const [editingAway, setEditingAway] = useState(false);
+  // ?project=&date= open a specific time sheet (linked from a project's page).
+  const [sheetTarget] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return { project: q.get('project'), date: q.get('date') };
+  });
+  const [sheetKey, setSheetKey] = useState(0);
+  const [sheetProject, setSheetProject] = useState<string | null>(sheetTarget.project);
+
+  const fetchTimeRecords = async () => {
+    try {
+      const [sessionsRes, reflectionsRes] = await Promise.all([fetch('/api/activity-sessions'), fetch('/api/reflections')]);
+      if (sessionsRes.ok) setAwaySessions(await sessionsRes.json());
+      if (reflectionsRes.ok) setReflections(await reflectionsRes.json());
+    } catch {
+      /* the rest of Analytics still works */
+    }
+  };
+
   const [loadFailed, setLoadFailed] = useState(false);
   const fetchAllData = async () => {
+    void fetchTimeRecords();
     setLoading(true);
     try {
       const [tasksRes, projectsRes, accomplishmentsRes, settingsRes, calendarRes, notebooksRes] = await Promise.all([
@@ -94,9 +128,14 @@ export default function AnalyticsPage() {
     const handleSettingsUpdated = () => {
       fetchAllData();
     };
+    const handleTimeRecords = () => { void fetchTimeRecords(); };
     window.addEventListener('rune-settings-updated', handleSettingsUpdated);
+    window.addEventListener(AWAY_CHANGED, handleTimeRecords);
+    window.addEventListener(REFLECTION_SAVED, handleTimeRecords);
     return () => {
       window.removeEventListener('rune-settings-updated', handleSettingsUpdated);
+      window.removeEventListener(AWAY_CHANGED, handleTimeRecords);
+      window.removeEventListener(REFLECTION_SAVED, handleTimeRecords);
     };
   }, []);
 
@@ -128,8 +167,13 @@ export default function AnalyticsPage() {
       rawCalendarEvents: e.filter((x: any) => inWindow(x?.start)),
     };
   }, [tasks, accomplishments, calendarEvents, availFrom, availUntil, userTimezone]);
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const safeNotebooks = Array.isArray(notebooks) ? notebooks : [];
+  const safeProjects = React.useMemo(() => (Array.isArray(projects) ? projects : []), [projects]);
+  const safeNotebooks = React.useMemo(() => (Array.isArray(notebooks) ? notebooks : []), [notebooks]);
+  // Cut out of every working-hours figure: a break isn't work, even inside a slot.
+  const awaySpans = React.useMemo(
+    () => awaySessions.map(s => sessionSpan(s)).filter((x): x is NonNullable<typeof x> => !!x),
+    [awaySessions]
+  );
 
   // Initialize selectedDate once todayStr is resolved
   useEffect(() => {
@@ -448,8 +492,8 @@ export default function AnalyticsPage() {
     // correct, always-fresh invalidation signal, and grouping by date once
     // (see groupByLocalDate in analyticsUtils.ts) keeps the underlying
     // computation cheap enough that no extra caching is needed.
-    return calculateWorkingDayMetrics(settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone);
-  }, [settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone]);
+    return calculateWorkingDayMetrics(settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone, awaySpans);
+  }, [settledAllWorkingDays, safeTasks, safeAccomplishments, safeCalendarEvents, userTimezone, awaySpans]);
 
   // Entire current month statistics
   const currentMonthStats = React.useMemo(() => {
@@ -512,8 +556,8 @@ export default function AnalyticsPage() {
   const getDeepWorkHoursForDate = React.useCallback((date: string) => {
     const dayTasks = getTasksForDate(date);
     const dayEvents = calendarEventsByDate.get(date) || [];
-    return calculateOccupiedHoursFromItems(date, dayTasks, dayEvents, userTimezone, ['DEEP_WORK']);
-  }, [getTasksForDate, calendarEventsByDate, userTimezone]);
+    return calculateOccupiedHoursFromItems(date, dayTasks, dayEvents, userTimezone, ['DEEP_WORK'], undefined, awaySpans);
+  }, [getTasksForDate, calendarEventsByDate, userTimezone, awaySpans]);
 
   const todayDeepWorkHours = React.useMemo(() => {
     return parseFloat(getDeepWorkHoursForDate(todayStr).toFixed(1));
@@ -565,8 +609,8 @@ export default function AnalyticsPage() {
   const getWorkingHoursForDate = React.useCallback((date: string) => {
     const dayTasks = getTasksForDate(date);
     const dayEvents = calendarEventsByDate.get(date) || [];
-    return calculateOccupiedHoursFromItems(date, dayTasks, dayEvents, userTimezone);
-  }, [getTasksForDate, calendarEventsByDate, userTimezone]);
+    return calculateOccupiedHoursFromItems(date, dayTasks, dayEvents, userTimezone, undefined, undefined, awaySpans);
+  }, [getTasksForDate, calendarEventsByDate, userTimezone, awaySpans]);
 
   const todayWorkingHours = React.useMemo(() => {
     return getWorkingHoursForDate(todayStr);
@@ -1070,6 +1114,7 @@ export default function AnalyticsPage() {
     </div>
 
       {activeTab === 'reviews' && <ReviewHistory timezone={settings?.timezone || 'UTC'} />}
+      {editingAway && <AwaySessionsDialog timezone={userTimezone} onClose={() => setEditingAway(false)} />}
 
       {/* 2. COMPLETION METRICS */}
       {activeTab === 'completion' && (
@@ -1315,7 +1360,15 @@ export default function AnalyticsPage() {
       {/* 4. WORKING HOURS */}
       {activeTab === 'hours' && (
         <div className="space-y-6">
-          <h2 className="font-display text-base font-bold tracking-tight text-foreground">Working hours</h2>
+          <ActiveHours
+            tasks={tasks}
+            events={calendarEvents}
+            sessions={awaySessions}
+            timezone={userTimezone}
+            today={todayStr}
+            onEditTimes={() => setEditingAway(true)}
+          />
+          <h2 className="pt-6 font-display text-base font-bold tracking-tight text-foreground">Working hours</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Working Hours Metrics */}
@@ -1387,6 +1440,42 @@ export default function AnalyticsPage() {
       {/* 5. PROJECT ANALYTICS */}
       {activeTab === 'projects' && (
         <>
+          <section aria-labelledby="time-sheet-title" className="space-y-4">
+            <div>
+              <h2 id="time-sheet-title" className="font-display text-base font-bold tracking-tight text-foreground">Daily time sheet</h2>
+              <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-ink-secondary">
+                One project, one day, filled in from its tasks and the time you logged on them. The reflection comes from what you write when you finish a task.
+              </p>
+            </div>
+            <ProjectTimeSheet
+              key={`${sheetKey}:${sheetProject ?? ''}`}
+              projects={safeProjects}
+              tasks={tasks}
+              events={calendarEvents}
+              sessions={awaySessions}
+              reflections={reflections}
+              timezone={userTimezone}
+              today={todayStr}
+              initialProjectId={sheetProject}
+              initialDate={sheetKey === 0 ? sheetTarget.date : null}
+            />
+          </section>
+
+          <ProjectComparison
+            projects={safeProjects}
+            tasks={tasks}
+            events={calendarEvents}
+            sessions={awaySessions}
+            reflections={reflections}
+            timezone={userTimezone}
+            today={todayStr}
+            onOpen={(id) => {
+              setSheetProject(id);
+              setSheetKey(k => k + 1);
+              document.getElementById('time-sheet-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+          />
+
           <div className="space-y-6">
             <h2 className="font-display text-base font-bold tracking-tight text-foreground">Projects and tasks</h2>
             

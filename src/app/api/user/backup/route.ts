@@ -50,6 +50,8 @@ export async function POST(req: Request) {
       await tx.instrument.deleteMany({ where: { userId } });
       await tx.job.deleteMany({ where: { userId } });
       await tx.notification.deleteMany({ where: { userId } });
+      await tx.activitySession.deleteMany({ where: { userId } });
+      await tx.taskReflection.deleteMany({ where: { userId } });
 
       // 2. Re-create settings
       if (data.settings) {
@@ -88,6 +90,36 @@ export async function POST(req: Request) {
       }
       if (Array.isArray(data.calendarEvents) && data.calendarEvents.length) {
         await tx.calendarEvent.createMany({ data: data.calendarEvents.map(stripCommon) });
+      }
+      // Breaks and brain drain, and completion reflections: only the known
+      // fields, and a reflection only for a task that came back with it.
+      const when = (v: unknown) => (typeof v === 'string' || v instanceof Date ? new Date(v) : null);
+      const valid = (d: Date | null) => !!d && !isNaN(d.getTime());
+      const sessionRows = (data.activitySessions || [])
+        .map((s) => ({ kind: s.kind, start: when(s.start), end: s.end ? when(s.end) : null }))
+        .filter((s) => (s.kind === 'BREAK' || s.kind === 'BRAIN_DRAIN') && valid(s.start) && (s.end === null || (valid(s.end) && s.end > s.start!)));
+      if (sessionRows.length) {
+        await tx.activitySession.createMany({ data: sessionRows.map((s) => ({ ...s, start: s.start!, userId })) });
+      }
+      const restoredTaskIds = new Set((data.tasks || []).map((t) => t.id).filter(Boolean));
+      const restoredProjectIds = new Set((data.projects || []).map((p) => p.id).filter(Boolean));
+      const text = (v: unknown) => (typeof v === 'string' && v ? v.slice(0, 2000) : null);
+      const reflectionRows = (data.taskReflections || [])
+        .filter((r) => typeof r.taskId === 'string' && restoredTaskIds.has(r.taskId) && typeof r.completedOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.completedOn))
+        .map((r) => ({
+          taskId: r.taskId as string,
+          userId,
+          projectId: typeof r.projectId === 'string' && restoredProjectIds.has(r.projectId) ? r.projectId : null,
+          completedOn: r.completedOn as string,
+          productiveMoment: text(r.productiveMoment),
+          timeWaster: text(r.timeWaster),
+          gladFinished: text(r.gladFinished),
+          improvement: text(r.improvement),
+          planningRealistic: text(r.planningRealistic),
+          lesson: text(r.lesson),
+        }));
+      if (reflectionRows.length) {
+        await tx.taskReflection.createMany({ data: reflectionRows, skipDuplicates: true });
       }
       if (Array.isArray(data.instruments) && data.instruments.length) {
         await tx.instrument.createMany({ data: data.instruments.map(stripCommon) });

@@ -75,6 +75,12 @@
 
   /* Data-viz hues (categorical) — pine, clay, ochre, slate; same weight */
   --data-slate: #45606b;
+  /* Where the active day went (Analytics): work, breaks, brain drain.
+     Validated as a categorical set (dataviz validate_palette.js), light on
+     --paper and dark on --nkt-panel: lightness band, chroma, CVD and contrast. */
+  --time-work: #1f7a50;
+  --time-break: #2f86c0;
+  --time-drain: #c27f25;
 
   /* ---- Layer 2: semantic tokens — LIGHT values (default) ---- */
   --bg: var(--oat);
@@ -142,6 +148,9 @@
 
 /* ---- Layer 2: DARK values ---- */
 :root[data-theme="dark"] {
+  --time-work: #3f9e72;
+  --time-break: #3f8fd0;
+  --time-drain: #bb7f26;
   --bg: var(--nkt-ground);
   --bg-1: var(--nkt-ground-1);
   --surface: var(--nkt-panel);
@@ -725,6 +734,8 @@ body {
 .day-tint.day-tint-hover:hover { --day-hover: 4%; }
 /* On a shaded day the faintest ink steps up one, to keep 4.5:1. */
 .day-tint:is([data-level="1"], [data-level="2"], [data-level="3"], [data-level="4"]) { --color-ink-faint: var(--text-secondary); }
+/* The two deepest shades: secondary ink drops under 4.5:1 there, so text goes full ink. */
+.day-tint:is([data-level="3"], [data-level="4"]) { --color-ink-faint: var(--text); --color-ink-secondary: var(--text); --text-secondary: var(--text); --text-faint: var(--text); }
 .day-tint[data-day-kind="unavailable"] {
   background-color: var(--surface-sunken);
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--text-faint) 16%, transparent) 6px 7px);
@@ -740,3 +751,13 @@ body {
 .cal-reveal { animation: cal-reveal 220ms var(--ease-out) both; }
 @keyframes cal-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .cal-reveal { animation: none; } }
+
+/* Projects list: each row washed in its project's colour, deeper with recent
+   hours (src/lib/projectEmphasis.ts sets --row-tint per row). */
+.project-row { background-color: var(--row-tint, transparent); }
+.project-row:hover,
+.project-row:focus-within { background-color: var(--row-tint-hover, var(--surface-sunken)); }
+@media (prefers-reduced-motion: no-preference) {
+  .project-row { animation: project-row-in 260ms var(--ease-out) both; animation-delay: calc(var(--row-i, 0) * 28ms); }
+  @keyframes project-row-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+}

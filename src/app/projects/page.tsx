@@ -4,16 +4,7 @@ import { withoutCancelled } from '@/lib/taskCancel';
 import React, { useState, useEffect } from 'react';
 import { LoadError } from '@/components/LoadError';
 import Link from 'next/link';
-import {
-  Plus,
-  Trash2,
-  Archive,
-  Edit3,
-  RefreshCw,
-  CheckCircle,
-
-  Users
-} from 'lucide-react';
+import { Plus, Users } from 'lucide-react';
 import { PROJECT_COLORS } from '@/lib/colors';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { Modal } from '@/components/Modal';
@@ -21,6 +12,8 @@ import { getLocalDateString } from '@/lib/dateUtils';
 import { useSession } from '@/context/SessionContext';
 import { useSpotlightCards } from '@/hooks/useSpotlightCards';
 import { Button, EmptyState, PageHeader, SectionHeader } from '@/components/ui';
+import { ProjectRow, EmphasisLegend, emphasisFor, type ProjectInvestment } from '@/components/projects/ProjectRow';
+import { tint } from '@/lib/projectEmphasis';
 
 interface Goal {
   id: string;
@@ -98,6 +91,9 @@ export default function ProjectsPage() {
   // Tasks, so each project can show what's actually open in it and what's next.
   const [tasks, setTasks] = useState<{ id: string; name: string; projectId?: string | null; status: string; date: string; priority: string }[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED'>('ACTIVE');
+  // Your focused hours per project (total, last 30 days, last 14 days by day).
+  const [investment, setInvestment] = useState<{ days: string[]; projects: Record<string, ProjectInvestment> }>({ days: [], projects: {} });
+  const [sortBy, setSortBy] = useState<'priority' | 'invested' | 'deadline' | 'name'>('priority');
   const [selectedColorFilter, setSelectedColorFilter] = useState<string>('ALL');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [userTimezone, setUserTimezone] = useState<string>(() => {
@@ -159,12 +155,14 @@ export default function ProjectsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [projectsRes, settingsRes, teamsRes, tasksRes] = await Promise.all([
+        const [projectsRes, settingsRes, teamsRes, tasksRes, investmentRes] = await Promise.all([
           fetch('/api/projects'),
           fetch('/api/settings'),
           fetch('/api/teams'),
           fetch('/api/tasks'),
+          fetch('/api/projects/investment'),
         ]);
+        if (investmentRes.ok) setInvestment(await investmentRes.json());
         setLoadFailed(![projectsRes, tasksRes].every((r) => r.ok));
         if (projectsRes.ok) setProjects(await projectsRes.json());
         if (tasksRes.ok) setTasks(withoutCancelled(await tasksRes.json()));
@@ -351,6 +349,18 @@ export default function ProjectsPage() {
       return p.color?.toLowerCase() === selectedColorFilter.toLowerCase();
     })
     .sort((a, b) => {
+      if (sortBy === 'name') return a.name.localeCompare(b.name);
+      if (sortBy === 'invested') {
+        const d = (investment.projects[b.id]?.recentMs || 0) - (investment.projects[a.id]?.recentMs || 0);
+        if (d !== 0) return d;
+        const t = (investment.projects[b.id]?.totalMs || 0) - (investment.projects[a.id]?.totalMs || 0);
+        if (t !== 0) return t;
+      }
+      if (sortBy === 'deadline') {
+        if (a.deadline && b.deadline) return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        if (a.deadline) return -1;
+        if (b.deadline) return 1;
+      }
       // 1. Priority (Critical > High > Medium > Low)
       const weights = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
       const weightA = weights[a.priority] || 2;
@@ -413,6 +423,10 @@ export default function ProjectsPage() {
         const nextDue = upcoming[0];
         const counts = { ACTIVE: 0, ON_HOLD: 0, COMPLETED: 0, ARCHIVED: 0, ALL: projects.length } as Record<string, number>;
         projects.forEach(p => { counts[p.status] = (counts[p.status] || 0) + 1; });
+        // Colour depth is relative to your busiest project over the window.
+        const busiestRecentMs = Math.max(0, ...Object.values(investment.projects).map((x) => x.recentMs));
+        const stripMax = Math.max(0, ...Object.values(investment.projects).flatMap((x) => x.daily));
+        const todayKey = investment.days[investment.days.length - 1] ?? getLocalDateString(new Date(now), userTimezone);
         const when = (d: number | null) => d == null ? 'No deadline' : d < 0 ? `${-d} ${d === -1 ? 'day' : 'days'} overdue` : d === 0 ? 'Due today' : d === 1 ? 'Due tomorrow' : d < 60 ? `In ${d} days` : `In ${Math.round(d / 30)} months`;
 
         return (
@@ -463,7 +477,10 @@ export default function ProjectsPage() {
                     const d = daysLeft(p)!;
                     return (
                       <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
-                        <Link href={`/projects/${p.id}`} className="text-[14.5px] font-medium hover:text-primary">{p.name}</Link>
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <span aria-hidden="true" className="h-3.5 w-[3px] shrink-0 self-center rounded-full" style={{ backgroundColor: tint(p.color, emphasisFor(p.priority, investment.projects[p.id], busiestRecentMs).edgePct) }} />
+                          <Link href={`/projects/${p.id}`} className="truncate text-[14.5px] font-medium hover:text-primary">{p.name}</Link>
+                        </span>
                         <span className="text-[13.5px] text-ink-secondary">
                           <span className={d < 0 ? 'text-danger' : ''}>{when(d)}</span> · {pctOf(p)}% done · {taskStats(p).open} open {taskStats(p).open === 1 ? 'task' : 'tasks'}
                         </span>
@@ -511,6 +528,25 @@ export default function ProjectsPage() {
                 )}
               </div>
 
+              {filteredProjects.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 pt-3">
+                  <EmphasisLegend />
+                  <label className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+                    Sort by
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                      className="h-8 rounded-[8px] border border-border bg-surface px-2 text-[13px] text-foreground focus:border-border-strong focus:outline-none"
+                    >
+                      <option value="priority">Priority, then deadline</option>
+                      <option value="invested">Recent hours</option>
+                      <option value="deadline">Deadline</option>
+                      <option value="name">Name</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+
               {filteredProjects.length === 0 ? (
                 loadFailed ? null : projects.length === 0 ? (
                   <EmptyState
@@ -523,68 +559,32 @@ export default function ProjectsPage() {
                   <EmptyState compact spot="search" title="Nothing in this view" message="Try another status or colour." action={<Button variant="ghost" onClick={() => { setFilter('ALL'); setSelectedColorFilter('ALL'); }}>Show all projects</Button>} />
                 )
               ) : (
-                <ul className="divide-y divide-border">
-                  {filteredProjects.map((project) => {
+                <ul className="@container mt-2 space-y-1" aria-label="Projects">
+                  {filteredProjects.map((project, i) => {
                     const g = goalsOf(project);
-                    const pct = pctOf(project);
                     const ts = taskStats(project);
                     const d = daysLeft(project);
-                    const late = d != null && d < 0 && project.status === 'ACTIVE';
+                    const inv = investment.projects[project.id];
                     return (
-                      <li key={project.id} className="group grid grid-cols-1 gap-x-8 gap-y-3 py-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_auto] md:items-center">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2.5">
-                            <span className="h-3 w-3 shrink-0 rounded-[3px]" style={{ backgroundColor: project.color || 'var(--border-strong)' }} aria-hidden="true" />
-                            <Link href={`/projects/${project.id}`} className="truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground hover:text-primary">{project.name}</Link>
-                            {project.status !== 'ACTIVE' && <span className="badge badge-neutral">{project.status === 'ON_HOLD' ? 'On hold' : project.status.charAt(0) + project.status.slice(1).toLowerCase()}</span>}
-                            {(project.priority === 'CRITICAL' || project.priority === 'HIGH') && project.status === 'ACTIVE' && (
-                              <span className={`text-[12.5px] font-medium ${project.priority === 'CRITICAL' ? 'text-danger' : 'text-warning'}`}>{project.priority === 'CRITICAL' ? 'Critical' : 'High priority'}</span>
-                            )}
-                            {project.teamId && <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-faint"><Users className="h-3 w-3" /> Team</span>}
-                          </div>
-                          <p className="mt-1 truncate pl-[22px] text-[13.5px] text-ink-secondary">
-                            {ts.next ? <>Next: <span className="text-foreground">{ts.next.name}</span></> : project.description && project.description !== 'Demo project' ? project.description : ts.open === 0 ? 'No open tasks.' : ''}
-                          </p>
-                        </div>
-
-                        <div className="pl-[22px] md:pl-0">
-                          <div className="flex items-baseline justify-between text-[12.5px] text-ink-secondary">
-                            <span>{g.total ? `${g.done} of ${g.total} objectives` : `${ts.done} of ${ts.open + ts.done} tasks`}</span>
-                            <span className="font-medium text-foreground tabular-nums">{pct}%</span>
-                          </div>
-                          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-sunken">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: project.color || 'var(--primary)' }} />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-4 pl-[22px] md:justify-end md:pl-0">
-                          <span className={`text-[13px] tabular-nums md:w-36 md:text-right ${late ? 'font-medium text-danger' : 'text-ink-secondary'}`} title={project.deadline ? new Date(project.deadline).toLocaleDateString() : undefined}>
-                            {project.status === 'COMPLETED' ? 'Finished' : when(d)}
-                          </span>
-                          <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:transition-opacity md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                            {project.status !== 'COMPLETED' && (
-                              <button onClick={() => handleUpdateStatus(project.id, 'COMPLETED')} className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-primary" title="Mark completed" aria-label={`Mark ${project.name} completed`}>
-                                <CheckCircle className="w-4 h-4" />
-                              </button>
-                            )}
-                            {project.status !== 'ARCHIVED' ? (
-                              <button onClick={() => handleUpdateStatus(project.id, 'ARCHIVED')} className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-foreground" title="Archive" aria-label={`Archive ${project.name}`}>
-                                <Archive className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <button onClick={() => handleUpdateStatus(project.id, 'ACTIVE')} className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-foreground" title="Restore" aria-label={`Restore ${project.name}`}>
-                                <RefreshCw className="w-4 h-4" />
-                              </button>
-                            )}
-                            <button onClick={() => openEditModal(project)} className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-surface-sunken hover:text-foreground" title="Edit" aria-label={`Edit ${project.name}`}>
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteProject(project.id)} className="grid h-8 w-8 place-items-center rounded-[8px] text-ink-faint hover:bg-danger-soft hover:text-danger" title="Delete" aria-label={`Delete ${project.name}`}>
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </li>
+                        <ProjectRow
+                          key={project.id}
+                          index={i}
+                          project={project}
+                          investment={inv}
+                          emphasis={emphasisFor(project.priority, inv, busiestRecentMs)}
+                          strip={investment.days}
+                          stripMax={stripMax}
+                          today={todayKey}
+                          progress={pctOf(project)}
+                          progressLabel={g.total ? `${g.done} of ${g.total} objectives` : `${ts.done} of ${ts.open + ts.done} tasks`}
+                          nextTask={ts.next?.name ?? null}
+                          openTasks={ts.open}
+                          dueLabel={project.status === 'COMPLETED' ? 'Finished' : when(d)}
+                          late={d != null && d < 0 && project.status === 'ACTIVE'}
+                          onStatus={(st) => handleUpdateStatus(project.id, st)}
+                          onEdit={() => openEditModal(project)}
+                          onDelete={() => handleDeleteProject(project.id)}
+                        />
                     );
                   })}
                 </ul>

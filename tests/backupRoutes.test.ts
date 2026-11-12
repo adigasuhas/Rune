@@ -72,6 +72,8 @@ const instruments: any[] = [];
 const jobs: any[] = [];
 const notifications: any[] = [];
 const teamMemberships: any[] = [];
+const activitySessions: any[] = [];
+const taskReflections: any[] = [];
 
 const settingModel = makeModel(settings);
 const notebookModel = makeModel(notebooks);
@@ -104,6 +106,8 @@ const db = {
   instrument: makeModel(instruments),
   job: makeModel(jobs),
   notification: makeModel(notifications),
+  activitySession: makeModel(activitySessions),
+  taskReflection: makeModel(taskReflections),
   teamMembership: {
     ...makeModel(teamMemberships),
     findMany: async ({ where }: any = {}) => teamMemberships.filter((m) => matchWhere(m, where)),
@@ -117,6 +121,7 @@ function resetFakeDb() {
   for (const arr of [
     settings, projects, notebooks, notebookPages, notebookAttachments,
     tasks, accomplishmentRecords, calendarEvents, instruments, jobs, notifications, teamMemberships,
+    activitySessions, taskReflections,
   ]) {
     arr.length = 0;
   }
@@ -205,6 +210,28 @@ describe('POST /api/user/backup (restore)', () => {
 
     // u2's task was never touched.
     expect(tasks.find((t) => t.id === 'task-other')).toBeTruthy();
+  });
+
+  it('breaks, brain drain and completion reflections survive an export -> restore round trip', async () => {
+    tasks.push({ id: 'task-1', userId: 'u1', name: 'Draft methods', status: 'COMPLETED', date: new Date().toISOString() });
+    activitySessions.push({ id: 's1', userId: 'u1', kind: 'BREAK', start: '2026-11-10T10:00:00.000Z', end: '2026-11-10T10:15:00.000Z' });
+    activitySessions.push({ id: 's2', userId: 'u1', kind: 'BRAIN_DRAIN', start: '2026-11-10T11:00:00.000Z', end: '2026-11-10T11:20:00.000Z' });
+    taskReflections.push({ id: 'r1', userId: 'u1', taskId: 'task-1', completedOn: '2026-11-10', lesson: 'Start earlier' });
+    activitySessions.push({ id: 's-other', userId: 'u2', kind: 'BREAK', start: '2026-11-10T10:00:00.000Z', end: '2026-11-10T10:30:00.000Z' });
+    getSessionUser.mockResolvedValue({ userId: 'u1', name: 'Suhas' });
+    const { GET, POST } = await import('@/app/api/user/backup/route');
+
+    const exported = await (await GET()).json();
+    expect(exported.activitySessions).toHaveLength(2);
+    expect(exported.taskReflections).toHaveLength(1);
+    // A reflection for a task that isn't in the file is dropped, not restored dangling.
+    exported.taskReflections.push({ taskId: 'not-in-file', completedOn: '2026-11-10', lesson: 'x' });
+
+    expect((await POST(req(exported))).status).toBe(200);
+    const mine = activitySessions.filter((s) => s.userId === 'u1');
+    expect(mine.map((s) => s.kind).sort()).toEqual(['BRAIN_DRAIN', 'BREAK']);
+    expect(taskReflections.filter((r) => r.userId === 'u1')).toEqual([expect.objectContaining({ taskId: 'task-1', lesson: 'Start earlier' })]);
+    expect(activitySessions.find((s) => s.id === 's-other')).toBeTruthy();
   });
 
   it('a run linked to a notebook is restored pointing at the restored page (used to fail every restore)', async () => {

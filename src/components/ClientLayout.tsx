@@ -41,6 +41,8 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { ToastContainer } from '@/components/ToastContainer';
 import { CommandPalette } from '@/components/CommandPalette';
 import { BackupDownloadPrompt, type BackupPromptInfo } from '@/components/BackupDownloadPrompt';
+import { RunningAwayIndicator } from '@/components/time/RunningAwayIndicator';
+import { CompletionReflectionPrompt } from '@/components/time/CompletionReflectionPrompt';
 import { isPublicPage } from '@/lib/publicRoutes';
 import { UserAvatar } from '@/components/UserAvatar';
 
@@ -624,6 +626,14 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           ))}
         </nav>
 
+        {/* A running break or brain drain, stoppable from any page (Today has its own). */}
+        {pathname !== '/' && (
+          <>
+            <RunningAwayIndicator className={`px-3 pb-3 shrink-0 ${isGlobalSidebarCollapsed ? 'md:hidden' : ''}`} />
+            {isGlobalSidebarCollapsed && <RunningAwayIndicator iconOnly className="hidden md:grid mx-auto mb-2 shrink-0" />}
+          </>
+        )}
+
         {/* Quick focus launch & Keyboard shortcuts */}
         <div className={`p-3 border-t border-border shrink-0 ${isGlobalSidebarCollapsed ? 'md:hidden' : ''}`}>
           <button
@@ -669,6 +679,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             <Logo size="sm" />
           </div>
           <div className="flex items-center gap-1">
+            {pathname !== '/' && <RunningAwayIndicator iconOnly />}
             {themeButton}
             <NotificationBell />
           </div>
@@ -738,6 +749,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
       <ToastContainer />
       <CommandPalette />
+      <CompletionReflectionPrompt />
       {backupPrompt && user && (
         <BackupDownloadPrompt
           info={backupPrompt}

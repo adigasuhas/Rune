@@ -6,7 +6,7 @@ import { db } from './db';
  * inside an automatic account backup. One definition so the two never drift.
  */
 export async function buildAccountExport(userId: string, username: string | null | undefined) {
-  const [settings, projects, notebooks, tasks, accomplishments, calendarEvents, instruments, jobs, notifications, teamMemberships] = await Promise.all([
+  const [settings, projects, notebooks, tasks, accomplishments, calendarEvents, instruments, jobs, notifications, activitySessions, taskReflections, teamMemberships] = await Promise.all([
     db.setting.findUnique({ where: { userId } }),
     db.project.findMany({ where: { userId } }),
     db.notebook.findMany({ where: { userId } }),
@@ -16,6 +16,8 @@ export async function buildAccountExport(userId: string, username: string | null
     db.instrument.findMany({ where: { userId } }),
     db.job.findMany({ where: { userId } }),
     db.notification.findMany({ where: { userId } }),
+    db.activitySession.findMany({ where: { userId } }),
+    db.taskReflection.findMany({ where: { userId } }),
     // Reference-only summary of team standing. Team membership, chat
     // history, and notebook comments/revisions belong to the team, not to
     // any one member's account, and are never written back by a restore -
@@ -41,6 +43,8 @@ export async function buildAccountExport(userId: string, username: string | null
     instruments,
     jobs,
     notifications,
+    activitySessions, // breaks and brain drain
+    taskReflections, // what was written when each task was finished
     // Not restored - see note above.
     teamMembershipsReference: teamMemberships,
   };

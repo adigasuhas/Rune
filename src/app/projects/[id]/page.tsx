@@ -1,5 +1,6 @@
 'use client';
 
+import { announceTaskCompleted } from '@/lib/taskCompletion';
 import React, { useState, useEffect, useCallback, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -15,6 +16,7 @@ import {
   Plus,
   Trash2,
   StickyNote,
+  ClipboardList,
   BookOpen,
   Eye,
   Ban,
@@ -356,6 +358,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
         body: JSON.stringify({ status: nextStatus })
       });
       if (res.ok) {
+        if (nextStatus === 'COMPLETED') announceTaskCompleted(task, task.status);
         setRefreshTrigger(prev => prev + 1);
       } else {
         toast(
@@ -437,6 +440,9 @@ export default function ProjectDetailPage({ params }: PageProps) {
           </button>
           <Link href={`/wall?projectId=${project.id}`} className={actionClass}>
             <StickyNote className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Wall
+          </Link>
+          <Link href={`/analytics?tab=projects&project=${project.id}`} className={actionClass}>
+            <ClipboardList className="h-4 w-4 text-ink-faint" aria-hidden="true" /> Time sheet
           </Link>
           {canEdit && (
             <Link

@@ -49,6 +49,10 @@ type TaskStatusValue = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 import { SessionType, normalizeSessionType, durationLabel, sessionTypeLabel, SESSION_TYPE_META } from '@/lib/sessionType';
 import { formatHoursValue, formatNumber } from '@/lib/numberFormat';
 import { hasPlannedDaysAhead } from '@/lib/weekPlan';
+import { AwayControl } from '@/components/time/AwayControl';
+import { useAwaySessions } from '@/lib/useAwaySessions';
+import { announceTaskCompleted } from '@/lib/taskCompletion';
+import { sessionSpan } from '@/lib/activityTime';
 import { columnPlacement, EVENT_GAP_PX, layoutDayEvents, TOP_INSET_PX } from '@/lib/dayTimeline';
 
 interface Goal {
@@ -144,6 +148,9 @@ export default function HomePage() {
 
 function DashboardPage() {
   const { user } = useSession();
+  // Breaks and brain drain: not shown on the planner, but not counted as work either.
+  const { sessions: awaySessions } = useAwaySessions();
+  const awaySpans = useMemo(() => awaySessions.map((s) => sessionSpan(s)).filter((x): x is NonNullable<typeof x> => !!x), [awaySessions]);
   const { toast } = useNotifications();
   const confirm = useConfirm();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1088,6 +1095,7 @@ function DashboardPage() {
         if (res.ok) {
           setCompleteTaskModal({ isOpen: false, task: null, slots: [{ startTime: '', endTime: '' }] });
           setRefreshTrigger(prev => prev + 1);
+          announceTaskCompleted(task, task.status);
           setTimeout(() => {
             toast('Task done', `“${task.name}” is marked done.`, 'success');
           }, 50);
@@ -1150,11 +1158,13 @@ function DashboardPage() {
             completedCount === 0 ? 'PENDING' : completedCount === siblingSlots.length ? 'COMPLETED' : 'IN_PROGRESS';
           // Status-only update - deliberately omits startTime/endTime/slots so
           // the API doesn't touch (or collapse) the task's other scheduled slots.
-          await fetch(`/api/tasks/${event.taskId}`, {
+          const statusRes = await fetch(`/api/tasks/${event.taskId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status })
           });
+          const before = tasks.find(t => t.id === event.taskId);
+          if (statusRes.ok && status === 'COMPLETED' && before) announceTaskCompleted(before, before.status);
           setTasks(prev => prev.map(t => (t.id === event.taskId ? { ...t, status } : t)));
         }
         // Applied locally instead of setRefreshTrigger: we already know the
@@ -1476,6 +1486,9 @@ function DashboardPage() {
         }
 
         if (res.ok) {
+          // The event's own done-tick completed its task (status sent above).
+          const tickedTask = eventTaskId ? tasks.find(t => t.id === eventTaskId) : undefined;
+          if (eventCompleted && tickedTask) announceTaskCompleted(tickedTask, tickedTask.status);
           if (eventCompleted && (!editingEvent || !editingEvent.completed) && eventTaskId) {
             const linkedTask = tasks.find(t => t.id === eventTaskId);
             if (linkedTask && linkedTask.status !== 'COMPLETED') {
@@ -1884,8 +1897,8 @@ function DashboardPage() {
   }, [events, selectedDate, userTimezone]);
 
   const deepWorkHoursToday = useMemo(() => {
-    return parseFloat(calculateOccupiedHoursForDay(selectedDate, tasks, events, userTimezone, ['DEEP_WORK']).toFixed(1));
-  }, [selectedDate, tasks, events, userTimezone]);
+    return parseFloat(calculateOccupiedHoursForDay(selectedDate, tasks, events, userTimezone, ['DEEP_WORK'], undefined, awaySpans).toFixed(1));
+  }, [selectedDate, tasks, events, userTimezone, awaySpans]);
 
   const plannedDeepWorkToday = useMemo(() => {
     return filteredTasksForDay
@@ -2034,7 +2047,7 @@ function DashboardPage() {
     let h = 0;
     for (let i = 0; i <= dow; i++) {
       const d = new Date(`${todayStr}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - i);
-      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone, undefined, new Date());
+      h += calculateOccupiedHoursForDay(d.toISOString().slice(0, 10), tasks, events, userTimezone, undefined, new Date(), awaySpans);
     }
     return h;
   })();
@@ -2063,10 +2076,11 @@ function DashboardPage() {
             <button onClick={dismissFreshStart} className="ml-3 text-ink-faint hover:text-foreground" aria-label="Dismiss the new-week note">Dismiss</button>
           </p>
         ) : null}
-        worked={formatHours(calculateOccupiedHoursForDay(selectedDate, tasks, events, userTimezone, undefined, new Date()))}
+        worked={formatHours(calculateOccupiedHoursForDay(selectedDate, tasks, events, userTimezone, undefined, new Date(), awaySpans))}
         dayLabel={selectedDate === getCurrentDateInTimezone(userTimezone) ? null : new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}
         actions={
           <>
+            <AwayControl timezone={userTimezone} date={getCurrentDateInTimezone(userTimezone)} />
             <Button variant="ghost" onClick={() => setShowReviewDay(true)}>
               {reviewSuccess ? 'Reviewed' : 'Review the day'}
             </Button>

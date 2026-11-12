@@ -50,6 +50,9 @@ export interface BackupPayload {
   projects: any[]; notebooks: any[]; tasks: any[]; accomplishments: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   calendarEvents: any[]; instruments: any[]; jobs: any[]; notifications: any[];
+  // Absent from backups made before these existed - restored as empty.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  activitySessions?: any[]; taskReflections?: any[];
 }
 
 export function validateBackup(raw: unknown): BackupPayload {
@@ -75,5 +78,7 @@ export function validateBackup(raw: unknown): BackupPayload {
     instruments: arr('instruments'),
     jobs: arr('jobs'),
     notifications: arr('notifications'),
+    activitySessions: arr('activitySessions'),
+    taskReflections: arr('taskReflections'),
   };
 }

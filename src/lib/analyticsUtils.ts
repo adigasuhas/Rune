@@ -218,9 +218,37 @@ export function calculateOccupiedHoursFromItems(
   dayEvents: any[],
   timezone: string,
   sessionTypes?: string[],
-  now?: Date
+  now?: Date,
+  away?: Array<{ start: Date | string | number; end: Date | string | number }>
 ): number {
-  const intervals: Array<{ start: Date; end: Date }> = [];
+  const work = collectWorkIntervals(dateStr, dayTasks, dayEvents, timezone, sessionTypes, now);
+  // Breaks and brain drain aren't working time, even inside a work slot.
+  return getIntervalUnionDuration(away && away.length ? subtractIntervals(work, away) : work);
+}
+
+export interface WorkInterval {
+  start: Date;
+  end: Date;
+  taskId: string | null;
+  /** Recorded time with no clock times (placed at 09:00 only so it can be measured). */
+  approx?: boolean;
+}
+
+/**
+ * The intervals of real work on one day, each tagged with its task: ticked-off
+ * calendar slots, completed tasks' own slots (or their recorded actualTime
+ * when they have no slot), and - with `now` - the elapsed part of open slots.
+ * The single source both "hours worked" and the project time sheet read.
+ */
+export function collectWorkIntervals(
+  dateStr: string,
+  dayTasks: Parameters<typeof calculateOccupiedHoursFromItems>[1],
+  dayEvents: Parameters<typeof calculateOccupiedHoursFromItems>[2],
+  timezone: string,
+  sessionTypes?: string[],
+  now?: Date
+): WorkInterval[] {
+  const intervals: WorkInterval[] = [];
 
   const filteredEvents = (dayEvents || []).filter(e => {
     if (!e.completed) return false;
@@ -229,7 +257,7 @@ export function calculateOccupiedHoursFromItems(
   });
 
   filteredEvents.forEach(e => {
-    intervals.push({ start: new Date(e.start), end: new Date(e.end) });
+    intervals.push({ start: new Date(e.start), end: new Date(e.end), taskId: e.taskId ?? null });
   });
 
   const filteredTasks = (dayTasks || []).filter(t => {
@@ -252,7 +280,7 @@ export function calculateOccupiedHoursFromItems(
         if (end <= start) {
           end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
         }
-        intervals.push({ start, end });
+        intervals.push({ start, end, taskId: t.id });
         return;
       } catch {
         // Fallback
@@ -270,7 +298,7 @@ export function calculateOccupiedHoursFromItems(
     try {
       const start = parseDateTimeInTimezone(dateStr, '09:00', timezone);
       const end = new Date(start.getTime() + t.actualTime * 60 * 60 * 1000);
-      intervals.push({ start, end });
+      intervals.push({ start, end, taskId: t.id, approx: true });
     } catch {
       // ignore
     }
@@ -296,7 +324,7 @@ export function calculateOccupiedHoursFromItems(
           const start = new Date(e.start);
           const end = new Date(e.end);
           const ms = end > start ? openSlotElapsedMs(start, end, now, timezone) : 0;
-          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms) });
+          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms), taskId: t.id });
         });
         return;
       }
@@ -306,7 +334,7 @@ export function calculateOccupiedHoursFromItems(
           let end = parseDateTimeInTimezone(dateStr, t.endTime, timezone);
           if (end <= start) end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
           const ms = openSlotElapsedMs(start, end, now, timezone);
-          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms) });
+          if (ms > 0) intervals.push({ start, end: new Date(start.getTime() + ms), taskId: t.id });
         } catch {
           // ignore
         }
@@ -314,7 +342,38 @@ export function calculateOccupiedHoursFromItems(
     });
   }
 
-  return getIntervalUnionDuration(intervals);
+  return intervals;
+}
+
+/**
+ * `intervals` with every part covered by `remove` cut out (each piece keeps
+ * its other fields). Used to take breaks and brain drain out of work time.
+ */
+export function subtractIntervals<T extends { start: Date; end: Date }>(
+  intervals: T[],
+  remove: Array<{ start: Date | string | number; end: Date | string | number }>
+): T[] {
+  const cuts = remove
+    .map(r => ({ s: new Date(r.start).getTime(), e: new Date(r.end).getTime() }))
+    .filter(r => !isNaN(r.s) && !isNaN(r.e) && r.e > r.s)
+    .sort((a, b) => a.s - b.s);
+  if (cuts.length === 0) return intervals;
+  const out: T[] = [];
+  for (const iv of intervals) {
+    let pieces: Array<[number, number]> = [[iv.start.getTime(), iv.end.getTime()]];
+    for (const c of cuts) {
+      const next: Array<[number, number]> = [];
+      for (const [s, e] of pieces) {
+        if (c.e <= s || c.s >= e) { next.push([s, e]); continue; }
+        if (c.s > s) next.push([s, c.s]);
+        if (c.e < e) next.push([c.e, e]);
+      }
+      pieces = next;
+      if (pieces.length === 0) break;
+    }
+    for (const [s, e] of pieces) if (e > s) out.push({ ...iv, start: new Date(s), end: new Date(e) });
+  }
+  return out;
 }
 
 export function calculateOccupiedHoursForDay(
@@ -323,7 +382,8 @@ export function calculateOccupiedHoursForDay(
   calendarEvents: any[],
   timezone: string,
   sessionTypes?: string[],
-  now?: Date
+  now?: Date,
+  away?: Array<{ start: Date | string | number; end: Date | string | number }>
 ): number {
   const dayEvents = (calendarEvents || []).filter(e => {
     try {
@@ -341,7 +401,7 @@ export function calculateOccupiedHoursForDay(
     }
   });
 
-  return calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, sessionTypes, now);
+  return calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, sessionTypes, now, away);
 }
 
 function groupByLocalDate(items: any[], dateField: string, timezone: string): Map<string, any[]> {
@@ -367,7 +427,10 @@ export function calculateWorkingDayMetrics(
   tasks: any[],
   accomplishments: any[],
   calendarEvents: any[] = [],
-  timezone: string = 'UTC'
+  timezone: string = 'UTC',
+  // Breaks and brain drain (ActivitySession intervals): cut out of every
+  // working-hours figure below. Omitted = nothing to take out.
+  away: Array<{ start: Date | string | number; end: Date | string | number }> = []
 ) {
   const workingDaysSet = new Set(workingDays);
 
@@ -404,7 +467,7 @@ export function calculateWorkingDayMetrics(
   // 2. Average Working Hours
   let totalWorkingHours = 0;
   workingDays.forEach(dateStr => {
-    totalWorkingHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone);
+    totalWorkingHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone, undefined, undefined, away);
   });
   const avgWorkingHours = workingDays.length > 0
     ? Math.round((totalWorkingHours / workingDays.length) * 10) / 10
@@ -413,7 +476,7 @@ export function calculateWorkingDayMetrics(
   // 3. Deep Work Hours (total and average per working day)
   let totalDeepWorkHours = 0;
   workingDays.forEach(dateStr => {
-    totalDeepWorkHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone, ['DEEP_WORK']);
+    totalDeepWorkHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone, ['DEEP_WORK'], undefined, away);
   });
   const avgDeepWorkHours = workingDays.length > 0
     ? Math.round((totalDeepWorkHours / workingDays.length) * 10) / 10
@@ -422,7 +485,7 @@ export function calculateWorkingDayMetrics(
   // 3b. Focus-only Hours (FOCUS session type, distinct from Deep Work)
   let totalFocusOnlyHours = 0;
   workingDays.forEach(dateStr => {
-    totalFocusOnlyHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone, ['FOCUS']);
+    totalFocusOnlyHours += calculateOccupiedHoursFromItems(dateStr, tasksByDate.get(dateStr) || [], eventsByDate.get(dateStr) || [], timezone, ['FOCUS'], undefined, away);
   });
 
   // 4. Productivity Score (average of daily productivity scores on working days)
@@ -445,8 +508,8 @@ export function calculateWorkingDayMetrics(
           : 0;
 
         const dayEvents = eventsByDate.get(dateStr) || [];
-        const deepHours = calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, ['DEEP_WORK']);
-        const workHours = calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone);
+        const deepHours = calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, ['DEEP_WORK'], undefined, away);
+        const workHours = calculateOccupiedHoursFromItems(dateStr, dayTasks, dayEvents, timezone, undefined, undefined, away);
         const postponeCount = dayTasks.reduce((sum, t) => sum + getPostponeCount(t), 0);
 
         totalProductivityScore += calculateProductivityScore({

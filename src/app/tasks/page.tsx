@@ -1,5 +1,6 @@
 'use client';
 
+import { announceTaskCompleted } from '@/lib/taskCompletion';
 import React, { useState, useEffect, useRef } from 'react';
 import { LoadError } from '@/components/LoadError';
 import { getLocalDateString, getCurrentDateInTimezone } from '@/lib/dateUtils';
@@ -546,6 +547,7 @@ export default function TasksPage() {
       if (res.ok) {
         setIsModalOpen(false);
         setRefreshTrigger(prev => prev + 1);
+        if (editingTask && body.status === 'COMPLETED') announceTaskCompleted({ id: editingTask.id, name: taskName }, editingTask.status);
         if (!editingTask) {
           setTimeout(() => {
             toast('Task created', `“${taskName}” was added.`, 'success');
@@ -674,11 +676,13 @@ export default function TasksPage() {
         );
         const status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' =
           completedCount === 0 ? 'PENDING' : completedCount === siblingSlots.length ? 'COMPLETED' : 'IN_PROGRESS';
-        await fetch(`/api/tasks/${taskId}`, {
+        const statusRes = await fetch(`/api/tasks/${taskId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status })
         });
+        const before = tasks.find(t => t.id === taskId);
+        if (statusRes.ok && status === 'COMPLETED' && before) announceTaskCompleted(before, before.status);
         // Applied locally instead of setRefreshTrigger: the slot-picker modal
         // stays open while a user checks several slots in a row, and
         // refetching tasks/projects/settings/calendar after every single
@@ -707,6 +711,7 @@ export default function TasksPage() {
       if (res.ok) {
         setCompleteTaskModal({ isOpen: false, task: null, slots: [{ startTime: '', endTime: '' }] });
         setRefreshTrigger(prev => prev + 1);
+        announceTaskCompleted(task, task.status);
         setTimeout(() => {
           toast('Task done', `“${task.name}” is marked done.`, 'success');
         }, 50);
