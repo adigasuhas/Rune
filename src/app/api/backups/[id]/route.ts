@@ -16,6 +16,15 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!backup || !(await canUseBackup(backup, session.userId))) {
     return NextResponse.json({ error: 'Backup not found.' }, { status: 404 });
   }
+  // Downloading your own account backup answers the "download today's
+  // backup" prompt until the next backup period (/api/backups/prompt).
+  if (backup.projectId === null && backup.userId === session.userId) {
+    await db.setting.upsert({
+      where: { userId: session.userId },
+      update: { lastBackupDownloadAt: new Date() },
+      create: { userId: session.userId, lastBackupDownloadAt: new Date() },
+    });
+  }
   const bytes = new Uint8Array(backup.data);
   // The stored name is our own (letters, digits, dashes), but quote it safely anyway.
   const name = backup.fileName.replace(/[^A-Za-z0-9._-]/g, '_');

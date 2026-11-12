@@ -2,8 +2,9 @@ import { test, expect, Page } from '@playwright/test';
 import { uniqueName } from './helpers';
 
 /**
- * "Time to get started": a To do task's slot begins -> a reminder with
- * Start task / Dismiss. Runs in the open app (no background delivery).
+ * A To do task's slot begins -> the task moves to In progress on its own,
+ * once per slot, with a "Task started" notice offering Undo. Runs in the
+ * open app (no background delivery).
  */
 
 const created: string[] = [];
@@ -31,12 +32,12 @@ async function make(page: Page, name: string, start: Date, end: Date) {
 }
 
 const status = async (page: Page, id: string) => (await (await page.request.get(`/api/tasks/${id}`)).json()).status as string;
-const toastFor = (page: Page, name: string) => page.getByRole('alertdialog', { name: 'Time to get started' }).filter({ hasText: name });
+const toastFor = (page: Page, name: string) => page.getByRole('alertdialog', { name: 'Task started' }).filter({ hasText: name });
 const remindersFor = async (page: Page, id: string) =>
   ((await (await page.request.get('/api/notifications?all=true')).json()) as Array<{ dedupeKey?: string; dismissedAt?: string | null }>)
     .filter((n) => n.dedupeKey?.startsWith(`task-start:${id}:`));
 
-test('fires at the scheduled start, and Start task moves it to In progress', async ({ page }) => {
+test('at its scheduled start a To do task moves to In progress, and Undo keeps it in To do', async ({ page }) => {
   test.setTimeout(150_000);
   const now = new Date();
   const start = new Date(now);
@@ -47,29 +48,37 @@ test('fires at the scheduled start, and Start task moves it to In progress', asy
 
   await page.goto('/');
   await expect(toastFor(page, name)).toHaveCount(0); // not before its time
+  expect(await status(page, t.id)).toBe('PENDING');
   await expect(toastFor(page, name)).toBeVisible({ timeout: 130_000 });
   const shownAt = Date.now();
   expect(shownAt).toBeGreaterThanOrEqual(start.getTime());
   expect(shownAt - start.getTime()).toBeLessThan(5_000); // at the start, not up to a minute late
-  await expect(toastFor(page, name)).toContainText('is scheduled to start now');
-
-  await toastFor(page, name).getByRole('button', { name: 'Start task' }).click();
-  await expect(page.getByText('Task started')).toBeVisible();
+  await expect(toastFor(page, name)).toContainText('is scheduled now');
   expect(await status(page, t.id)).toBe('IN_PROGRESS');
   // Up next reflects it without a reload.
   await expect(page.locator('div[draggable="true"]').filter({ hasText: name })).toContainText(/elapsed|In progress/);
+
+  // Undo: back to To do, and it stays there for this slot.
+  await toastFor(page, name).getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Back in To do')).toBeVisible();
+  expect(await status(page, t.id)).toBe('PENDING');
   expect((await remindersFor(page, t.id)).every((n) => n.dismissedAt)).toBe(true);
+  await page.reload();
+  await page.waitForTimeout(2500);
+  await expect(toastFor(page, name)).toHaveCount(0);
+  expect(await status(page, t.id)).toBe('PENDING');
 });
 
-test('a missed reminder shows once on return; Dismiss leaves the task pending; no duplicates after reloads', async ({ page }) => {
+test('opened part-way through a slot, the task is started then, with one notice across reloads', async ({ page }) => {
   const name = uniqueName('E2E start missed');
   const t = await make(page, name, new Date(Date.now() - 10 * 60_000), new Date(Date.now() + 40 * 60_000));
   await page.goto('/');
   await expect(toastFor(page, name)).toBeVisible({ timeout: 15_000 });
-  await expect(toastFor(page, name)).toContainText('was scheduled to start at');
-  await toastFor(page, name).getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await expect(toastFor(page, name)).toContainText('was scheduled for');
+  expect(await status(page, t.id)).toBe('IN_PROGRESS');
+  await toastFor(page, name).getByRole('button', { name: 'Got it' }).click();
   await expect(toastFor(page, name)).toHaveCount(0);
-  expect(await status(page, t.id)).toBe('PENDING');
+  expect(await status(page, t.id)).toBe('IN_PROGRESS');
 
   for (let i = 0; i < 2; i++) {
     await page.reload();
@@ -81,11 +90,12 @@ test('a missed reminder shows once on return; Dismiss leaves the task pending; n
   expect(all[0].dismissedAt).toBeTruthy();
 });
 
-test('no reminder for tasks already started, done, or rescheduled; several at once each get one', async ({ page }) => {
+test('started, done, rescheduled or finished slots are left alone; several at once each start', async ({ page }) => {
   const from = new Date(Date.now() - 5 * 60_000), to = new Date(Date.now() + 30 * 60_000);
   const started = await make(page, uniqueName('E2E start already'), from, to);
   const done = await make(page, uniqueName('E2E start done'), from, to);
   const moved = await make(page, uniqueName('E2E start moved'), from, to);
+  const over = await make(page, uniqueName('E2E start over'), new Date(Date.now() - 90 * 60_000), new Date(Date.now() - 30 * 60_000));
   const x = await make(page, uniqueName('E2E start same X'), from, to);
   const y = await make(page, uniqueName('E2E start same Y'), from, to);
   await page.request.put(`/api/tasks/${started.id}`, { data: { status: 'IN_PROGRESS' } });
@@ -98,34 +108,36 @@ test('no reminder for tasks already started, done, or rescheduled; several at on
   await page.goto('/');
   await expect(toastFor(page, x.name)).toBeVisible({ timeout: 15_000 });
   await expect(toastFor(page, y.name)).toBeVisible();
-  for (const t of [started, done, moved]) await expect(toastFor(page, t.name)).toHaveCount(0);
-  for (const t of [started, done, moved]) expect(await remindersFor(page, t.id)).toHaveLength(0);
+  expect(await status(page, x.id)).toBe('IN_PROGRESS');
+  expect(await status(page, y.id)).toBe('IN_PROGRESS');
+  for (const t of [started, done, moved, over]) await expect(toastFor(page, t.name)).toHaveCount(0);
+  expect(await status(page, done.id)).toBe('COMPLETED');
+  expect(await status(page, moved.id)).toBe('PENDING');
+  expect(await status(page, over.id)).toBe('PENDING');
+  for (const t of [started, done, moved, over]) expect(await remindersFor(page, t.id)).toHaveLength(0);
 
-  // Both are also in the bell, each with its own Start / Dismiss.
+  // Both are also in the bell, each with its own Undo.
   await page.getByRole('button', { name: /notifications/i }).first().click();
   for (const t of [x, y]) {
-    const item = page.locator('div').filter({ hasText: t.name }).filter({ has: page.getByRole('button', { name: 'Start task' }) }).last();
+    const item = page.locator('div').filter({ hasText: t.name }).filter({ has: page.getByRole('button', { name: 'Undo' }) }).last();
     await expect(item).toBeVisible();
   }
 });
 
-test('a reminder is withdrawn when the task stops being pending, and Start re-checks first', async ({ page }) => {
-  const from = new Date(Date.now() - 3 * 60_000), to = new Date(Date.now() + 30 * 60_000);
-  const gone = await make(page, uniqueName('E2E start withdrawn'), from, to);
-  const raced = await make(page, uniqueName('E2E start raced'), from, to);
+test('a slot starts its task only once, and Undo re-checks the task first', async ({ page }) => {
+  const t = await make(page, uniqueName('E2E start once'), new Date(Date.now() - 3 * 60_000), new Date(Date.now() + 30 * 60_000));
+  // Two tabs looking at the same moment: only one of them starts it.
+  const [a, b] = await Promise.all([page.request.post('/api/tasks/auto-start'), page.request.post('/api/tasks/auto-start')]);
+  const startedIds = [...(await a.json()).started, ...(await b.json()).started].map((s: { taskId: string }) => s.taskId).filter((id: string) => id === t.id);
+  expect(startedIds).toHaveLength(1);
+  expect(await status(page, t.id)).toBe('IN_PROGRESS');
+
+  // Finished elsewhere before Undo is clicked: Undo leaves it alone.
+  await page.request.put(`/api/tasks/${t.id}`, { data: { status: 'COMPLETED' } });
   await page.goto('/');
-  await expect(toastFor(page, gone.name)).toBeVisible({ timeout: 15_000 });
-  await expect(toastFor(page, raced.name)).toBeVisible();
-
-  // Finished elsewhere -> withdrawn on the next look (here: a tasks-changed signal).
-  await page.request.put(`/api/tasks/${gone.id}`, { data: { status: 'COMPLETED' } });
-  await page.evaluate(() => window.dispatchEvent(new CustomEvent('rune-tasks-changed')));
-  await expect(toastFor(page, gone.name)).toHaveCount(0, { timeout: 10_000 });
-  expect((await remindersFor(page, gone.id)).every((n) => n.dismissedAt)).toBe(true);
-
-  // Started in another tab before the click -> Start doesn't touch it again.
-  await page.request.put(`/api/tasks/${raced.id}`, { data: { status: 'IN_PROGRESS' } });
-  await toastFor(page, raced.name).getByRole('button', { name: 'Start task' }).click();
-  await expect(page.getByText('Nothing to start')).toBeVisible();
-  expect(await status(page, raced.id)).toBe('IN_PROGRESS');
+  await page.getByRole('button', { name: /notifications/i }).first().click();
+  const item = page.locator('div').filter({ hasText: t.name }).filter({ has: page.getByRole('button', { name: 'Undo' }) }).last();
+  await item.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Nothing to undo')).toBeVisible();
+  expect(await status(page, t.id)).toBe('COMPLETED');
 });

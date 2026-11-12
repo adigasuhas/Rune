@@ -4,7 +4,8 @@ import { withoutCancelled } from '@/lib/taskCancel';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/context/SessionContext';
 import { startVisiblePolling } from '@/lib/visiblePolling';
-import { dueStartReminders, isStartReminderCurrent, nextStartAt, parseStartReminderKey, START_REMINDER_PREFIX } from '@/lib/taskStartReminders';
+import { nextStartAt, parseStartReminderKey } from '@/lib/taskStartReminders';
+import type { AutoStarted } from '@/lib/taskAutoStart';
 
 export type ToastType = 'success' | 'info' | 'error' | 'warning';
 
@@ -56,9 +57,9 @@ interface NotificationContextType {
   toasts: Toast[];
   toast: (title: string, message: string, type?: ToastType, options?: ToastOptions) => void;
   notify: (input: NotifyInput, toastOptions?: ToastOptions) => Promise<void>;
-  /** "Start task" on a start reminder: re-checks the task, then moves it To do -> In progress. */
-  startFromReminder: (dedupeKey: string) => Promise<void>;
-  /** "Dismiss" on a start reminder: clears it; the task is left as it is. */
+  /** "Undo" on a "Task started" notice: moves the task back to To do (it won't start again for that slot). */
+  undoAutoStart: (dedupeKey: string) => Promise<void>;
+  /** Clears a "Task started" notice; the task is left as it is. */
   dismissReminder: (dedupeKey: string) => Promise<void>;
   dismiss: (id: string) => Promise<void>;
   dismissAll: () => Promise<void>;
@@ -257,56 +258,48 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const dismissReminder = useCallback((dedupeKey: string) => clearReminder(dedupeKey), [clearReminder]);
 
-  const startFromReminder = useCallback(async (dedupeKey: string) => {
+  const undoAutoStart = useCallback(async (dedupeKey: string) => {
     const parsed = parseStartReminderKey(dedupeKey);
     if (!parsed) return;
     try {
-      // Re-check the task as it is NOW, not as it was when the reminder fired.
+      // Re-check the task as it is NOW.
       const res = await fetch(`/api/tasks/${parsed.taskId}`);
       if (!res.ok) {
         await clearReminder(dedupeKey);
-        toast('This task is gone', 'It was deleted, so there’s nothing to start.', 'info');
+        toast('This task is gone', 'It was deleted, so there’s nothing to undo.', 'info');
         return;
       }
       const task = await res.json();
-      if (task.status !== 'PENDING') {
+      if (task.status !== 'IN_PROGRESS') {
         await clearReminder(dedupeKey);
-        const state = task.status === 'IN_PROGRESS' ? 'already in progress' : task.status === 'COMPLETED' ? 'already done' : task.status === 'BLOCKED' ? 'blocked' : 'no longer to do';
-        toast('Nothing to start', `“${task.name}” is ${state}.`, 'info');
+        const state = task.status === 'PENDING' ? 'already in To do' : task.status === 'COMPLETED' ? 'done' : task.status === 'BLOCKED' ? 'blocked' : 'no longer in progress';
+        toast('Nothing to undo', `“${task.name}” is ${state}.`, 'info');
         return;
       }
-      const eventsRes = await fetch('/api/calendar');
-      const events = eventsRes.ok ? await eventsRes.json() : [];
-      const tz = (await (await fetch('/api/settings')).json().catch(() => null))?.timezone || 'UTC';
-      if (!isStartReminderCurrent(dedupeKey, [task], events, tz, new Date())) {
-        await clearReminder(dedupeKey);
-        toast('This reminder is out of date', `“${task.name}” was rescheduled. You’ll be reminded at its new time.`, 'info');
-        return;
-      }
-      // The ordinary task update - the same one the Tasks page uses.
       const put = await fetch(`/api/tasks/${parsed.taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'IN_PROGRESS' }),
+        body: JSON.stringify({ status: 'PENDING' }),
       });
       if (!put.ok) {
-        toast('Couldn’t start the task', 'Try again.', 'error');
+        toast('Couldn’t move the task back', 'Try again.', 'error');
         return;
       }
       await clearReminder(dedupeKey);
       window.dispatchEvent(new CustomEvent('rune-tasks-changed'));
-      toast('Task started', `“${task.name}” is in progress.`, 'success');
+      toast('Back in To do', `“${task.name}” won’t start again until its next time slot.`, 'success');
     } catch (err) {
-      console.error('Starting from reminder failed:', err);
-      toast('Couldn’t start the task', 'Try again.', 'error');
+      console.error('Undoing an automatic start failed:', err);
+      toast('Couldn’t move the task back', 'Try again.', 'error');
     }
   }, [clearReminder, toast]);
 
-  // Watches for To do tasks reaching their scheduled start (lib/taskStartReminders).
-  // This runs in the open app - a timer aimed at the next start, a 60s safety
-  // scan, and a re-scan whenever the tab comes back into view. Nothing runs
-  // while Rune is closed; a reminder missed then is shown on return if its
-  // slot is still under way, and never after the slot has ended.
+  // Watches for To do tasks reaching their scheduled start and moves them
+  // to In progress (src/lib/taskAutoStart: once per slot, decided on the
+  // server). This runs in the open app - a timer aimed at the next start, a
+  // 60s safety scan, and a re-scan whenever the tab comes back into view.
+  // Opened part-way through a slot, the task is started then; once the slot
+  // is over, it's left alone.
   useEffect(() => {
     if (!user) return;
     let timer: number | undefined;
@@ -315,57 +308,41 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const scan = async () => {
       window.clearTimeout(timer);
       try {
-        const [tasksRes, settingsRes, eventsRes, notifRes] = await Promise.all([
-          fetch('/api/tasks'), fetch('/api/settings'), fetch('/api/calendar'), fetch('/api/notifications'),
-        ]);
-        if (!tasksRes.ok || cancelled) return;
-        const tasks = withoutCancelled<any>(await tasksRes.json());
-        const settings = settingsRes.ok ? await settingsRes.json() : null;
-        const events = eventsRes.ok ? await eventsRes.json() : [];
-        const open: NotificationItem[] = notifRes.ok ? await notifRes.json() : [];
-        const tz = settings?.timezone || 'UTC';
-        const now = new Date();
-
-        // Withdraw reminders that no longer apply (started, done, blocked,
-        // deleted, rescheduled, or the slot is over).
-        for (const n of open) {
-          if (n.dedupeKey?.startsWith(START_REMINDER_PREFIX) && !isStartReminderCurrent(n.dedupeKey, tasks, events, tz, now)) {
-            setToasts((prev) => prev.filter((t) => t.id !== n.dedupeKey));
-            await dismiss(n.id);
-          }
-        }
-        setToasts((prev) => prev.filter((t) => !t.id.startsWith(START_REMINDER_PREFIX) || isStartReminderCurrent(t.id, tasks, events, tz, now)));
-
-        if (settings?.taskNotificationsEnabled !== false) {
-          for (const r of dueStartReminders(tasks, events, tz, now)) {
-            const at = r.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz });
-            await notify({
-              type: 'TASK_REMINDER',
-              title: 'Time to get started',
-              body: r.late
-                ? `“${r.name}” was scheduled to start at ${at}. Would you like to begin?`
-                : `“${r.name}” is scheduled to start now. Would you like to begin?`,
-              sourceType: 'Task',
-              sourceId: r.taskId,
-              dedupeKey: r.key,
-            }, {
+        const startRes = await fetch('/api/tasks/auto-start', { method: 'POST' });
+        const started: AutoStarted[] = startRes.ok ? (await startRes.json()).started ?? [] : [];
+        // Announce what was started even if this scan was superseded (an
+        // effect re-run): the server won't report these tasks again.
+        if (started.length > 0) {
+          const tz = (await (await fetch('/api/settings')).json().catch(() => null))?.timezone || 'UTC';
+          for (const r of started.filter((x) => x.notify)) {
+            const at = new Date(r.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz });
+            toast('Task started', r.late
+              ? `“${r.name}” was scheduled for ${at}, so it’s now in progress.`
+              : `“${r.name}” is scheduled now, so it’s in progress.`, 'info', {
               id: r.key,
               actions: [
-                { label: 'Start task', primary: true, onClick: () => { void startFromReminder(r.key); } },
-                { label: 'Dismiss', onClick: () => { void dismissReminder(r.key); } },
+                { label: 'Got it', primary: true, onClick: () => { void dismissReminder(r.key); } },
+                { label: 'Undo', onClick: () => { void undoAutoStart(r.key); } },
               ],
             });
           }
+          void refresh();
+          window.dispatchEvent(new CustomEvent('rune-tasks-changed'));
         }
 
-        if (cancelled) return;
         // Aim the next look at the next start (to the second), never more
         // than a minute away so edits made elsewhere are picked up.
+        const [tasksRes, settingsRes, eventsRes] = await Promise.all([fetch('/api/tasks'), fetch('/api/settings'), fetch('/api/calendar')]);
+        if (!tasksRes.ok || cancelled) return;
+        const tasks = withoutCancelled<any>(await tasksRes.json());
+        const tz = (settingsRes.ok ? (await settingsRes.json())?.timezone : null) || 'UTC';
+        const events = eventsRes.ok ? await eventsRes.json() : [];
+        if (cancelled) return;
         const next = nextStartAt(tasks, events, tz, new Date());
         const wait = next ? Math.max(250, Math.min(TASK_SCAN_INTERVAL_MS, next.getTime() - Date.now() + 250)) : TASK_SCAN_INTERVAL_MS;
         timer = window.setTimeout(scan, wait);
       } catch (err) {
-        console.error('Task start reminder scan failed:', err);
+        console.error('Task auto-start scan failed:', err);
         if (!cancelled) timer = window.setTimeout(scan, TASK_SCAN_INTERVAL_MS);
       }
     };
@@ -381,10 +358,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('rune-tasks-changed', onTasksChanged);
     };
-  }, [user, notify, dismiss, startFromReminder, dismissReminder]);
+  }, [user, toast, refresh, undoAutoStart, dismissReminder]);
 
   return (
-    <NotificationContext.Provider value={{ notifications, toasts, toast, notify, dismiss, dismissAll, dismissToast, refresh, startFromReminder, dismissReminder }}>
+    <NotificationContext.Provider value={{ notifications, toasts, toast, notify, dismiss, dismissAll, dismissToast, refresh, undoAutoStart, dismissReminder }}>
       {children}
     </NotificationContext.Provider>
   );

@@ -3,8 +3,8 @@ import AxeBuilder from '@axe-core/playwright';
 import { uniqueName } from './helpers';
 
 /**
- * Tasks list: the time elapsed beside In progress (and nothing beside To do
- * or Done); a task's time slots always in time order, whichever was added
+ * Tasks list: the time elapsed beside In progress, the hours planned beside
+ * To do and the hours worked beside Done; a task's time slots always in time order, whichever was added
  * first; an empty time picker starting at the current time; and Analytics /
  * Recent weeks counting only the "When you're available" dates.
  */
@@ -31,7 +31,7 @@ async function make(page: Page, data: Record<string, unknown>) {
   return t as { id: string; name: string; startTime: string | null };
 }
 
-test('In progress shows time elapsed beside its heading; To do and Done show only their counts', async ({ page }) => {
+test('In progress shows time elapsed, To do the hours planned, Done the hours worked', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const { date, time } = await clock(page);
   const now = new Date();
@@ -41,15 +41,18 @@ test('In progress shows time elapsed beside its heading; To do and Done show onl
   const today = date(now);
   await make(page, { name: uniqueName('E2E running'), date: today, status: 'IN_PROGRESS', estimatedTime: 2, slots: [{ startTime: start, endTime: end }] });
   await make(page, { name: uniqueName('E2E finished'), date: today, status: 'COMPLETED', estimatedTime: 1, slots: [{ startTime: '00:00', endTime: '00:30' }] });
+  await make(page, { name: uniqueName('E2E waiting to start'), date: today, estimatedTime: 1.5 });
 
   await page.goto('/tasks');
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'List' }).click();
   const section = (name: string) => page.locator('.app-section').filter({ has: page.getByRole('heading', { name, exact: true }) });
   await expect(section('In progress')).toContainText(/\d+h\d{2}m elapsed|\d+m elapsed/);
   await expect(section('In progress')).toContainText(/of \d+(\.\d)?h planned|over/);
-  // Done carries only its count.
-  await expect(section('Done')).toBeVisible();
-  await expect(section('Done')).not.toContainText(/spent|planned|elapsed/);
+  // To do: the hours planned; Done: the hours worked. One figure each.
+  await expect(section('To do')).toContainText(/\d+(\.\d)?h planned/);
+  await expect(section('To do')).not.toContainText(/elapsed|worked/);
+  await expect(section('Done')).toContainText(/(\d+h\d{2}m|\d+m) worked/);
+  await expect(section('Done')).not.toContainText(/elapsed|planned/);
   expect((await new AxeBuilder({ page }).include('main').analyze()).violations).toEqual([]);
 });
 

@@ -1,14 +1,15 @@
 'use client';
 
 import { useMinute } from '@/lib/useMinute';
-import { getTaskElapsed, formatElapsedMinutes } from '@/lib/taskElapsed';
+import { getTaskElapsed, getTaskSlotIntervals, formatElapsedMinutes } from '@/lib/taskElapsed';
 import { formatHours } from '@/lib/timeOff';
 
 /**
- * The hours beside the In progress heading on the Tasks list - one figure
- * and one small meter:
+ * The hours beside each state heading on the Tasks list, one quiet pill each:
  *
- *   In progress  1h20m elapsed · of 3h planned   (live, every session counted)
+ *   In progress  1h20m elapsed · of 3h planned   (live, with a small meter)
+ *   To do        6.5h planned
+ *   Done         4h10m worked
  *
  * The meter fills toward the planned time; past it, it stays full and the
  * badge turns the warning tone, and the words say "over" so colour is never
@@ -63,6 +64,44 @@ export function ElapsedHoursBadge({ tasks, events, timezone }: { tasks: ElapsedT
       title={`Time elapsed on the scheduled sessions of ${tasks.length === 1 ? 'this task' : `these ${tasks.length} tasks`}${plannedMin ? `, against ${formatHours(planned)} planned` : ''}`}
       lead={<>{strong(over, formatElapsedMinutes(minutes))} elapsed</>}
       tail={plannedMin ? (over ? `${formatElapsedMinutes(minutes - plannedMin)} over` : `of ${formatHours(planned)} planned`) : null}
+    />
+  );
+}
+
+/** A task's planned hours: its estimate, else the length of its scheduled slots. */
+function plannedHours(task: ElapsedTask, events: Slot[], timezone: string): number {
+  if (task.estimatedTime && task.estimatedTime > 0) return task.estimatedTime;
+  return getTaskSlotIntervals(task, events, timezone).reduce((h, i) => h + (i.end.getTime() - i.start.getTime()) / 3_600_000, 0);
+}
+
+/** To do: the hours planned for the section. Nothing shows when none are. */
+export function PlannedHoursBadge({ tasks, events, timezone }: { tasks: ElapsedTask[]; events: Slot[]; timezone: string }) {
+  const planned = tasks.reduce((h, t) => h + plannedHours(t, events, timezone), 0);
+  if (planned <= 0) return null;
+  return (
+    <Meter
+      value={0}
+      of={null}
+      over={false}
+      title={`Planned for ${tasks.length === 1 ? 'this task' : `these ${tasks.length} tasks`}: their estimates, or their scheduled time where there's no estimate`}
+      lead={<>{strong(false, formatHours(planned))} planned</>}
+      tail={null}
+    />
+  );
+}
+
+/** Done: the time worked on the finished tasks (their recorded time). */
+export function WorkedHoursBadge({ tasks, events, timezone }: { tasks: ElapsedTask[]; events: Slot[]; timezone: string }) {
+  const minutes = tasks.reduce((m, t) => m + getTaskElapsed(t, events, timezone).minutes, 0);
+  if (minutes <= 0) return null;
+  return (
+    <Meter
+      value={minutes}
+      of={null}
+      over={false}
+      title={`Time worked on ${tasks.length === 1 ? 'this finished task' : `these ${tasks.length} finished tasks`}`}
+      lead={<>{strong(false, formatElapsedMinutes(minutes))} worked</>}
+      tail={null}
     />
   );
 }

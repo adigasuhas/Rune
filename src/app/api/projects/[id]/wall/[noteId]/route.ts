@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { WallNoteSize } from '@/lib/colors';
+import { sanitizeNoteText } from '@/lib/noteRichText';
 
 const VALID_SIZES: WallNoteSize[] = ['SMALL', 'MEDIUM', 'LARGE'];
 
@@ -43,7 +44,7 @@ export async function PUT(
     }
     const { text, color, size, x, y, bringToFront } = parsed.data;
     const updateData: any = {};
-    if (text !== undefined) updateData.text = text;
+    if (text !== undefined) updateData.text = sanitizeNoteText(text);
     if (color !== undefined) updateData.color = color;
     if (size !== undefined && VALID_SIZES.includes(size as WallNoteSize)) updateData.size = size;
     if (x !== undefined) updateData.x = Number(x);

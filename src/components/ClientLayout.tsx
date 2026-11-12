@@ -40,6 +40,7 @@ import {
 import { NotificationBell } from '@/components/NotificationBell';
 import { ToastContainer } from '@/components/ToastContainer';
 import { CommandPalette } from '@/components/CommandPalette';
+import { BackupDownloadPrompt, type BackupPromptInfo } from '@/components/BackupDownloadPrompt';
 import { isPublicPage } from '@/lib/publicRoutes';
 import { UserAvatar } from '@/components/UserAvatar';
 
@@ -237,15 +238,28 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   // Once per browser session, make any scheduled backups that are due - the
   // fallback for hosts without the daily job (src/lib/backups). A no-op
-  // when nothing is due.
+  // when nothing is due. Then, on every visit, ask for the newest backup to
+  // be downloaded if this backup period hasn't had one yet.
+  const [backupPrompt, setBackupPrompt] = useState<BackupPromptInfo | null>(null);
+  const userId = user?.id;
+  const needsOnboarding = !!user && !user.isOnboarded && !user.isDeveloper;
   useEffect(() => {
-    if (!user || loading) return;
-    try {
-      if (window.sessionStorage.getItem('rune-backups-checked')) return;
-      window.sessionStorage.setItem('rune-backups-checked', '1');
-    } catch { /* storage blocked: check anyway */ }
-    fetch('/api/backups/run-due', { method: 'POST' }).catch(() => {});
-  }, [user, loading]);
+    if (!userId || loading || needsOnboarding) return;
+    let cancelled = false;
+    (async () => {
+      let checked = false;
+      try {
+        checked = !!window.sessionStorage.getItem('rune-backups-checked');
+        if (!checked) window.sessionStorage.setItem('rune-backups-checked', '1');
+      } catch { /* storage blocked: check anyway */ }
+      if (!checked) await fetch('/api/backups/run-due', { method: 'POST' }).catch(() => {});
+      const res = await fetch('/api/backups/prompt').catch(() => null);
+      if (!res?.ok || cancelled) return;
+      const data = await res.json().catch(() => null);
+      if (data?.due && data.backup && !cancelled) setBackupPrompt(data);
+    })();
+    return () => { cancelled = true; };
+  }, [userId, loading, needsOnboarding]);
 
   // Keyboard Shortcuts Listener
   useEffect(() => {
@@ -724,6 +738,14 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
       <ToastContainer />
       <CommandPalette />
+      {backupPrompt && user && (
+        <BackupDownloadPrompt
+          info={backupPrompt}
+          timezone={user.timezone || 'UTC'}
+          onDone={() => setBackupPrompt(null)}
+          onSignOut={() => { setBackupPrompt(null); logout(); }}
+        />
+      )}
     </div>
   );
 }

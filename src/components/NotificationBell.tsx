@@ -8,7 +8,7 @@ import { deepLinkFor, timeAgo, iconFor } from '@/lib/notificationDisplay';
 import { START_REMINDER_PREFIX } from '@/lib/taskStartReminders';
 
 export function NotificationBell({ align = 'right' }: { align?: 'left' | 'right' }) {
-  const { notifications, dismiss, dismissAll, startFromReminder, dismissReminder } = useNotifications();
+  const { notifications, dismiss, dismissAll, undoAutoStart, dismissReminder } = useNotifications();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -96,17 +96,17 @@ export function NotificationBell({ align = 'right' }: { align?: 'left' | 'right'
                         <div className="mt-2 flex gap-2">
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); void startFromReminder(item.dedupeKey!); }}
+                            onClick={(e) => { e.stopPropagation(); void dismissReminder(item.dedupeKey!); }}
                             className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary-hover transition-colors"
                           >
-                            Start task
+                            Got it
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); void dismissReminder(item.dedupeKey!); }}
+                            onClick={(e) => { e.stopPropagation(); void undoAutoStart(item.dedupeKey!); }}
                             className="rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-ink-secondary hover:text-foreground transition-colors"
                           >
-                            Dismiss
+                            Undo
                           </button>
                         </div>
                       )}

@@ -117,7 +117,8 @@ test('mark a stretch of leave and a sick day; allowances count down; the Tasks c
   await expect(cellOf(monday)).toHaveAttribute('data-day-kind', 'leave');
   await expect(cellOf(monday)).toContainText('Leave');
   await expect(page.locator(`[data-day="${monday}"]`)).toHaveAccessibleName(/Leave \(Family visit\)/);
-  await expect(cellOf(addDays(monday, 5))).toHaveAttribute('data-day-kind', 'weeklyOff');
+  // The calendar labels only its own month's days (this week can run into the next month).
+  if (addDays(monday, 5).slice(0, 7) === month) await expect(cellOf(addDays(monday, 5))).toHaveAttribute('data-day-kind', 'weeklyOff');
   if (sickDay.slice(0, 7) === month) await expect(cellOf(sickDay)).toHaveAttribute('data-day-kind', 'sick');
 });
 
@@ -132,12 +133,12 @@ test('the Tasks calendar deepens with hours worked; hours planned show on the we
   created.push(todo.id);
 
   await page.goto('/tasks');
-  // List view: the week strip says how much is planned each day; the To do
-  // heading itself carries only its count.
+  // List view: the week strip says how much is planned each day, and the
+  // To do heading the hours planned for its tasks.
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'List' }).click();
   const todoHeading = page.locator('.app-section').filter({ has: page.getByRole('heading', { name: 'To do' }) });
   await expect(todoHeading).toBeVisible();
-  await expect(todoHeading).not.toContainText(/planned/);
+  await expect(todoHeading).toContainText(/\d+(\.\d)?h planned/);
   await expect(page.getByRole('button', { name: /planned$/ }).first()).toBeVisible();
 
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: 'Calendar' }).click();

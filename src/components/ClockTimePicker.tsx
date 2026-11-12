@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { nowHHMM } from '@/lib/taskElapsed';
+import { nearestMeridiem, toH24 } from '@/lib/clockTime';
 
 interface ClockTimePickerProps {
   value: string; // "HH:MM" 24h format
@@ -79,9 +80,19 @@ export function ClockTimePicker({ value, onChange, placeholder = 'Set time', cla
     onChange(`${hh}:${mm}`);
   };
 
-  const handleHourSelect = (h: number) => {
+  // A new hour keeps the half of the day closest to the time it replaces, so
+  // 11:45 AM -> 12 is 12:45 PM and 12:30 PM -> 11 is 11:30 AM; 9 AM -> 5
+  // stays 5 AM. The AM/PM switch shows the change and can still override it.
+  const changeHour = (h: number) => {
+    const current = toH24(selectedHour, ampm);
+    const next = nearestMeridiem(current, h);
     setSelectedHour(h);
-    saveTime(h, selectedMinute, ampm);
+    setAmpm(next);
+    saveTime(h, selectedMinute, next);
+  };
+
+  const handleHourSelect = (h: number) => {
+    changeHour(h);
     setMode('minute'); // Automatically switch to minute
   };
 
@@ -164,22 +175,14 @@ export function ClockTimePicker({ value, onChange, placeholder = 'Set time', cla
                 <div className="flex flex-col text-[8px] leading-[6px] text-ink-faint">
                   <button
                     type="button"
-                    onClick={() => {
-                      const next = selectedHour === 12 ? 1 : selectedHour + 1;
-                      setSelectedHour(next);
-                      saveTime(next, selectedMinute, ampm);
-                    }}
+                    onClick={() => changeHour(selectedHour === 12 ? 1 : selectedHour + 1)}
                     className="hover:text-primary p-0.5 cursor-pointer"
                   >
                     ▲
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      const next = selectedHour === 1 ? 12 : selectedHour - 1;
-                      setSelectedHour(next);
-                      saveTime(next, selectedMinute, ampm);
-                    }}
+                    onClick={() => changeHour(selectedHour === 1 ? 12 : selectedHour - 1)}
                     className="hover:text-primary p-0.5 cursor-pointer"
                   >
                     ▼

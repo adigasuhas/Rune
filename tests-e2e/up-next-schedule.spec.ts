@@ -49,12 +49,15 @@ test('Up next: elapsed time while ongoing, and scheduling never inherits another
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
-  await expect(card(page, nameA)).toContainText(/(29|30|31)m so far/, { timeout: 15_000 });
+  // Its slot is under way, so it has also moved to In progress on its own
+  // ("so far" may show for a moment before that lands).
+  await expect(card(page, nameA)).toContainText(/(29|30|31)m (so far|elapsed)/, { timeout: 15_000 });
   await expect(card(page, nameB)).not.toContainText(/so far|elapsed/);
 
   // Same value after a reload - derived from the schedule, not a timer.
   await page.reload();
-  await expect(card(page, nameA)).toContainText(/(29|30|31)m so far/, { timeout: 15_000 });
+  await expect(card(page, nameA)).toContainText(/(29|30|31)m elapsed/, { timeout: 15_000 });
+  expect((await (await page.request.get(`/api/tasks/${a.id}`)).json()).status).toBe('IN_PROGRESS');
 
   // Schedule A: opens on A's own saved slot.
   await card(page, nameA).hover();

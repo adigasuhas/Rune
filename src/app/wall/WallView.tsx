@@ -3,7 +3,10 @@
 import { LoadError } from '@/components/LoadError';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, X, Search } from 'lucide-react';
+import { Plus, X, Search, GripVertical } from 'lucide-react';
+import { NoteEditor } from '@/components/wall/NoteEditor';
+import { noteToPlainText } from '@/lib/noteRichText';
+import { moveId, orderProjects } from '@/lib/wallOrder';
 import { WALL_NOTE_COLORS, WALL_NOTE_SIZES, WallNoteSize } from '@/lib/colors';
 import { Button, EmptyState, PageHeader } from '@/components/ui';
 
@@ -58,9 +61,17 @@ export function WallView() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
-    fetch('/api/projects')
-      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then((data: Project[]) => {
+    // A load that's been superseded (a retry, or React re-running this in
+    // development) must not overwrite a tab order changed since.
+    let cancelled = false;
+    Promise.all([
+      fetch('/api/projects').then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); }),
+      // The saved tab order is a nicety: without it, the usual order.
+      fetch('/api/wall/order').then((r) => (r.ok ? r.json() : { projectIds: [] })).catch(() => ({ projectIds: [] })),
+    ])
+      .then(([projectList, order]: [Project[], { projectIds?: string[] }]) => {
+        if (cancelled) return;
+        const data = orderProjects(projectList, order.projectIds ?? []);
         setProjects(data);
         const fromUrl = searchParams.get('projectId');
         if (fromUrl && data.some((p) => p.id === fromUrl)) {
@@ -69,8 +80,9 @@ export function WallView() {
           setSelectedProjectId(data[0].id);
         }
       })
-      .catch(() => setLoadFailed(true))
-      .finally(() => setLoadingProjects(false));
+      .catch(() => { if (!cancelled) setLoadFailed(true); })
+      .finally(() => { if (!cancelled) setLoadingProjects(false); });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
@@ -86,6 +98,29 @@ export function WallView() {
       .catch(() => setNotes([]))
       .finally(() => setLoadingNotes(false));
   }, [selectedProjectId]);
+
+  // Tab order: drag a tab, or Alt+← / Alt+→ on a focused tab. Saved per user.
+  const [draggingTab, setDraggingTab] = useState<string | null>(null);
+  // Read during the drag itself, before the state above has re-rendered.
+  const draggingRef = useRef<string | null>(null);
+  const [orderError, setOrderError] = useState(false);
+  const saveOrder = (next: Project[]) => {
+    const previous = projects;
+    setProjects(next);
+    setOrderError(false);
+    fetch('/api/wall/order', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectIds: next.map((p) => p.id) }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); })
+      .catch(() => { setProjects(previous); setOrderError(true); });
+  };
+  const moveProject = (id: string, toIndex: number) => {
+    const ids = moveId(projects.map((p) => p.id), id, toIndex);
+    if (ids.join() === projects.map((p) => p.id).join()) return;
+    saveOrder(orderProjects(projects, ids));
+  };
 
   const switchProject = (id: string) => {
     setSelectedProjectId(id);
@@ -205,7 +240,7 @@ export function WallView() {
   const [query, setQuery] = useState('');
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const q = query.trim().toLowerCase();
-  const matches = (n: WallNote) => (!q || n.text.toLowerCase().includes(q)) && (!colorFilter || n.color === colorFilter);
+  const matches = (n: WallNote) => (!q || noteToPlainText(n.text).toLowerCase().includes(q)) && (!colorFilter || n.color === colorFilter);
   const shown = notes.filter(matches).length;
   const colorsInUse = WALL_NOTE_COLORS.filter((c) => notes.some((n) => n.color === c.value));
 
@@ -250,20 +285,38 @@ export function WallView() {
           {/* Which board */}
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border">
             <div className="-mb-px flex gap-1 overflow-x-auto" role="tablist" aria-label="Project">
-              {projects.map((p) => (
+              {projects.map((p, i) => (
                 <button
                   key={p.id}
                   role="tab"
                   aria-selected={p.id === selectedProjectId}
+                  aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+                  title={projects.length > 1 ? 'Drag to reorder (or Alt+← / Alt+→)' : undefined}
+                  draggable={projects.length > 1}
+                  onDragStart={(e) => { draggingRef.current = p.id; setDraggingTab(p.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.id); }}
+                  onDragOver={(e) => { if (draggingRef.current && draggingRef.current !== p.id) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
+                  onDrop={(e) => { e.preventDefault(); const id = draggingRef.current; draggingRef.current = null; setDraggingTab(null); if (id) moveProject(id, i); }}
+                  onDragEnd={() => { draggingRef.current = null; setDraggingTab(null); }}
+                  onKeyDown={(e) => {
+                    if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+                    e.preventDefault();
+                    moveProject(p.id, e.key === 'ArrowLeft' ? i - 1 : i + 1);
+                    requestAnimationFrame(() => (document.querySelector(`[data-wall-tab="${p.id}"]`) as HTMLElement | null)?.focus());
+                  }}
                   onClick={() => switchProject(p.id)}
-                  className={`flex shrink-0 items-center gap-2 border-b-2 px-2.5 pb-2 pt-1 text-[14px] transition-colors ${p.id === selectedProjectId ? 'border-foreground font-semibold text-foreground' : 'border-transparent text-ink-secondary hover:text-foreground'}`}
+                  data-wall-tab={p.id}
+                  className={`group/tab flex shrink-0 items-center gap-2 border-b-2 px-2.5 pb-2 pt-1 text-[14px] transition-[color,opacity] ${p.id === selectedProjectId ? 'border-foreground font-semibold text-foreground' : 'border-transparent text-ink-secondary hover:text-foreground'} ${draggingTab === p.id ? 'opacity-40' : ''} ${draggingTab && draggingTab !== p.id ? 'cursor-copy' : ''}`}
                 >
+                  {projects.length > 1 && (
+                    <GripVertical aria-hidden="true" className="-ml-1 -mr-1 h-3.5 w-3.5 cursor-grab text-ink-faint opacity-0 transition-opacity group-hover/tab:opacity-100" />
+                  )}
                   <span className="h-2.5 w-2.5 rounded-[3px]" style={{ backgroundColor: p.color }} aria-hidden="true" />
                   {p.name}
                 </button>
               ))}
             </div>
           </div>
+          {orderError && <p role="alert" className="text-[13px] text-danger">Couldn’t save the new order. Try again.</p>}
 
           {/* Board tools */}
           <div className="flex flex-wrap items-center gap-3">
@@ -327,7 +380,7 @@ export function WallView() {
                   onDragHandleMouseDown={(e) => handleDragHandleMouseDown(e, note)}
                   onFocus={() => bringToFront(note)}
                   onTextChange={(text) => updateNoteLocal(note.id, { text })}
-                  onTextBlur={(text) => persistNote(note.id, { text })}
+                  onTextCommit={(text) => persistNote(note.id, { text })}
                   onColorChange={(color) => {
                     updateNoteLocal(note.id, { color });
                     persistNote(note.id, { color });
@@ -360,7 +413,7 @@ function WallNoteCard({
   onDragHandleMouseDown,
   onFocus,
   onTextChange,
-  onTextBlur,
+  onTextCommit,
   onColorChange,
   onSizeChange,
   onDelete
@@ -370,7 +423,7 @@ function WallNoteCard({
   onDragHandleMouseDown: (e: React.MouseEvent) => void;
   onFocus: () => void;
   onTextChange: (text: string) => void;
-  onTextBlur: (text: string) => void;
+  onTextCommit: (text: string) => void;
   onColorChange: (color: string) => void;
   onSizeChange: (size: WallNoteSize) => void;
   onDelete: () => void;
@@ -459,16 +512,7 @@ function WallNoteCard({
         </button>
       </div>
 
-      <textarea
-        value={note.text}
-        onMouseDown={(e) => e.stopPropagation()}
-        onChange={(e) => onTextChange(e.target.value)}
-        onBlur={(e) => onTextBlur(e.target.value)}
-        placeholder="Write something…"
-        aria-label="Note"
-        className="w-full flex-1 resize-none bg-transparent px-4 pb-3 pt-1 font-serif text-[16px] leading-snug placeholder-black/40 focus:outline-none"
-        style={{ color: '#2a2a1f' }}
-      />
+      <NoteEditor text={note.text} onChange={onTextChange} onCommit={onTextCommit} />
     </div>
   );
 }

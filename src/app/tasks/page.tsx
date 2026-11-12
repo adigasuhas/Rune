@@ -17,7 +17,7 @@ import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/l
 import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
 import { ReorderableTaskList } from '@/components/tasks/ReorderableTaskList';
 import { InProgressLabel, InProgressStrip } from '@/components/tasks/InProgressIndicator';
-import { ElapsedHoursBadge } from '@/components/tasks/SectionHours';
+import { ElapsedHoursBadge, PlannedHoursBadge, WorkedHoursBadge } from '@/components/tasks/SectionHours';
 import {
   CheckSquare,
   Plus,
@@ -1312,7 +1312,7 @@ export default function TasksPage() {
       <PageHeader
         className=""
         title="Tasks"
-        subtitle={`${dayCounts.ALL - dayCounts.COMPLETED} open · ${dayCounts.IN_PROGRESS} in progress · ${dayCounts.BLOCKED} blocked${selectedDate ? (selectedDate === todayStr ? ' today' : ` on ${new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}`) : ''}`}
+        subtitle={`${dayCounts.ALL - dayCounts.COMPLETED} open · ${dayCounts.IN_PROGRESS} in progress${dayCounts.BLOCKED > 0 ? ` · ${dayCounts.BLOCKED} blocked` : ''}${selectedDate ? (selectedDate === todayStr ? ' today' : ` on ${new Date(`${selectedDate}T12:00:00Z`).toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' })}`) : ''}`}
         actions={
           <>
             <Button variant="ghost" onClick={handleOpenExportModal}><Download className="w-4 h-4 text-ink-faint" /> Export</Button>
@@ -1571,12 +1571,15 @@ export default function TasksPage() {
             <div key={group.key}>
               <SectionHeader
                 title={group.label}
-                meta={group.key === 'IN_PROGRESS' && statusFilter !== 'POSTPONED'
+                meta={statusFilter !== 'POSTPONED' && (group.key === 'IN_PROGRESS' || group.key === 'PENDING' || group.key === 'COMPLETED')
                   ? (
-                    // Only In progress carries hours: the time elapsed across its sessions.
+                    // In progress: time elapsed against the plan. To do: hours
+                    // planned. Done: hours worked.
                     <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
                       {group.tasks.length}
-                      <ElapsedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />
+                      {group.key === 'IN_PROGRESS' && <ElapsedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />}
+                      {group.key === 'PENDING' && <PlannedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />}
+                      {group.key === 'COMPLETED' && <WorkedHoursBadge tasks={group.tasks} events={events} timezone={userTimezone} />}
                     </span>
                   )
                   : group.tasks.length}

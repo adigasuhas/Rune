@@ -48,6 +48,7 @@ import { TodayHeader } from '@/components/today/TodayHeader';
 type TaskStatusValue = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 import { SessionType, normalizeSessionType, durationLabel, sessionTypeLabel, SESSION_TYPE_META } from '@/lib/sessionType';
 import { formatHoursValue, formatNumber } from '@/lib/numberFormat';
+import { hasPlannedDaysAhead } from '@/lib/weekPlan';
 import { columnPlacement, EVENT_GAP_PX, layoutDayEvents, TOP_INSET_PX } from '@/lib/dayTimeline';
 
 interface Goal {
@@ -2052,7 +2053,7 @@ function DashboardPage() {
         done={completedToday.length}
         overdue={overdueTasks.length}
         offDay={getDayConfigOnDashboard(getCurrentDateInTimezone(userTimezone)).type !== 'working'}
-        note={freshStart && digest ? (
+        note={freshStart && digest && !hasPlannedDaysAhead(getCurrentDateInTimezone(userTimezone), tasks, events, userTimezone) ? (
           <p className="text-[13.5px] text-ink-secondary">
             <span className="font-medium text-foreground">New week.</span>{' '}
             {digest.weekAhead.tasksDue > 0 || digest.weekAhead.projectDeadlines.length > 0

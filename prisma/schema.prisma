@@ -469,6 +469,13 @@ model Setting {
   backupKeep               Int             @default(7) // newest N kept per account / project
   backupEmail              Boolean         @default(false) // also email the .zip (needs SMTP)
   lastBackupAt             DateTime?
+  // When the owner last downloaded an account backup. Once a backup period
+  // (day / week / month, as set above) passes without one, Rune asks them
+  // to download the newest before they carry on (BackupDownloadPrompt).
+  lastBackupDownloadAt     DateTime?
+  // The order of the project tabs on the Wall (project ids); projects not
+  // listed follow in their usual order.
+  wallProjectOrder         String[]        @default([])
   createdAt                DateTime        @default(now())
   updatedAt                DateTime        @updatedAt
 }

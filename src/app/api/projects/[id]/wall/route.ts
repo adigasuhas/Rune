@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { WallNoteSize } from '@/lib/colors';
+import { sanitizeNoteText } from '@/lib/noteRichText';
 
 const VALID_SIZES: WallNoteSize[] = ['SMALL', 'MEDIUM', 'LARGE'];
 
@@ -59,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       data: {
         projectId: id,
         userId: session.userId,
-        text: text || '',
+        text: sanitizeNoteText(text || ''),
         color: color || '#FDE68A',
         size: finalSize,
         x: typeof x === 'number' ? x : 40,
