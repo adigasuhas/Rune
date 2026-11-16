@@ -117,3 +117,16 @@ describe('shading by hours worked', () => {
     expect(intensityLevel(12, 8)).toBe(4);
   });
 });
+
+describe('nextWorkingDay', () => {
+  it('skips weekends, leave, sick days and unavailable dates', async () => {
+    const { nextWorkingDay, parseDayEntries } = await import('@/lib/timeOff');
+    const none = parseDayEntries('');
+    expect(nextWorkingDay('2026-11-12', none)).toBe('2026-11-13'); // Thu -> Fri
+    expect(nextWorkingDay('2026-11-13', none)).toBe('2026-11-16'); // Fri -> Mon
+    const entries = parseDayEntries('2026-11-16:leave:Trip,2026-11-17:sick,2026-11-21:working');
+    expect(nextWorkingDay('2026-11-13', entries)).toBe('2026-11-18');
+    expect(nextWorkingDay('2026-11-20', entries)).toBe('2026-11-21'); // a Saturday marked as working
+    expect(nextWorkingDay('2026-11-13', none, { from: null, until: '2026-11-13' })).toBe('2026-11-14'); // nothing available: falls back to the next day
+  });
+});

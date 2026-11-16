@@ -12,7 +12,7 @@ import { ClockTimePicker } from '@/components/ClockTimePicker';
 import { TaskFormModal } from '@/components/TaskFormModal';
 import { SessionType, normalizeSessionType } from '@/lib/sessionType';
 import { getPostponeCount, calculateOccupiedHoursFromItems } from '@/lib/analyticsUtils';
-import { dayKind, parseDayEntries, workdayHours, formatHours } from '@/lib/timeOff';
+import { dayKind, nextWorkingDay, parseDayEntries, workdayHours, formatHours } from '@/lib/timeOff';
 import { generateTaskPdfReport } from '@/lib/taskReport';
 import { parsePostponeHistory, formatPostponeDay, tasksPostponedFrom } from '@/lib/postpone';
 import { sortByManualOrder, planReorder } from '@/lib/taskOrder';
@@ -199,8 +199,8 @@ export default function TasksPage() {
   const [movingTask, setMovingTask] = useState<Task | null>(null);
   const [moveDate, setMoveDate] = useState('');
   const [moveReason, setMoveReason] = useState('');
-  // The same date dialog serves "Move" and "Duplicate": a copy always asks
-  // for its date (starting empty), never inheriting or deriving one.
+  // The same date dialog serves "Move" and "Duplicate". A copy starts on the
+  // next working day (editable), never on the original's stored timestamp.
   const [moveMode, setMoveMode] = useState<'move' | 'copy'>('move');
 
   const [dataLoading, setDataLoading] = useState(true);
@@ -721,19 +721,26 @@ export default function TasksPage() {
     }
   };
 
-  // Duplicate asks for the copy's date first (the Move dialog, in copy
-  // mode). It used to post the original's stored timestamp, which the server
-  // cut to its UTC date - one day early anywhere east of UTC.
+  // Duplicate confirms the copy's date first (the Move dialog, in copy
+  // mode). It opens on the next working day - after today, or after the
+  // original's day if that's later - skipping weekly days off, leave and
+  // unavailable dates. (It once posted the original's stored timestamp,
+  // which the server cut to its UTC date: one day early east of UTC.)
   const handleDuplicate = (task: Task) => {
+    const today = getCurrentDateInTimezone(userTimezone);
+    const original = task.date ? getLocalDateString(task.date, userTimezone) : today;
+    const from = original > today ? original : today;
     setMoveMode('copy');
     setMovingTask(task);
-    setMoveDate('');
+    setMoveDate(nextWorkingDay(from, parseDayEntries(schedule.workingDays), { from: schedule.availableFrom, until: schedule.availableUntil }));
     setMoveReason('');
     setIsMoveModalOpen(true);
   };
 
-  // A copy is a new task: the original's details, none of its history
-  // (status, time spent, postponements, slots, assignment), on the chosen day.
+  // A copy is a new task: the original's details - project, linked
+  // objective, session type, contexts, estimate - and none of its history
+  // (status, time spent, postponements, assignment). Its scheduled time is
+  // left empty: no slots, no start or end, ready to be planned afresh.
   const createCopy = async (task: Task, date: string) => {
     try {
       const res = await fetch('/api/tasks', {
@@ -743,6 +750,7 @@ export default function TasksPage() {
           name: `${task.name} (Copy)`,
           detail: task.detail,
           projectId: task.projectId || undefined,
+          linkedGoalId: task.projectId ? task.linkedGoalId || null : null,
           priority: task.priority,
           date,
           sessionType: task.sessionType,
@@ -1870,8 +1878,10 @@ export default function TasksPage() {
                 />
               </div>
 
-              {moveMode === 'copy' && !moveDate && (
-                <p className="text-[12px] text-ink-secondary" role="status">Pick the day the copy should be on.</p>
+              {moveMode === 'copy' && (
+                <p className="text-[12px] text-ink-secondary" role="status">
+                  {moveDate ? 'Set to your next working day. The copy keeps the project, objective, session type and contexts, with no scheduled time.' : 'Pick the day the copy should be on.'}
+                </p>
               )}
 
               {moveMode === 'move' && <div>

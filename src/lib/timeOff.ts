@@ -228,3 +228,21 @@ export function formatHours(h: number): string {
   const r = Math.round(h * 10) / 10;
   return `${Number.isInteger(r) ? r : r.toFixed(1)}h`;
 }
+
+/**
+ * The first working day after `after` (YYYY-MM-DD): skips the weekly days
+ * off, leave, sick days and anything outside the availability dates, using
+ * the same rules as the calendar. Falls back to the next day if a whole year
+ * has no working day.
+ */
+export function nextWorkingDay(after: string, entries: Map<string, DayEntry>, availability?: Availability | null): string {
+  const d = new Date(`${after}T12:00:00Z`);
+  for (let i = 0; i < 366; i++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const key = d.toISOString().slice(0, 10);
+    if (dayKind(key, entries, availability) === 'working') return key;
+  }
+  const next = new Date(`${after}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
