@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ChevronDown, ClockArrowDown, Coffee, CloudFog, ListChecks, Square } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ClockArrowDown, Coffee, CloudFog, Square } from 'lucide-react';
 import { ACTIVITY_LABEL, isLongRunning, type ActivityKind } from '@/lib/activityTime';
 import { awayActions, useAwaySessions, type AwaySession } from '@/lib/useAwaySessions';
 import { useNotifications } from '@/context/NotificationContext';
@@ -106,7 +106,7 @@ export function AwayControl({ timezone, date }: { timezone: string; date?: strin
     if (!r.ok) toast('Couldn’t start it', r.error, 'error');
   };
 
-  const item = 'flex w-full items-start gap-2.5 rounded-[7px] px-2.5 py-2 text-left hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none';
+  const item = 'flex h-9 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[14px] text-foreground transition-colors hover:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:outline-none';
 
   return (
     <div ref={ref} className="relative flex items-center gap-1.5">
@@ -123,48 +123,22 @@ export function AwayControl({ timezone, date }: { timezone: string; date?: strin
           <Coffee className="h-4 w-4" aria-hidden="true" /> Step away <ChevronDown className="h-3.5 w-3.5 text-ink-faint" aria-hidden="true" />
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="grid h-9 w-9 place-items-center rounded-[9px] text-ink-faint transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        aria-label="Log or edit breaks and brain drain"
-        title="Log or edit breaks and brain drain"
-      >
-        <ClockArrowDown className="h-4 w-4" />
-      </button>
       {open && (
-        <div role="menu" aria-label="Step away" className="absolute right-0 top-full z-40 mt-1.5 w-[17rem] rounded-[12px] border border-border bg-surface p-1.5 shadow-[0_16px_36px_-18px_rgb(0_0_0/0.35)]">
+        <div role="menu" aria-label="Step away" className="absolute right-0 top-full z-40 mt-1.5 w-[12.5rem] rounded-[12px] border border-border bg-surface p-1 shadow-[0_16px_36px_-18px_rgb(0_0_0/0.35)]">
           <button role="menuitem" type="button" className={item} onClick={() => start('BREAK')} autoFocus>
-            <Coffee className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
-            <span>
-              <span className="block text-[14px] font-medium text-foreground">Take a break</span>
-              <span className="block text-[12.5px] text-ink-faint">Rest on purpose. Counts as active time.</span>
-            </span>
+            <Coffee className="h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" /> Take a break
           </button>
           <button role="menuitem" type="button" className={item} onClick={() => start('BRAIN_DRAIN')}>
-            <CloudFog className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
-            <span>
-              <span className="block text-[14px] font-medium text-foreground">Brain drain</span>
-              <span className="block text-[12.5px] text-ink-faint">Here, but not focusing. No reason needed.</span>
-            </span>
+            <CloudFog className="h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" /> Brain drain
           </button>
-          <div className="my-1 h-px bg-border" />
-          <p className="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold text-ink-faint">Already happened?</p>
+          <div className="mx-2 my-1 h-px bg-border" aria-hidden="true" />
           <button role="menuitem" type="button" className={item} onClick={() => { setOpen(false); setEditing(true); }}>
-            <ClockArrowDown className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
-            <span>
-              <span className="block text-[14px] font-medium text-foreground">Log one with start and end times</span>
-              <span className="block text-[12.5px] text-ink-faint">For any day. The duration works itself out.</span>
-            </span>
-          </button>
-          <button role="menuitem" type="button" className={item} onClick={() => { setOpen(false); setEditing(true); }}>
-            <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" />
-            <span className="block text-[14px] text-foreground">Review and edit entries…</span>
+            <ClockArrowDown className="h-4 w-4 shrink-0 text-ink-secondary" aria-hidden="true" /> Log one
           </button>
         </div>
       )}
 
-      {editing && <AwaySessionsDialog timezone={timezone} initialDate={date} onClose={() => setEditing(false)} />}
+      {editing && <AwaySessionsDialog timezone={timezone} onClose={() => setEditing(false)} />}
     </div>
   );
 }

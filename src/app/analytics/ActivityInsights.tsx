@@ -41,14 +41,12 @@ export function ActivityInsights({
 
       <div className="grid grid-cols-1 gap-x-12 gap-y-10 border-t border-border-strong pt-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <section aria-labelledby="activity-history">
-          <h2 id="activity-history" className="mb-1 text-[16px] font-semibold tracking-[-0.01em] text-foreground">History</h2>
-          <p className="mb-4 text-[13px] text-ink-secondary">Change a kind or a time in place; it saves as you leave the field. Deleting asks first.</p>
+          <h2 id="activity-history" className="mb-4 text-[16px] font-semibold tracking-[-0.01em] text-foreground">History</h2>
           <AwayLog sessions={list} timezone={timezone} today={today} limitDays={14} emptyText="No breaks or brain drain recorded yet." />
         </section>
         <section aria-labelledby="activity-add" className="lg:sticky lg:top-4 lg:self-start">
-          <h2 id="activity-add" className="mb-1 text-[16px] font-semibold tracking-[-0.01em] text-foreground">Log one that already happened</h2>
-          <p className="mb-4 text-[13px] text-ink-secondary">Forgot to start the timer? Give the day and the times.</p>
-          <AwayEntryForm timezone={timezone} submitLabel="Add to history" />
+          <h2 id="activity-add" className="mb-4 text-[16px] font-semibold tracking-[-0.01em] text-foreground">Log one</h2>
+          <AwayEntryForm timezone={timezone} submitLabel="Save" />
         </section>
       </div>
     </div>

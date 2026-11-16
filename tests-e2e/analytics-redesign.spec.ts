@@ -47,55 +47,83 @@ test('Overview sections fold and unfold, and stay that way after a reload', asyn
   await expect(page.getByRole('button', { name: /^Task completion/ })).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('Today: log a break with start and end times (across midnight), then edit and delete it', async ({ page }) => {
+test('Today: Step away offers three things; Log one opens on now; History edits and deletes', async ({ page }) => {
   const zone = await tz(page);
-  const past = ymd(new Date(Date.now() - (40 + Math.floor(Math.random() * 300)) * 86_400_000), zone);
   await page.goto('/');
   await page.getByRole('button', { name: 'Step away' }).click();
-  await page.getByRole('menuitem', { name: /Log one with start and end times/ }).click();
-  const dialog = page.getByRole('dialog', { name: 'Breaks and brain drain' });
-  const form = dialog.getByRole('form', { name: 'Log a break or brain drain' });
+  await expect(page.getByRole('menuitem')).toHaveText(['Take a break', 'Brain drain', 'Log one']);
+  await page.getByRole('menuitem', { name: 'Log one' }).click();
+
+  // It opens on the current date and time: the last fifteen minutes.
+  let dialog = page.getByRole('dialog', { name: 'Log one' });
+  let form = dialog.getByRole('form', { name: 'Log a break or brain drain' });
+  await expect(form.getByLabel('Date')).toHaveValue(ymd(new Date(), zone));
+  const now = new Date();
+  const to = await form.getByLabel('To').inputValue();
+  expect([hhmm(now, zone), hhmm(new Date(now.getTime() - 60_000), zone), hhmm(new Date(now.getTime() + 60_000), zone)]).toContain(to);
+  await expect(form.getByTestId('away-duration')).toHaveText('15m');
+
+  // One that ran past midnight, on an older day.
+  const past = ymd(new Date(Date.now() - (40 + Math.floor(Math.random() * 300)) * 86_400_000), zone);
   await form.getByRole('radio', { name: 'Brain drain' }).click();
-  await form.getByLabel('Day').fill(past);
-  await form.getByLabel('Start').fill('23:30');
-  await form.getByLabel('End').fill('00:15');
-  await expect(form.getByTestId('away-duration')).toHaveText(/45m · ends the next day/);
-  await form.getByRole('button', { name: 'Add' }).click();
-  await expect(form.getByTestId('away-duration')).toHaveText('Duration shows here');
+  await form.getByLabel('Date').fill(past);
+  await form.getByLabel('From').fill('23:30');
+  await form.getByLabel('To').fill('00:15');
+  await expect(form.getByTestId('away-duration')).toHaveText('45m');
+  await expect(form).toContainText('ends the next day');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(dialog).toBeHidden();
   const saved = (await sessionsOn(page, past)).find((s) => s.kind === 'BRAIN_DRAIN');
   expect(saved).toBeTruthy();
   created.sessions.push(saved!.id);
   expect(new Date(saved!.end!).getTime() - new Date(saved!.start).getTime()).toBe(45 * 60_000);
 
   // A bad range is refused before anything is sent.
-  await form.getByLabel('Start').fill('10:00');
-  await form.getByLabel('End').fill('23:30');
+  await page.getByRole('button', { name: 'Step away' }).click();
+  await page.getByRole('menuitem', { name: 'Log one' }).click();
+  dialog = page.getByRole('dialog', { name: 'Log one' });
+  form = dialog.getByRole('form', { name: 'Log a break or brain drain' });
+  await form.getByLabel('Date').fill(past);
+  await form.getByLabel('From').fill('10:00');
+  await form.getByLabel('To').fill('23:30');
   await expect(form.getByRole('alert')).toContainText('at most 12 hours');
 
-  // Edit and delete one from the list (a recent day, so it's listed).
+  // History: edit one, then delete it.
   const recent = ymd(new Date(Date.now() - (2 + Math.floor(Math.random() * 10)) * 86_400_000), zone);
-  // Nothing else in the list may start at 03:10 (e.g. left by an interrupted run).
   const fortnight = await (await page.request.get(`/api/activity-sessions?from=${ymd(new Date(Date.now() - 15 * 86_400_000), zone)}&to=${ymd(new Date(), zone)}`)).json();
   for (const s of fortnight) if (hhmm(new Date(s.start), zone) === '03:10') await page.request.delete(`/api/activity-sessions/${s.id}`);
-  await form.getByRole('radio', { name: 'Break' }).click();
-  await form.getByLabel('Day').fill(recent);
-  await form.getByLabel('Start').fill('03:10');
-  await form.getByLabel('End').fill('03:40');
-  await expect(form.getByTestId('away-duration')).toHaveText('30m');
-  await form.getByRole('button', { name: 'Add' }).click();
-  const row = dialog.getByRole('listitem').filter({ has: page.locator('input[type="time"][value="03:10"]') });
-  await expect(row).toHaveCount(1);
-  await row.getByLabel('Break: end').click();
-  await row.getByLabel('Break: end').fill('03:55');
-  await row.getByLabel('Break: end').press('Enter');
-  await expect.poll(async () => {
-    const s = (await sessionsOn(page, recent)).find((x) => hhmm(new Date(x.start), zone) === '03:10');
-    return s ? (new Date(s.end!).getTime() - new Date(s.start).getTime()) / 60_000 : null;
-  }).toBe(45);
-  await dialog.getByRole('listitem').filter({ has: page.locator('input[type="time"][value="03:10"]') }).getByRole('button', { name: /Delete this break/ }).click();
+  const [h, m] = [3, 10];
+  const at = (hh: number, mm: number) => new Date(new Date(`${recent}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`).getTime() - offsetMs(zone, recent));
+  const res = await page.request.post('/api/activity-sessions', { data: { kind: 'BREAK', start: at(h, m).toISOString(), end: at(3, 40).toISOString() } });
+  expect(res.status()).toBe(201);
+  const id = (await res.json()).id;
+  created.sessions.push(id);
+
+  await dialog.getByRole('button', { name: 'History' }).click();
+  await expect(page.getByRole('dialog', { name: 'History' })).toBeVisible();
+  const entry = page.getByTestId('away-entry').filter({ hasText: /3:10\s?AM – 3:40\s?AM/ });
+  await expect(entry).toHaveCount(1);
+  await entry.getByRole('button', { name: /^Edit break/ }).click();
+  const editor = page.getByRole('form', { name: 'Edit break' });
+  await editor.getByLabel('To').fill('03:55');
+  await editor.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('away-entry').filter({ hasText: /3:10\s?AM – 3:55\s?AM/ })).toHaveCount(1);
+  const after = (await sessionsOn(page, recent)).find((x) => x.id === id)!;
+  expect((new Date(after.end!).getTime() - new Date(after.start).getTime()) / 60_000).toBe(45);
+
+  await page.getByTestId('away-entry').filter({ hasText: /3:10\s?AM – 3:55\s?AM/ }).getByRole('button', { name: /^Edit break/ }).click();
+  await page.getByRole('form', { name: 'Edit break' }).getByRole('button', { name: 'Delete' }).click();
   await page.getByRole('dialog', { name: /Delete this break/ }).getByRole('button', { name: 'Delete' }).click();
-  await expect.poll(async () => (await sessionsOn(page, recent)).some((x) => hhmm(new Date(x.start), zone) === '03:10')).toBe(false);
+  await expect.poll(async () => (await sessionsOn(page, recent)).some((x) => x.id === id)).toBe(false);
 });
+
+/** Milliseconds `timeZone` is ahead of UTC on `day` (at noon). */
+function offsetMs(timeZone: string, day: string) {
+  const noon = new Date(`${day}T12:00:00Z`);
+  const local = new Date(noon.toLocaleString('en-US', { timeZone }));
+  const utc = new Date(noon.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return local.getTime() - utc.getTime();
+}
 
 test('a break left running for hours is flagged on Today and its real end time can be set', async ({ page }) => {
   const zone = await tz(page);
@@ -107,7 +135,8 @@ test('a break left running for hours is flagged on Today and its real end time c
   }
   const started = await (await page.request.post('/api/activity-sessions', { data: { action: 'start', kind: 'BREAK' } })).json();
   created.sessions.push(started.id);
-  const startAt = new Date(Date.now() - 150 * 60_000);
+  // A whole minute, so an end time typed as HH:MM lands exactly 30 minutes later.
+  const startAt = new Date(Math.floor((Date.now() - 150 * 60_000) / 60_000) * 60_000);
   const moved = await page.request.patch(`/api/activity-sessions/${started.id}`, { data: { start: startAt.toISOString() } });
   expect(moved.ok()).toBeTruthy();
 
