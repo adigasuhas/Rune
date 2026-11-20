@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { uniqueName } from './helpers';
+import { uniqueName, openNotebookById } from './helpers';
 
 /**
  * Regression tests for "the notebook freezes when I type \begin{equation}".
@@ -32,9 +32,7 @@ const serverContent = async (page: Page, id: string): Promise<string> =>
   (await (await page.request.get(`/api/notebooks/${id}`)).json()).page.content;
 
 async function openInSplit(page: Page, id: string) {
-  await page.goto('/notebook');
-  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), id);
-  await page.goto('/notebook');
+  await openNotebookById(page, id);
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: /split/i }).click();
   await page.locator('.monaco-editor textarea').focus();
   await page.keyboard.press('Control+End');

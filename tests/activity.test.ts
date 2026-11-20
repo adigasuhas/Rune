@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { dailyActivity, formatHours, levelFor, rangeStart, summarize } from '@/lib/activity';
+import { dailyActivity, formatHours, levelFor, levelLabel, rangeStart, summarize } from '@/lib/activity';
 
 const TZ = 'UTC';
 const done = (date: string, s: string, e: string) => ({ date: `${date}T09:00:00Z`, status: 'COMPLETED', startTime: s, endTime: e, actualTime: 0 });
 
 describe('activity', () => {
   it('bands hours into neutral levels', () => {
-    expect([0, 0.5, 2, 4, 7].map(levelFor)).toEqual([0, 1, 2, 3, 4]);
+    expect([0, 0.5, 2, 4, 6, 7.5, 9, 10.5].map(levelFor)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    // Full working days no longer collapse into one shade: 7, 8, 9 and 10 hours differ.
+    expect(new Set([6.5, 8, 9.5, 11].map(levelFor)).size).toBe(4);
+    expect(levelFor(8)).toBeLessThan(levelFor(9));
   });
 
   it('counts worked time per day, overlaps once, and completions as context', () => {
@@ -15,7 +18,7 @@ describe('activity', () => {
     const days = dailyActivity(tasks, events, TZ, '2026-03-01', '2026-03-04');
     expect(days.map((d) => d.date)).toEqual(['2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04']);
     expect(days[1]).toMatchObject({ hours: 3, completed: 2, level: 2 });
-    expect(days[2]).toMatchObject({ hours: 1.5, completed: 0, level: 2 });
+    expect(days[2]).toMatchObject({ hours: 1.5, completed: 0, level: 1 });
     expect(days[0].level).toBe(0);
   });
 
@@ -36,5 +39,11 @@ describe('activity', () => {
     expect(s.busiestMonth?.name).toBe('March');
     expect(s.longestWeekday).toBe('Mondays');
     expect(s.lines.join(' ')).not.toMatch(/bad|unproductive|fail|lazy/i);
+  });
+});
+
+describe('levelLabel', () => {
+  it('names each band for the legend', () => {
+    expect([0, 1, 4, 7].map((l) => levelLabel(l as 0 | 1 | 4 | 7))).toEqual(['No recorded work', 'Under 2h', '6–7.5h', '10.5h or more']);
   });
 });

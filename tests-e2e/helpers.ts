@@ -23,3 +23,15 @@ export async function signInAsDevUser(page: Page) {
 export function uniqueName(prefix: string): string {
   return `${prefix} [e2e ${Date.now()}]`;
 }
+
+/**
+ * Opens a notebook in the editor through the app's deep link. The key is
+ * set from Today, which never reads it: setting it while /notebook was
+ * still mounting let that page consume the key itself, so the reload that
+ * followed landed on the library instead (a timing-dependent failure).
+ */
+export async function openNotebookById(page: Page, notebookId: string) {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), notebookId);
+  await page.goto('/notebook');
+}

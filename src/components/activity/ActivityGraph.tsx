@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { clampCardCenter, dailyActivity, dayOfWeek, firstActiveDay, formatHours, LEVEL_BOUNDS, mondayOf, rangeStart, recentWeeksStart, RECENT_WEEKS_DEFAULT, summarize, type DayActivity } from '@/lib/activity';
+import { clampCardCenter, dailyActivity, dayOfWeek, firstActiveDay, formatHours, LEVEL_BOUNDS, levelLabel, mondayOf, rangeStart, recentWeeksStart, RECENT_WEEKS_DEFAULT, summarize, type DayActivity, type DayLevel } from '@/lib/activity';
 
 function addDaysYmd(ymd: string, n: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
@@ -25,12 +25,17 @@ type AnyEvent = { start: string | Date } & Record<string, unknown>;
 const GAP = 3;
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// One per level (0 = nothing recorded): the --heat ramp in globals.css,
+// validated as an ordinal scale in both themes.
 const LEVEL_BG = [
   'var(--surface-sunken)',
-  'color-mix(in srgb, var(--primary) 26%, var(--surface-sunken))',
-  'color-mix(in srgb, var(--primary) 48%, var(--surface-sunken))',
-  'color-mix(in srgb, var(--primary) 74%, var(--surface-sunken))',
-  'var(--primary)',
+  'var(--heat-1)',
+  'var(--heat-2)',
+  'var(--heat-3)',
+  'var(--heat-4)',
+  'var(--heat-5)',
+  'var(--heat-6)',
+  'var(--heat-7)',
 ];
 
 // Days outside the availability dates: hatched, like "Not available" on the Tasks calendar.
@@ -272,12 +277,16 @@ export function ActivityGraph({
       {windowNote && <p className="mt-2 text-[12px] text-ink-secondary">{windowNote}</p>}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-[12px] text-ink-faint">
         {footer ?? <span>{trimmed ? `The last ${shownWeeks} weeks fit here; widen the window for the full year. ` : ''}Time from completed calendar blocks and timed tasks.</span>}
-        <span className="flex items-center gap-1.5" aria-hidden="true">
-          Less
+        <span
+          className="flex items-center gap-1 tabular-nums"
+          role="img"
+          aria-label={`Colour scale, hours worked a day: ${LEVEL_BG.map((_, i) => levelLabel(i as DayLevel)).join(', ')}`}
+        >
+          <span className="mr-0.5">0h</span>
           {LEVEL_BG.map((bg, i) => (
-            <span key={i} title={i === 0 ? 'No recorded work' : i < 4 ? `Under ${LEVEL_BOUNDS[i - 1]}h` : `${LEVEL_BOUNDS[2]}h or more`} className="inline-block rounded-[3px]" style={{ width: CELL, height: CELL, background: bg }} />
+            <span key={i} title={levelLabel(i as DayLevel)} className="inline-block rounded-[3px]" style={{ width: CELL, height: CELL, background: bg }} />
           ))}
-          More
+          <span className="ml-0.5">{LEVEL_BOUNDS[LEVEL_BOUNDS.length - 1]}h+</span>
         </span>
       </div>
 

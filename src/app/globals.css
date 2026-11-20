@@ -81,6 +81,16 @@
   --time-work: #1f7a50;
   --time-break: #2f86c0;
   --time-drain: #c27f25;
+  /* Hours worked per day (activity graph), lightest to deepest: one hue,
+     evenly spaced in lightness, the lightest still 2:1 on --paper. Validated
+     as an ordinal ramp (dataviz validate_palette.js --ordinal) in both themes. */
+  --heat-1: #a2b8a8;
+  --heat-2: #88a694;
+  --heat-3: #6e9580;
+  --heat-4: #54846d;
+  --heat-5: #3a7359;
+  --heat-6: #2b6048;
+  --heat-7: #274c3a;
 
   /* ---- Layer 2: semantic tokens — LIGHT values (default) ---- */
   --bg: var(--oat);
@@ -151,6 +161,13 @@
   --time-work: #3f9e72;
   --time-break: #3f8fd0;
   --time-drain: #bb7f26;
+  --heat-1: #315846;
+  --heat-2: #3b6b55;
+  --heat-3: #447f65;
+  --heat-4: #4e9375;
+  --heat-5: #58a885;
+  --heat-6: #74ba9a;
+  --heat-7: #99c9b0;
   --bg: var(--nkt-ground);
   --bg-1: var(--nkt-ground-1);
   --surface: var(--nkt-panel);

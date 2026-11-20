@@ -13,17 +13,29 @@
 import { calculateOccupiedHoursFromItems } from './analyticsUtils';
 import { getLocalDateString } from './dateUtils';
 
-export type DayActivity = { date: string; hours: number; completed: number; level: 0 | 1 | 2 | 3 | 4; /** Outside the availability dates: shown, never counted. */ outside?: boolean };
+export type DayLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type DayActivity = { date: string; hours: number; completed: number; level: DayLevel; /** Outside the availability dates: shown, never counted. */ outside?: boolean };
 
-/** Upper bounds (hours) for levels 1-3; anything above the last is level 4. */
-export const LEVEL_BOUNDS = [1.5, 3.5, 5.5] as const;
+/**
+ * Upper bounds (hours) for levels 1-6; anything at or above the last is
+ * level 7. The bands are finest where full working days fall (6-10.5 h),
+ * so a 7, 8, 9 and 10-hour day each read differently - with four levels
+ * topping out at 5.5 h, every full day looked the same.
+ */
+export const LEVEL_BOUNDS = [2, 4, 6, 7.5, 9, 10.5] as const;
 
-export function levelFor(hours: number): DayActivity['level'] {
+export function levelFor(hours: number): DayLevel {
   if (hours <= 0) return 0;
-  if (hours < LEVEL_BOUNDS[0]) return 1;
-  if (hours < LEVEL_BOUNDS[1]) return 2;
-  if (hours < LEVEL_BOUNDS[2]) return 3;
-  return 4;
+  const i = LEVEL_BOUNDS.findIndex((b) => hours < b);
+  return (i === -1 ? LEVEL_BOUNDS.length + 1 : i + 1) as DayLevel;
+}
+
+/** "Under 2h", "6–7.5h", "10.5h or more": what a level means, for the legend. */
+export function levelLabel(level: DayLevel): string {
+  if (level === 0) return 'No recorded work';
+  if (level === 1) return `Under ${LEVEL_BOUNDS[0]}h`;
+  if (level === LEVEL_BOUNDS.length + 1) return `${LEVEL_BOUNDS[LEVEL_BOUNDS.length - 1]}h or more`;
+  return `${LEVEL_BOUNDS[level - 2]}–${LEVEL_BOUNDS[level - 1]}h`;
 }
 
 function addDays(ymd: string, n: number): string {

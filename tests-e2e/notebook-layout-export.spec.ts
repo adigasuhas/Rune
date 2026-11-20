@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { PDFParse } from 'pdf-parse';
-import { uniqueName } from './helpers';
+import { uniqueName, openNotebookById } from './helpers';
 
 /**
  * Notebook regressions:
@@ -39,10 +39,9 @@ async function openNotebook(page: Page) {
   created.push(nb.id);
   const full = await (await page.request.get(`/api/notebooks/${nb.id}`)).json();
   await page.request.put(`/api/notebooks/${nb.id}/pages/${full.page.id}`, { data: { content: DOC, tags: [] } });
-  await page.goto('/notebook');
-  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), nb.id);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.removeItem('rune_notebook_details_open'));
-  await page.goto('/notebook');
+  await openNotebookById(page, nb.id);
   await expect(page.getByRole('group', { name: 'View' })).toBeVisible({ timeout: 30_000 });
   return nb.id as string;
 }
@@ -151,9 +150,7 @@ test('text colour shows in the preview instead of vanishing', async ({ page }) =
   created.push(nb.id);
   const full = await (await page.request.get(`/api/notebooks/${nb.id}`)).json();
   await page.request.put(`/api/notebooks/${nb.id}/pages/${full.page.id}`, { data: { content: String.raw`Before \textcolor[HTML]{B20000}{red words} and \textcolor{#3b82f6}{blue words} after.`, tags: [] } });
-  await page.goto('/notebook');
-  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), nb.id);
-  await page.goto('/notebook');
+  await openNotebookById(page, nb.id);
   await expect(page.getByRole('group', { name: 'View' })).toBeVisible({ timeout: 30_000 });
   await view(page, 'Split').click();
   const preview = page.locator('.notebook-preview');

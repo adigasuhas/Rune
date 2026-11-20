@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { uniqueName } from './helpers';
+import { uniqueName, openNotebookById } from './helpers';
 
 /**
  * Regression tests for the notebook editor hanging.
@@ -41,9 +41,7 @@ async function serverContent(page: Page, id: string): Promise<string> {
 }
 
 async function openInSplit(page: Page, id: string) {
-  await page.goto('/notebook');
-  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), id);
-  await page.goto('/notebook');
+  await openNotebookById(page, id);
   await page.getByRole('group', { name: 'View' }).getByRole('button', { name: /split/i }).click();
   // Focus Monaco's input directly: clicking its line layer can wait forever
   // on a long document whose lines keep re-laying out.

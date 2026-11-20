@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { PDFParse } from 'pdf-parse';
-import { uniqueName } from './helpers';
+import { uniqueName, openNotebookById } from './helpers';
 
 /**
  * Minutes of meeting: an existing notebook converts in its settings (no text
@@ -49,9 +49,7 @@ test('an existing notebook converts to minutes of meeting: unnumbered, one meeti
   expect(before.length).toBe(1);
 
   // Convert from the notebook's own settings.
-  await page.goto('/notebook');
-  await page.evaluate((nid) => sessionStorage.setItem('rune-deep-link-notebook-id', nid), nb.id);
-  await page.goto('/notebook');
+  await openNotebookById(page, nb.id);
   await expect(page.getByRole('group', { name: 'View' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.locator('form').filter({ has: page.getByRole('radiogroup', { name: 'Format' }) });
