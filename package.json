@@ -84,6 +84,7 @@
     "deepmerge-ts": "^8.0.2",
     "isomorphic-dompurify": {
       "jsdom": "26.1.0"
-    }
+    },
+    "effect": "^3.22.1"
   }
 }
