@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSessionUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { seedProjectNotebookSections } from '@/lib/notebookDefaults';
+import { minutesMeetingSkeleton } from '@/lib/notebookLayout';
 import { latexExcerpt } from '@/lib/notebookExcerpt';
 
 const createSchema = z.object({
@@ -10,6 +11,7 @@ const createSchema = z.object({
   projectId: z.string().max(200).nullable().optional(),
   isPersonal: z.boolean().optional(),
   color: z.string().max(32).nullable().optional(),
+  layout: z.enum(['standard', 'minutes']).optional(),
 });
 
 export async function GET() {
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Enter a notebook title.' }, { status: 400 });
   }
-  const { title, projectId, isPersonal, color } = parsed.data;
+  const { title, projectId, isPersonal, color, layout } = parsed.data;
 
   try {
 
@@ -81,6 +83,7 @@ export async function POST(req: Request) {
         projectId: projectId || null,
         isPersonal: isPersonal !== undefined ? isPersonal : false,
         color: color || null,
+        layout: layout ?? 'standard',
         userId: session.userId
       }
     });
@@ -90,7 +93,14 @@ export async function POST(req: Request) {
     // (or later) notebook in the same project starts blank - it's usually
     // there for a distinct purpose the writer will name themselves, not a
     // repeat of the same six headings.
-    if (projectId && isFirstInProject) {
+    // A minutes notebook starts with its first meeting's outline instead.
+    if (layout === 'minutes') {
+      const user = await db.user.findUnique({ where: { id: session.userId }, select: { timezone: true } });
+      const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: user?.timezone || 'UTC' });
+      await db.notebookPage.create({
+        data: { notebookId: notebook.id, title: 'Notebook', content: minutesMeetingSkeleton(date), tags: [], authorId: session.userId },
+      });
+    } else if (projectId && isFirstInProject) {
       await seedProjectNotebookSections(notebook.id, session.userId);
     } else {
       await db.notebookPage.create({

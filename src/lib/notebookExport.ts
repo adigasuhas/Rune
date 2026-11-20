@@ -6,6 +6,7 @@
 import { parseLatexToHtml } from './latex/renderer';
 import { sanitizeNotebookHtml, sanitizePlainText } from './sanitizeHtml';
 import { nestedListCss } from './latex/listStyles';
+import { layoutClass, minutesPrintCss, type NotebookLayout } from './notebookLayout';
 
 export interface ExportPage {
   id: string;
@@ -25,6 +26,8 @@ export interface ExportOptions {
   includeHeader: boolean;
   includeFooter: boolean;
   includeSummary: boolean;
+  /** 'minutes': unnumbered headings, each meeting (top-level section) on a new page. */
+  layout?: NotebookLayout;
 }
 
 export function stripPageMetadata(content: string): string {
@@ -463,7 +466,7 @@ export function buildNotebookExportHtml(
       <article id="page-${page.id}" class="notebook-page-pdf">
         ${titleBlock}
         ${tags}
-        <div class="content-body">${parsedContent}</div>
+        <div class="content-body ${layoutClass(options.layout)}">${parsedContent}</div>
       </article>
       ${pageBreak}
     `;
@@ -481,6 +484,7 @@ export function buildNotebookExportHtml(
     ${fontCssBlock}
     <style>
       ${styles}
+      ${options.layout === 'minutes' ? minutesPrintCss() : ''}
       @page { size: A4; margin: ${margin}; }
     </style>
   </head>

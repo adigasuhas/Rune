@@ -112,6 +112,11 @@ export function parseLatexToHtml(
           const title = node.args[0] ? renderInline(node.args[0]) : 'Subsubsection';
           html += `<h4 class="ltx-3${node.starred ? ' ltx-nonum' : ''} text-lg font-semibold font-sans mt-4 mb-2 text-foreground">${title}</h4>`;
         }
+
+        // Page breaks: a new page in the PDF, a marked rule in the preview.
+        else if (cmdName === 'newpage' || cmdName === 'clearpage' || cmdName === 'pagebreak') {
+          html += '<div class="page-break ltx-newpage" aria-hidden="true"></div>';
+        }
         
         // B. Formatting commands
         else if (cmdName === 'textbf') {

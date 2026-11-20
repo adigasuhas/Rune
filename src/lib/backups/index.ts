@@ -106,7 +106,7 @@ async function addNotebooks(files: Files, notebooks: Row[], projectNames: Map<st
     } catch {
       body = `<pre>${source.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`;
     }
-    files[`${folder}/${name}.html`] = notebookHtml(String(nb.title || 'Untitled'), body);
+    files[`${folder}/${name}.html`] = notebookHtml(String(nb.title || 'Untitled'), body, nb.layout === 'minutes' ? 'minutes' : 'standard');
     summary.notebooks++;
 
     const attachments = (page.attachments as Row[] | undefined) ?? [];

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeLayout } from '@/lib/notebookLayout';
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
@@ -276,7 +277,8 @@ export async function POST(
       includeCover: includeCover !== false,
       includeHeader: includeHeader !== false,
       includeFooter: includeFooter !== false,
-      includeSummary: includeSummary === true
+      includeSummary: includeSummary === true,
+      layout: normalizeLayout(notebook.layout),
     };
 
     const katexCssBlock = getInlinedKatexCssBlock();

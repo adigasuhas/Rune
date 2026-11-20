@@ -203,6 +203,9 @@ model Notebook {
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   isPersonal Boolean       @default(false)
   color      String?
+  // "standard" or "minutes" (minutes of meeting: unnumbered headings, each
+  // top-level section - one meeting - on a new page). See src/lib/notebookLayout.ts.
+  layout     String        @default("standard")
   page       NotebookPage?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt

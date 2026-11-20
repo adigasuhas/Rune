@@ -28,6 +28,8 @@ export interface Notebook {
   projectId?: string;
   isPersonal: boolean;
   color?: string | null;
+  /** 'minutes': minutes of meeting - unnumbered, each meeting on a new page. */
+  layout?: 'standard' | 'minutes';
   createdAt: string;
   updatedAt: string;
   project?: {

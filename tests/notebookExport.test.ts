@@ -102,3 +102,39 @@ python analyse.py --input xrd/batch7_humid_600C_4h_argon.xy --scherrer-k 0.94 --
     expect(html).toContain('results/batch7.json');
   });
 });
+
+describe('minutes of meeting layout', () => {
+  const meetings = String.raw`\section{Meeting, 3 November}
+Notes one.
+\section{Meeting, 10 November}
+Notes two.`;
+
+  it('marks the document and adds the unnumbered, page-per-meeting rules', () => {
+    const html = build(meetings, { profile: 'article', layout: 'minutes' });
+    expect(html).toContain('class="content-body layout-minutes"');
+    expect(html).toMatch(/\.layout-minutes h2\.ltx-1::before[^{]*\{\s*content: none !important/);
+    expect(html).toMatch(/\.layout-minutes h2\.ltx-1 ~ h2\.ltx-1 \{ break-before: page/);
+  });
+
+  it('leaves a standard notebook numbered and unbroken', () => {
+    const html = build(meetings, { profile: 'article' });
+    expect(html).not.toContain('layout-minutes');
+    expect(html).toContain('counter-increment: sec');
+  });
+
+  it('renders \\newpage, \\clearpage and \\pagebreak as page breaks', async () => {
+    const { parseLatexToHtml } = await import('@/lib/latex/renderer');
+    for (const cmd of ['newpage', 'clearpage', 'pagebreak']) {
+      expect(parseLatexToHtml(`Before\n\\${cmd}\nAfter`)).toContain('<div class="page-break ltx-newpage"');
+    }
+  });
+
+  it('starts a new minutes notebook with a meeting outline', async () => {
+    const { minutesMeetingSkeleton, normalizeLayout } = await import('@/lib/notebookLayout');
+    const s = minutesMeetingSkeleton('20 November 2026');
+    expect(s.startsWith(String.raw`\section{Meeting, 20 November 2026}`)).toBe(true);
+    expect(s).toContain(String.raw`\subsection{Action items}`);
+    expect(normalizeLayout('minutes')).toBe('minutes');
+    expect(normalizeLayout('anything else')).toBe('standard');
+  });
+});

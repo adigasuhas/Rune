@@ -10,6 +10,7 @@ import { PROJECT_COLORS } from '@/lib/colors';
 import { NOTEBOOK_TEMPLATES, NotebookTemplate } from '@/lib/latex/templates';
 import { DEFAULT_PROJECT_SECTIONS } from '@/lib/notebookSections';
 import { stripPageMetadata } from '@/lib/notebookExport';
+import { layoutClass, minutesPreviewCss, normalizeLayout, NOTEBOOK_LAYOUTS, type NotebookLayout } from '@/lib/notebookLayout';
 import { latexExcerpt } from '@/lib/notebookExcerpt';
 import { ReviewerPicker } from '@/components/ReviewerPicker';
 import { useLatexPreview } from '@/lib/latex/useLatexPreview';
@@ -63,6 +64,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   History,
+  Settings2,
   Command,
   Layers,
   ChevronRight,
@@ -224,6 +226,7 @@ export default function NotebookPage() {
   const [newNotebookProjectId, setNewNotebookProjectId] = useState('');
   const [newNotebookIsPersonal, setNewNotebookIsPersonal] = useState(true);
   const [newNotebookColor, setNewNotebookColor] = useState<string | null>(null);
+  const [newNotebookLayout, setNewNotebookLayout] = useState<NotebookLayout>('standard');
 
   // PDF Export
   const [isPdfExportModalOpen, setIsPdfExportModalOpen] = useState(false);
@@ -248,6 +251,7 @@ export default function NotebookPage() {
   const [editingNotebook, setEditingNotebook] = useState<Notebook | null>(null);
   const [editNotebookTitle, setEditNotebookTitle] = useState('');
   const [editNotebookColor, setEditNotebookColor] = useState<string | null>(null);
+  const [editNotebookLayout, setEditNotebookLayout] = useState<NotebookLayout>('standard');
 
   // Sidebar state - notebook switcher + this document's in-text outline.
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -519,6 +523,7 @@ export default function NotebookPage() {
     setEditingNotebook(notebook);
     setEditNotebookTitle(notebook.title);
     setEditNotebookColor(notebook.color || null);
+    setEditNotebookLayout(normalizeLayout(notebook.layout));
   };
 
   // Updates the notebooks list (and the open editor, if it's the one being
@@ -534,13 +539,23 @@ export default function NotebookPage() {
       const res = await fetch(`/api/notebooks/${editingNotebook.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editNotebookTitle.trim(), color: editNotebookColor })
+        body: JSON.stringify({ title: editNotebookTitle.trim(), color: editNotebookColor, layout: editNotebookLayout })
       });
       if (res.ok) {
         const updated = await res.json();
-        setNotebooks(prev => prev.map(nb => nb.id === updated.id ? { ...nb, title: updated.title, color: updated.color } : nb));
-        setActiveNotebook(prev => prev && prev.id === updated.id ? { ...prev, title: updated.title, color: updated.color } : prev);
+        const layout = normalizeLayout(updated.layout);
+        setNotebooks(prev => prev.map(nb => nb.id === updated.id ? { ...nb, title: updated.title, color: updated.color, layout } : nb));
+        setActiveNotebook(prev => prev && prev.id === updated.id ? { ...prev, title: updated.title, color: updated.color, layout } : prev);
+        if (layout !== normalizeLayout(editingNotebook.layout)) {
+          toast(
+            layout === 'minutes' ? 'Now minutes of meeting' : 'Back to standard',
+            layout === 'minutes' ? 'Each \\section is a meeting: unnumbered, on its own page.' : 'Sections are numbered again, in one continuous flow.',
+            'success'
+          );
+        }
         setEditingNotebook(null);
+      } else {
+        toast('Settings not saved', 'Check your connection and try again.', 'error');
       }
     } catch (err) {
       console.error('Failed to update notebook settings:', err);
@@ -641,6 +656,7 @@ export default function NotebookPage() {
   const openCreateNotebookModal = (lockedProjectId?: string) => {
     setNewNotebookTitle('');
     setNewNotebookColor(null);
+    setNewNotebookLayout('standard');
     setNewNotebookLockedProjectId(lockedProjectId || null);
     if (lockedProjectId) {
       setNewNotebookIsPersonal(false);
@@ -666,7 +682,8 @@ export default function NotebookPage() {
           title: newNotebookTitle,
           projectId,
           isPersonal: !projectId,
-          color: newNotebookColor
+          color: newNotebookColor,
+          layout: newNotebookLayout
         })
       });
 
@@ -1567,6 +1584,16 @@ export default function NotebookPage() {
                       {activeNotebook.project.name}
                     </span>
                   )}
+                  {activeNotebook.layout === 'minutes' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditNotebook(activeNotebook)}
+                      className="rounded-[5px] border border-border px-1.5 py-px text-[11.5px] font-medium text-ink-secondary transition-colors hover:border-border-strong hover:text-foreground"
+                      title={'Minutes of meeting: each \\section is a meeting, unnumbered, on its own page. Change in notebook settings.'}
+                    >
+                      Minutes of meeting
+                    </button>
+                  )}
                   <span>·</span>
                   {savingPage ? (
                     <span className="inline-flex items-center gap-1 text-primary">
@@ -1633,6 +1660,15 @@ export default function NotebookPage() {
                 >
                   <History className="w-3.5 h-3.5" />
                   <span>History</span>
+                </button>
+
+                <button
+                  onClick={() => handleOpenEditNotebook(activeNotebook)}
+                  className="h-8 px-2.5 text-[13px] font-medium rounded-[8px] text-ink-secondary hover:bg-surface-sunken hover:text-foreground transition-colors flex items-center gap-1.5"
+                  title="Title, colour and format (standard or minutes of meeting)"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span>Settings</span>
                 </button>
 
                 {/* Write / Split / Preview */}
@@ -2028,6 +2064,7 @@ export default function NotebookPage() {
                           }
                           .notebook-preview-styled .ltx-colorbox { padding: .04em .2em; border-radius: 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
                           ${nestedListCss('.notebook-preview-styled')}
+                          ${minutesPreviewCss('.notebook-preview-styled')}
                         `}</style>
                         {previewProblem && (
                           <p role="status" className="not-prose mb-4 rounded-[8px] bg-warning-soft px-3 py-2 text-[12.5px] text-foreground">
@@ -2035,7 +2072,7 @@ export default function NotebookPage() {
                           </p>
                         )}
                         <div
-                          className="notebook-preview-styled"
+                          className={`notebook-preview-styled ${layoutClass(activeNotebook?.layout)}`}
                           dangerouslySetInnerHTML={{ __html: previewHtml }}
                         />
                       </>
@@ -2431,6 +2468,8 @@ export default function NotebookPage() {
                 </>
               )}
 
+              <LayoutPicker value={newNotebookLayout} onChange={setNewNotebookLayout} />
+
               <div className="space-y-2">
                 <label className="block text-[11.5px] font-semibold text-muted-foreground">Color (optional)</label>
                 <div className="grid grid-cols-6 gap-2 max-h-24 overflow-y-auto p-1.5 bg-surface-sunken/40 rounded-md border border-border">
@@ -2577,6 +2616,8 @@ export default function NotebookPage() {
                   className="w-full bg-surface-raised border border-border rounded-md px-3.5 py-2.5 text-foreground placeholder-muted-foreground text-sm focus:outline-none focus:border-border-strong"
                 />
               </div>
+
+              <LayoutPicker value={editNotebookLayout} onChange={setEditNotebookLayout} />
 
               <div className="space-y-2">
                 <label className="block text-[11.5px] font-semibold text-muted-foreground">Color</label>
@@ -2767,5 +2808,38 @@ export default function NotebookPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Standard or minutes of meeting. Switching only changes how the document is
+ * laid out (numbering, page breaks); the text itself is never rewritten, so
+ * converting an existing notebook - either way - is instant and lossless.
+ */
+function LayoutPicker({ value, onChange }: { value: NotebookLayout; onChange: (v: NotebookLayout) => void }) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-2 block text-[11.5px] font-semibold text-muted-foreground">Format</legend>
+      <div role="radiogroup" aria-label="Format" className="overflow-hidden rounded-md border border-border">
+        {NOTEBOOK_LAYOUTS.map((l, i) => (
+          <button
+            key={l.value}
+            type="button"
+            role="radio"
+            aria-checked={value === l.value}
+            onClick={() => onChange(l.value)}
+            className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${i > 0 ? 'border-t border-border' : ''} ${value === l.value ? 'bg-surface-sunken' : 'hover:bg-surface-sunken/60'}`}
+          >
+            <span aria-hidden="true" className={`mt-[3px] grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${value === l.value ? 'border-primary' : 'border-border-strong'}`}>
+              {value === l.value && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-foreground">{l.label}</span>
+              <span className="block text-[12px] leading-snug text-ink-secondary">{l.hint}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </fieldset>
   );
 }

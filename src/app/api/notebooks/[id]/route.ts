@@ -7,6 +7,7 @@ const updateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   isPersonal: z.boolean().optional(),
   color: z.string().max(32).nullable().optional(),
+  layout: z.enum(['standard', 'minutes']).optional(),
   projectId: z.string().max(200).nullable().optional(),
 });
 
@@ -75,7 +76,7 @@ export async function PUT(
     if (!parsed.success) {
       return NextResponse.json({ error: 'Some fields are missing or invalid.', details: parsed.error.flatten() }, { status: 400 });
     }
-    const { title, isPersonal, color, projectId } = parsed.data;
+    const { title, isPersonal, color, projectId, layout } = parsed.data;
 
     // Linking to a project: only to one the caller owns, and only if that
     // project doesn't already have a notebook (projectId is @unique).
@@ -98,6 +99,7 @@ export async function PUT(
         ...(title !== undefined ? { title } : {}),
         ...(isPersonal !== undefined ? { isPersonal } : {}),
         ...(color !== undefined ? { color: color || null } : {}),
+        ...(layout !== undefined ? { layout } : {}),
         ...projectIdUpdate,
       }
     });

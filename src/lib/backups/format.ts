@@ -1,5 +1,6 @@
 import { zipSync, strToU8, type Zippable } from 'fflate';
 import { getLocalDateString, isoWeekKey } from '../dateUtils';
+import { minutesPrintCss, type NotebookLayout } from '../notebookLayout';
 
 /**
  * The pure half of automatic backups: when one is due, and how its files are
@@ -139,7 +140,8 @@ export function buildZip(folder: string, files: Record<string, string | Uint8Arr
 }
 
 /** A readable, self-contained HTML page for one rendered notebook. */
-export function notebookHtml(title: string, bodyHtml: string): string {
+export function notebookHtml(title: string, bodyHtml: string, layout?: NotebookLayout): string {
+  const minutes = layout === 'minutes';
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<!doctype html>
 <html lang="en">
@@ -156,12 +158,15 @@ export function notebookHtml(title: string, bodyHtml: string): string {
   pre, code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .88em; }
   pre { white-space: pre-wrap; background: #f6f8fa; padding: .8rem; border-radius: 6px; }
   img { max-width: 100%; }
-  ul { list-style: disc; } ul ul { list-style-type: "–  "; } ol ol { list-style-type: lower-alpha; } ol ol ol { list-style-type: lower-roman; }
+  ul { list-style: disc; } ul ul { list-style-type: "–  "; } ol ol { list-style-type: lower-alpha; } ol ol ol { list-style-type: lower-roman; }${minutes ? `
+  /* Minutes of meeting: one meeting per printed page; a rule between them on screen. */
+  .layout-minutes h2 ~ h2 { margin-top: 3rem; padding-top: 2rem; border-top: 1px dashed #d0d7de; }
+  @media print { .layout-minutes h2 ~ h2 { border-top: 0; padding-top: 0; } ${minutesPrintCss()} }` : ''}
 </style>
 </head>
 <body>
 <h1>${esc(title)}</h1>
-${bodyHtml}
+${minutes ? `<div class="layout-minutes">${bodyHtml}</div>` : bodyHtml}
 </body>
 </html>
 `;
